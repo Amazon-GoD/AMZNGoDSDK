@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using AMZNGoDSDK.Editor.SdkDependencies;
 using UnityEditor;
 using UnityEngine;
@@ -6,47 +7,34 @@ namespace AMZNGoDSDK.Editor.Windows
 {
     public sealed class SDKSettingsWindow : EditorWindow
     {
+        private static Dictionary<string, bool> _dependenciesInfo = new();
+        
         private Vector2 _scrollPosition;
 
         [MenuItem("AMZN GoD/Settings", false, 0)]
-        public static void ShowWindow()
+        public static async void ShowWindow()
         {
+            _dependenciesInfo = 
+                await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
+            
             var window = GetWindow<SDKSettingsWindow>("AMZN GoD SDK Settings");
             window.minSize = new Vector2(400, 400);
         }
 
         private void OnGUI()
         {
-            GUILayout.Space(10);
-            
-            GUILayout.Label("SDK Dependency Installer", EditorStyles.boldLabel);
-            GUILayout.Space(10);
-            
-            if (GUILayout.Button("Install Dependencies", GUILayout.Height(30)))
-            {
-                DependencyInstaller.InstallDependenciesMenu();
-            }
-            
-            GUILayout.Space(10);
-            
-            if (GUILayout.Button("Check Dependencies", GUILayout.Height(25)))
-            {
-                DependencyInstaller.CheckStatusMenu();
-            }
-            
             GUILayout.Space(20);
             
-            GUILayout.Label("Configured Dependencies:", EditorStyles.boldLabel);
+            GUILayout.Label("Required External Dependencies:", EditorStyles.boldLabel);
             
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.Height(200));
             
-            var dependencies = DependencyInstaller.GetDependencies();
-            foreach (var dependency in dependencies)
+            foreach (var dependency in _dependenciesInfo)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                
-                EditorGUILayout.LabelField(dependency.Key, EditorStyles.boldLabel);
-                EditorGUILayout.LabelField("URL:", dependency.Value, EditorStyles.wordWrappedLabel);
+
+                bool isInstalled = _dependenciesInfo[dependency.Key];
+                EditorGUILayout.LabelField($"{dependency.Key}: {(isInstalled ? "installed" : "missing")}", EditorStyles.boldLabel);
                 
                 EditorGUILayout.EndVertical();
                 GUILayout.Space(5);
@@ -57,9 +45,8 @@ namespace AMZNGoDSDK.Editor.Windows
             GUILayout.Space(5);
             
             EditorGUILayout.HelpBox(
-                $"Total dependencies configured: {dependencies.Count}\n\n" +
-                "Dependencies will be automatically checked when Unity starts. " +
-                "You can also manually install them using the buttons above.", 
+                $"Total dependencies configured: {_dependenciesInfo.Count}\n\n" +
+                "Dependencies will be automatically checked when Unity starts.\nIf any dependencies are missing, SDK will be install it again.", 
                 MessageType.Info);
         }
     }
