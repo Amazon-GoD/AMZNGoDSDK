@@ -6,20 +6,6 @@
   "unity": "2019.1",
   "documentationUrl": "https://coda.io/d/_dwWWk6nd-8s/AMZN-GoD-SDK-Documentation_su2Px_kE",
   "licensesUrl": "",
-  "dependencies": {
-    "com.google.external-dependency-manager": "1.2.186",
-    "io.appmetrica.analytics": "6.7.0"
-  },
-  "scopedRegistries": [
-    {
-      "name": "package.openupm.com",
-      "url": "https://package.openupm.com",
-      "scopes": [
-        "com.google.external-dependency-manager",
-        "io.appmetrica.analytics"
-      ]
-    }
-  ],
   "author": {
     "name": "AMZN GoD",
     "email": "example@example.com",
