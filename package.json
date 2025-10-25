@@ -1,0 +1,18 @@
+{
+  "name": "com.amzngod.amzngodsdk",
+  "version": "0.0.1",
+  "displayName": "AMZN GoD SDK",
+  "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
+  "unity": "2019.1",
+  "documentationUrl": "https://coda.io/d/_dwWWk6nd-8s/AMZN-GoD-SDK-Documentation_su2Px_kE",
+  "licensesUrl": "",
+  "dependencies": {
+    "io.appmetrica.analytics": "https://github.com/appmetrica/appmetrica-unity-plugin.git#v6.7.0",
+    "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm"
+  },
+  "author": {
+    "name": "AMZN GoD",
+    "email": "example@example.com",
+    "url": ""
+  }
+}
