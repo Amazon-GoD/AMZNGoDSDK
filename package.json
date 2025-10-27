@@ -6,6 +6,10 @@
   "unity": "2019.1",
   "documentationUrl": "https://coda.io/d/_dwWWk6nd-8s/AMZN-GoD-SDK-Documentation_su2Px_kE",
   "licensesUrl": "",
+  "dependencies": {
+    "com.unity.ugui": "1.0.0",
+    "com.unity.textmeshpro": "3.0.9"
+  },
   "author": {
     "name": "AMZN GoD",
     "email": "example@example.com",

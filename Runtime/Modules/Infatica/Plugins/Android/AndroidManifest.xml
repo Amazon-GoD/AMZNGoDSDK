@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATION"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  
+    <application>
+        <activity android:name="com.unity3d.player.UnityPlayerActivity"
+                  android:theme="@style/UnityThemeSelector">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+        </activity>
+      <!-- Foreground Service -->
+      <service
+          android:name=".MyForegroundService"
+          android:foregroundServiceType="mediaProjection"
+          android:exported="false"/>
+
+      <!-- Receiver for boot completed (if needed) -->
+      <receiver android:name="com.unity3d.player.BootReceiver"
+    android:enabled="true"
+    android:exported="true">
+        <intent-filter>
+          <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        </intent-filter>
+      </receiver>
+    </application>
+</manifest>

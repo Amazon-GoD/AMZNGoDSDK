@@ -1,3 +1,17 @@
 {
-	"name": "AMZNGoD.Editor"
+    "name": "AMZNGoD.Runtime",
+    "rootNamespace": "",
+    "references": [
+        "Unity.TextMeshPro",
+        "AppMetrica"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
 }

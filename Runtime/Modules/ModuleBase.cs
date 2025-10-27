@@ -1,9 +1,10 @@
 using UnityEngine;
 
-namespace AMZNGoDSDK.Runtime.Modules
+namespace AMZNGoDSDK.Runtime
 {
-    internal abstract class ModuleBase : MonoBehaviour
+    public abstract class ModuleBase : MonoBehaviour
     {
         public abstract void Initialize();
+        public abstract void Cleenup();
     }
 }
