@@ -19,10 +19,6 @@ namespace AMZNGoDSDK.Editor
             {
                 "com.google.external-dependency-manager", 
                 "https://github.com/googlesamples/unity-jar-resolver.git?path=upm"
-            },
-            {
-                "io.appmetrica.analytics", 
-                "https://github.com/appmetrica/appmetrica-unity-plugin.git#v6.7.0"
             }
         };
         
