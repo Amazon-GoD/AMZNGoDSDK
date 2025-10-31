@@ -13,7 +13,7 @@
   },
   "samples": [
     {
-      "displayName": "SDK Prefab",
+      "displayName": "SDKPrefab",
       "description": "Configuration prefab with sdk modules",
       "path": "AmznGoDSDK~/SDKPrefab"
     }
