@@ -1,6 +1,6 @@
 {
   "name": "com.amzngod.amzngodsdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "displayName": "AMZN GoD SDK",
   "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
   "unity": "2019.1",
@@ -15,7 +15,7 @@
     {
       "displayName": "SDK Prefab",
       "description": "Configuration prefab with sdk modules",
-      "path": "Prefab~"
+      "path": "Samples~/Prefab"
     }
   ],
   "author": {
