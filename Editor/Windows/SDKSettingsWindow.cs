@@ -141,7 +141,7 @@ namespace AMZNGoDSDK.Editor
             
             _currentSettings.AppMetrica.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.AppMetrica.Enabled);
             
-            if (_currentSettings.CrossPromo.Enabled)
+            if (_currentSettings.AppMetrica.Enabled)
             {
                 _currentSettings.AppMetrica.Key = EditorGUILayout
                     .TextField("Key", _currentSettings.AppMetrica.Key);
@@ -159,7 +159,7 @@ namespace AMZNGoDSDK.Editor
             
             _currentSettings.Adjust.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.Adjust.Enabled);
             
-            if (_currentSettings.CrossPromo.Enabled)
+            if (_currentSettings.Adjust.Enabled)
             {
                 _currentSettings.Adjust.Key = EditorGUILayout
                     .TextField("Key", _currentSettings.Adjust.Key);

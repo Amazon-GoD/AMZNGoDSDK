@@ -1,6 +1,6 @@
 {
   "name": "com.amzngod.amzngodsdk",
-  "version": "0.2.1",
+  "version": "0.2.5",
   "displayName": "AMZN GoD SDK",
   "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
   "unity": "2019.1",
