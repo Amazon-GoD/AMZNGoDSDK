@@ -157,7 +157,7 @@ namespace AMZNGoDSDK.Editor
             
             GUILayout.Label("Adjust", EditorStyles.boldLabel);
             
-            _currentSettings.CrossPromo.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.Adjust.Enabled);
+            _currentSettings.Adjust.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.Adjust.Enabled);
             
             if (_currentSettings.CrossPromo.Enabled)
             {
