@@ -8,7 +8,7 @@ using UnityEditor.PackageManager.Requests;
 using UnityEngine;
 using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 
-namespace AMZNGoDSDK.Editor.SdkDependencies
+namespace AMZNGoDSDK.Editor
 {
     public static class DependencyInstaller
     {
@@ -98,6 +98,13 @@ namespace AMZNGoDSDK.Editor.SdkDependencies
                 Debug.Log($"AMZN GoD: {packageName} installed successfully");
                 
             throw new Exception($"Failed to install {packageName}: {addRequest.Error.message}");
+        }
+        
+        public static async Task InstallDependency(string dependency)
+        {
+            var packageUrl = Dependencies[dependency];
+            
+            await  DownloadPackageFromGitAsync(dependency, packageUrl);
         }
 
         private static async Task WaitForRequestAsync(Request request)

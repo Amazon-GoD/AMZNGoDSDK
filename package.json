@@ -1,6 +1,6 @@
 {
   "name": "com.amzngod.amzngodsdk",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "displayName": "AMZN GoD SDK",
   "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
   "unity": "2019.1",
@@ -8,11 +8,19 @@
   "licensesUrl": "",
   "dependencies": {
     "com.unity.ugui": "1.0.0",
-    "com.unity.textmeshpro": "3.0.9"
+    "com.unity.textmeshpro": "3.0.9",
+    "com.unity.inputsystem": "1.11.2"
   },
+  "samples": [
+    {
+      "displayName": "SDK Prefab",
+      "description": "Configuration prefab with sdk modules",
+      "path": "Prefab~"
+    }
+  ],
   "author": {
     "name": "AMZN GoD",
-    "email": "example@example.com",
+    "email": "info@amzngod.space",
     "url": ""
   }
 }

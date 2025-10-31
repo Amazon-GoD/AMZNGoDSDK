@@ -1,8 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
 
-namespace AMZNGoDSDK.Editor.SdkDependencies
+namespace AMZNGoDSDK.Editor
 {
     [InitializeOnLoad]
     public static class SdkDependencyManager
@@ -27,6 +28,16 @@ namespace AMZNGoDSDK.Editor.SdkDependencies
             }
             
             return dependenciesInstallInfo;
+        }
+
+        public static async void InstallMissingDependencies()
+        {
+            var dependenciesToInstall = (await GetSdkDependenciesInstallInfoAsync()).
+                    Where(x => x.Value == false)
+                    .Select(x => x.Key);
+            
+            foreach (var dependency in dependenciesToInstall)
+                await DependencyInstaller.InstallDependency(dependency);
         }
     }
 }

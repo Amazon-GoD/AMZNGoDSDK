@@ -3,7 +3,12 @@
     "rootNamespace": "",
     "references": [
         "Unity.TextMeshPro",
-        "AppMetrica"
+        "AppMetrica",
+        "AMZNGoDSDK.Editor",
+        "AdjustSdk.Scripts",
+        "MaxSdk.Scripts",
+        "UniWebView-CSharp",
+        ""
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
