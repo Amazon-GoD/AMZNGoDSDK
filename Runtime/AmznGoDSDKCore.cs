@@ -72,6 +72,8 @@ namespace AMZNGoDSDK.Runtime
         #region Infatica
         
         public bool IsInfaticaAgree => _infaticaModule.IsAgree;
+        public InfaticaModule.Mode InfaticaMode => _infaticaModule.CurrentMode;
+        
         public Action OnInfaticaAgree;
         
         public void ShowInfaticaBanner()
