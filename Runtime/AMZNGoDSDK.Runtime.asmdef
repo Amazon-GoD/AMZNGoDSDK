@@ -3,7 +3,6 @@
     "rootNamespace": "",
     "references": [
         "Unity.TextMeshPro",
-        "AppMetrica",
         "AMZNGoDSDK.Editor",
         "AdjustSdk.Scripts",
         "MaxSdk.Scripts",

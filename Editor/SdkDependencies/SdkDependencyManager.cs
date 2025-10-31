@@ -12,8 +12,7 @@ namespace AMZNGoDSDK.Editor
         {
             EditorApplication.delayCall += async () => 
             {
-                if(await DependencyInstaller.AllDependenciesAreInstalled() == false)
-                    await DependencyInstaller.InstallRequiredDependenciesAsync();
+                await DependencyInstaller.InstallRequiredDependenciesAsync();
             };
         }
         public static async Task<Dictionary<string, bool>> GetSdkDependenciesInstallInfoAsync()
