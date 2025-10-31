@@ -1,9 +1,13 @@
+using System;
+using Io.AppMetrica;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
     public class InfaticaModule : ModuleBase
     {
+        private const string EventName = "InfaticaUserAgree";
+
         [Header("Concern Windows")] 
         [SerializeField] private ReviewConcernWindow _reviewConcernWindow;
         [SerializeField] private ProductionConcernWindow _productionConcernWindow;
@@ -19,6 +23,8 @@ namespace AMZNGoDSDK.Runtime
 
         public bool IsAgree => PlayerPrefs.GetInt(nameof(InfaticaModule)).AsBool();
         public Mode CurrentMode => _mode;
+
+        public Action OnAgree;
 
         public void Construct(bool enable, Mode mode, bool batteryOptimizationIgnoreAsking)
         {
@@ -66,6 +72,10 @@ namespace AMZNGoDSDK.Runtime
                 _foregroundServiceManager.AskIgnoreBatteryOptimization();
 
             _foregroundServiceManager.StartForegroundService();
+            
+            OnAgree?.Invoke();
+
+            AppMetrica.ReportEvent(EventName);
 
             SaveChoice(1);
         }

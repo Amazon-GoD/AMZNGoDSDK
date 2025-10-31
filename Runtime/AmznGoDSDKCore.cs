@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -59,12 +61,19 @@ namespace AMZNGoDSDK.Runtime
                 _crossPromoModule,
                 _appMetricaModule,
                 _adjustModule);
+            
+            OnBannerClose = _crossPromoModule.OnClose;
+            IsNoAds = _crossPromoModule.IsNoAds;
+            OnInfaticaAgree = _infaticaModule.OnAgree;
         }
         
         #endregion
         
-        #region Public Members
-
+        #region Infatica
+        
+        public bool IsInfaticaAgree => _infaticaModule.IsAgree;
+        public Action OnInfaticaAgree;
+        
         public void ShowInfaticaBanner()
         {
             if(!_infaticaModule.Enabled)
@@ -72,10 +81,60 @@ namespace AMZNGoDSDK.Runtime
             
             _infaticaModule.ChangeChoice();
         }
+        
+        #endregion
+        
+        #region Cross Promo
+
+        public bool IsAdsReady => _crossPromoModule.IsAdsReady;
+        
+        public Action OnBannerClose;
+        public Func<bool> IsNoAds; 
+        
+        public void ShowInterstitial()
+        {
+            if(!_crossPromoModule.Enabled)
+                return;
+            
+            _crossPromoModule.ShowInterstitial();
+        }
+        
+        public void ShowRewarded(Action callback)
+        {
+            if(!_crossPromoModule.Enabled)
+                return;
+            
+            _crossPromoModule.ShowRewarded(callback);
+        }
 
         #endregion
         
+        #region AppMetrica
+
+        public void ReportEventAppMetrica(string eventName, Dictionary<string, string> args)
+        {
+            if(!_appMetricaModule.Enabled)
+                return;
+            
+            _appMetricaModule.ReportEvent(eventName, args);
+        }
+        
+        #endregion
+        
+        #region Adjust
+
+        public void ReportEventAdjust(string token, Dictionary<string, string> args)
+        {
+            if(!_adjustModule.Enabled)
+                return;
+            
+            _adjustModule.ReportEvent(token, args);
+        }
+        
+        #endregion
+        
         #region Private Members
+
         private void InitializeModules(params ModuleBase[] modules)
         {
             foreach (var module in modules)
