@@ -1,5 +1,5 @@
+using System;
 using System.Collections.Generic;
-using Unity.Plastic.Newtonsoft.Json.Serialization;
 using UnityEngine;
 
 public static class TrackingManager
