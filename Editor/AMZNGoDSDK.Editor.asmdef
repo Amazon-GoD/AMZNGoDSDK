@@ -1,10 +1,10 @@
 {
     "name": "AMZNGoDSDK.Editor",
     "rootNamespace": "",
-    "references": [
-        "UnityEditor.TestRunner"
+    "references": [],
+    "includePlatforms": [
+        "Editor"
     ],
-    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
