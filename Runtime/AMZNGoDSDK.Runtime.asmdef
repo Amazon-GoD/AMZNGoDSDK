@@ -3,11 +3,9 @@
     "rootNamespace": "",
     "references": [
         "Unity.TextMeshPro",
-        "AMZNGoDSDK.Editor",
         "AdjustSdk.Scripts",
         "MaxSdk.Scripts",
-        "UniWebView-CSharp",
-        ""
+        "UniWebView-CSharp"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
