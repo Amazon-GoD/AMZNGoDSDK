@@ -1,11 +1,9 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
-using static Pyro.CrossPromoManager;
 
 namespace Pyro
 {
@@ -115,14 +113,14 @@ namespace Pyro
                         {
                             Debug.LogWarning($"Attempt {attempt} failed: {request.error}");
 
-                            // Если это последняя попытка - возвращаем текущую конфигурацию
+                            // пїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ - пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
                             if (attempt >= maxRetries)
                             {
                                 Debug.LogError($"All attempts failed. Last error: {request.error}");
                                 return _configuration;
                             }
 
-                            // Ждем перед следующей попыткой
+                            // пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
                             await Task.Delay((int)(retryDelay * 1000));
                             continue;
                         }

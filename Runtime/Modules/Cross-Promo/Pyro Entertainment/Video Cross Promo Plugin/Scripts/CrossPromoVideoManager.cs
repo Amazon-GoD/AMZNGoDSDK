@@ -10,11 +10,9 @@ using Button = UnityEngine.UI.Button;
 using UnityEngine.EventSystems;
 using System;
 using static Pyro.CrossPromoConfigurationManager;
-using UnityEngine.Events;
 using System.Linq;
 using Directory = System.IO.Directory;
 using File = System.IO.File;
-using System.Threading.Tasks;
 
 namespace Pyro
 {

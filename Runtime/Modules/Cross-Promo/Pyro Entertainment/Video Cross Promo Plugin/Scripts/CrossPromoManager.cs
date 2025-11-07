@@ -1,12 +1,6 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using UnityEditor.PackageManager.Requests;
 using UnityEngine;
-using UnityEngine.Events;
-using UnityEngine.Video;
 using static Pyro.CrossPromoConfigurationManager;
 using Random = UnityEngine.Random;
 
@@ -85,7 +79,7 @@ namespace Pyro
                 var _conf = confNotWatched;
                 if (_conf.Videos.Count == 0) _conf = confAll;
 
-                //удаление еще не скачанных видео
+                //пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
                 var conf = _conf.Copy();
                 for (int i = 0; i < conf.Videos.Count; i++)
                 {
@@ -102,7 +96,7 @@ namespace Pyro
                         conf.Videos.First().Weight += 1 - conf.Videos.Sum(video => video.Weight);
                 }
 
-                //выбор видео для показа
+                //пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
                 foreach (var videoInfo in conf.Videos) 
                 {
                     comulativeChance += videoInfo.Weight;
