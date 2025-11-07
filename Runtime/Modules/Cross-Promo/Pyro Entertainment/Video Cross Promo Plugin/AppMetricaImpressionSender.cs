@@ -35,7 +35,7 @@ public class AppMetricaImpressionSender : MonoBehaviour
 
         string newUrl = AddUTM(url, videoName, placement);
         Debug.Log("newUrl: " + newUrl);
-        webView.Load(url);
+        webView.Load(newUrl);
         webView.Show();
     }
     private IEnumerator urlLoadingTimer(Action loaded, float time)

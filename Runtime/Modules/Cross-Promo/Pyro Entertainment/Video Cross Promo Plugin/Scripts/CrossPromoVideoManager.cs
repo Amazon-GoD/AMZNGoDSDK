@@ -66,8 +66,6 @@ namespace Pyro
 
             ResizeRenderTexture(Screen.width, Screen.height);
 
-            _overlay.GetComponent<Animator>().updateMode = AnimatorUpdateMode.UnscaledTime;
-
             _muteButton.onClick.AddListener(() =>
             {
                 if (_isMute)

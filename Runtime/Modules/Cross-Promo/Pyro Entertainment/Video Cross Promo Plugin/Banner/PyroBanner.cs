@@ -39,11 +39,6 @@ public class PyroBanner : MonoBehaviour
 
         UpdateBannerUI();
 
-#if !UNITY_EDITOR
-        var size = new Vector2(Screen.width / 2, Screen.height / 8);
-        bannerGO.GetComponent<RectTransform>().sizeDelta = size;
-#endif
-
         StartCoroutine(GifCor());
     }
     private IEnumerator GifCor()
@@ -94,7 +89,7 @@ public class PyroBanner : MonoBehaviour
         if (request.result == UnityWebRequest.Result.Success)
         {
             Debug.Log($"banner downloading process completed successfully and {videoName} saved to {localPath}, received: " + request.downloadHandler.text);
-            byte[] videoData = request.downloadHandler.data;//автоопределение размера видео
+            byte[] videoData = request.downloadHandler.data;//пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
             yield return File.WriteAllBytesAsync(localPath, videoData);
         }
         else Debug.LogError($"||{url}||/n Error in banner downloading process, can't download {videoName} due to {request.error}");
