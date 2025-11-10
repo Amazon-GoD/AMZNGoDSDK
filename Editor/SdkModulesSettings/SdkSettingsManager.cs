@@ -6,13 +6,12 @@ namespace AMZNGoDSDK.Editor
 {
     public static class SdkSettingsManager
     {
-        private static readonly string SettingsPath = 
-            Path.Combine(Application.streamingAssetsPath, "amzn_god_sdk_settings.json");
+        private static readonly string AMZNGoDSDKKey = nameof(AMZNGoDSDKKey);
 
         [InitializeOnLoadMethod]
         private static void Initialize()
         {
-            if (!File.Exists(SettingsPath))
+            if (!PlayerPrefs.HasKey(AMZNGoDSDKKey))
             {
                 var defaultSettings = new SdkSettingsData();
                 SaveSettings(defaultSettings);
@@ -21,12 +20,12 @@ namespace AMZNGoDSDK.Editor
 
         public static SdkSettingsData LoadSettings()
         {
-            if (!File.Exists(SettingsPath))
+            if (!PlayerPrefs.HasKey(AMZNGoDSDKKey))
                 return new SdkSettingsData();
 
             try
             {
-                string json = File.ReadAllText(SettingsPath);
+                string json = PlayerPrefs.GetString(AMZNGoDSDKKey);
                 return JsonUtility.FromJson<SdkSettingsData>(json);
             }
             catch (System.Exception e)
@@ -40,15 +39,9 @@ namespace AMZNGoDSDK.Editor
         {
             try
             {
-                if (!Directory.Exists(Application.streamingAssetsPath)) 
-                    Directory.CreateDirectory(Application.streamingAssetsPath);
-
                 string json = JsonUtility.ToJson(settings, true);
-                File.WriteAllText(SettingsPath, json);
-                
-#if UNITY_EDITOR
-                AssetDatabase.Refresh();
-#endif
+                PlayerPrefs.SetString(AMZNGoDSDKKey, json);
+                PlayerPrefs.Save();
                 
                 Debug.Log("AMZN GoD SDK settings saved successfully!");
             }
