@@ -2,6 +2,7 @@ using Pyro;
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Serialization;
 using static Pyro.CrossPromoConfigurationManager;
 
 namespace AMZNGoDSDK.Runtime {
@@ -11,7 +12,7 @@ namespace AMZNGoDSDK.Runtime {
 
         //Other classes
         [SerializeField] private CrossPromoVideoManager _videoManager;
-        [SerializeField] private PyroBanner _pyroBanner;
+        [FormerlySerializedAs("_pyroBanner")] [SerializeField] private CrossPromoBanner _crossPromoBanner;
         [SerializeField] private CrossPromoConfigurationManager _configurationManager;
         
         private string _configUrl = "https://pub-bbc57aaaa559422daa4079987645f56e.r2.dev/test.json";
@@ -56,19 +57,19 @@ namespace AMZNGoDSDK.Runtime {
                 IEnumerator InitVideoBanner()
                 {
                     yield return _videoManager.Initialize(_crossPromoConfigAll);
-                    yield return _pyroBanner.Initialize(_crossPromoConfigAll);
+                    yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
                 }
                 MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID, () => StartCoroutine(InitVideoBanner()));
             }
             else
             {
                 yield return _videoManager.Initialize(_crossPromoConfigAll);
-                yield return _pyroBanner.Initialize(_crossPromoConfigAll);
+                yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
                 MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID);
             }
 
-            _pyroBanner.OnClose = OnClose;
-            _pyroBanner.IsNoAds = IsNoAds;
+            _crossPromoBanner.OnClose = OnClose;
+            _crossPromoBanner.IsNoAds = IsNoAds;
         }
 
         private bool IsAllVideosWatched()
