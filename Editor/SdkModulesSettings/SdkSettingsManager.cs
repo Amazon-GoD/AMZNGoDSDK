@@ -6,49 +6,49 @@ namespace AMZNGoDSDK.Editor
 {
     public static class SdkSettingsManager
     {
-        private static readonly string AMZNGoDSDKKey = nameof(AMZNGoDSDKKey);
+        private const string ConfigFileName = "amzn_god_sdk.json";
+        private const string ResourcesPath = "Assets/Resources/";
 
         [InitializeOnLoadMethod]
         private static void Initialize()
         {
-            if (!PlayerPrefs.HasKey(AMZNGoDSDKKey))
+            if (ConfigFileIsAlreadyExist())
             {
                 var defaultSettings = new SdkSettingsData();
                 SaveSettings(defaultSettings);
             }
         }
 
+        private static bool ConfigFileIsAlreadyExist()
+        {
+            TextAsset jsonFile = 
+                Resources.Load<TextAsset>(ConfigFileName.Split('.')[0]);
+            
+            return jsonFile != null;
+        }
+
         public static SdkSettingsData LoadSettings()
         {
-            if (!PlayerPrefs.HasKey(AMZNGoDSDKKey))
+            TextAsset jsonFile = Resources.Load<TextAsset>(ConfigFileName.Split('.')[0]);
+            
+            if (jsonFile == null)
                 return new SdkSettingsData();
-
-            try
-            {
-                string json = PlayerPrefs.GetString(AMZNGoDSDKKey);
-                return JsonUtility.FromJson<SdkSettingsData>(json);
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"Failed to load settings: {e.Message}");
-                return new SdkSettingsData();
-            }
+            
+            return JsonUtility.FromJson<SdkSettingsData>(jsonFile.text);
         }
 
         public static void SaveSettings(SdkSettingsData settings)
         {
-            try
-            {
-                string json = JsonUtility.ToJson(settings, true);
-                PlayerPrefs.SetString(AMZNGoDSDKKey, json);
-                PlayerPrefs.Save();
-                
-                Debug.Log("AMZN GoD SDK settings saved successfully!");
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"Failed to save settings: {e.Message}");
-            }
+            string json = JsonUtility.ToJson(settings, true);
+            
+            string fullPath = Path.Combine(ResourcesPath, ConfigFileName);
+            
+            if (!Directory.Exists(ResourcesPath))
+                Directory.CreateDirectory(ResourcesPath);
+            
+            File.WriteAllText(fullPath, json);
+            
+            AssetDatabase.Refresh();
         }
     }
 }

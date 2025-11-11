@@ -7,9 +7,9 @@ namespace AMZNGoDSDK.Editor
     {
         public bool Enabled = true;
         
-        public AdjustSettingData Adjust;
-        public AppMetricaSettingData AppMetrica;
-        public CrossPromoSettingData CrossPromo;
-        public InfaticaSettingData Infatica;
+        public AdjustSettingData Adjust = new();
+        public AppMetricaSettingData AppMetrica = new();
+        public CrossPromoSettingData CrossPromo = new();
+        public InfaticaSettingData Infatica = new();
     }
 }
