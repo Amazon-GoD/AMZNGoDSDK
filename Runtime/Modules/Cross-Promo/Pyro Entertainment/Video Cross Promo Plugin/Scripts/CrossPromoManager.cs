@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Linq;
 using UnityEngine;
 using static Pyro.CrossPromoConfigurationManager;
@@ -48,9 +49,16 @@ namespace Pyro
             _canvas.sortingOrder = Int16.MaxValue;
         }
 
-        public void Show(PromosConfigurationInfo confAll, PromosConfigurationInfo confNotWatched, Action onClose = null)
+        IEnumerator AdTrackingCor()
         {
             TrackingManager.MetricaTracking("crosspromo_request_show");
+            yield return new WaitForSecondsRealtime(5f);
+            if (_videoManager.IsVideoPlaying()) TrackingManager.MetricaTracking("crosspromo_show_success");
+        }
+
+        public void Show(PromosConfigurationInfo confAll, PromosConfigurationInfo confNotWatched, Action onClose = null)
+        {
+            StartCoroutine(AdTrackingCor());
             confNotWatched.CheckVideosShowLimit();
 
             bool r1 = !IsReady;

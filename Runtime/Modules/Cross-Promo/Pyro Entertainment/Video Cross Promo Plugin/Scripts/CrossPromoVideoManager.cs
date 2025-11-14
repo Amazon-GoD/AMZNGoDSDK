@@ -38,6 +38,8 @@ namespace Pyro
 
         List<string> downloadedVideos = new List<string>();
         public bool isVideoDownloaded(string title) => downloadedVideos.Contains(title);
+        
+        public bool IsVideoPlaying() => _videoPlayer.isPlaying;
 
         private VideoPlayer _videoPlayer;
 
@@ -57,7 +59,6 @@ namespace Pyro
             _gameTimeScale = Time.timeScale;
             _isReady = false;
             _isMute = false;
-            _videoPlayer.started += (vp) => TrackingManager.MetricaTracking("crosspromo_show_success");
         }
         private void Start()
         {

@@ -72,9 +72,8 @@ public class CrossPromoBanner : MonoBehaviour
         }
         for (int i = 0; i < bannerUrlList.Count; i++)
         {
-            //yield return StartCoroutine(DownloadBanner(bannerUrlList[i], redirectList[i], trackingList[i]));
             string gifName = $"bannerGif_{i}.mp4";
-            yield return DownloadBanner_Video(gifName, bannerUrlList[i], redirectList[0], trackingList[0]);
+            yield return DownloadBanner_Video(gifName, bannerUrlList[i], redirectList[i], trackingList[i]);
         }
     }
     private IEnumerator DownloadBanner_Video(string videoName, string url, string redirectUrl, string trackingUrl)
@@ -100,9 +99,9 @@ public class CrossPromoBanner : MonoBehaviour
 
     public void OnBannerClick()
     {
-        string tracking = bannerDataList[gifIterator].trackingUrl;
-        string redirect = bannerDataList[gifIterator].redirectUrl;
-        string videoname = bannerDataList[gifIterator].title;
+        string tracking = bannerDataList[gifIterator-1].trackingUrl;
+        string redirect = bannerDataList[gifIterator-1].redirectUrl;
+        string videoname = bannerDataList[gifIterator-1].title;
         TrackingManager.UrlTracking(redirect, tracking, videoname, "banner");
     }
     public void CloseButton()

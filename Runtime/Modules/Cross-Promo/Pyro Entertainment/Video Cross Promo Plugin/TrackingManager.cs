@@ -24,9 +24,5 @@ public static class TrackingManager
 
         trackAdjust?.Invoke();
         trackAppmetrica?.Invoke();
-
-//#if !UNITY_EDITOR
-//    Io.AppMetrica.AppMetrica.ReportEvent(report, JsonUtility.ToJson(args));
-//#endif
     }
 }

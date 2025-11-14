@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -21,10 +22,16 @@ namespace AMZNGoDSDK.Editor
 
         private static bool ConfigFileIsAlreadyExist()
         {
-            TextAsset jsonFile = 
-                Resources.Load<TextAsset>(ConfigFileName.Split('.')[0]);
-            
-            return jsonFile != null;
+            try
+            {
+                string fullPath = Path.Combine(ResourcesPath, ConfigFileName);
+                
+                return File.ReadAllText(fullPath).Length > 0;
+            }
+            catch (Exception e)
+            {
+                return false;
+            }
         }
 
         public static SdkSettingsData LoadSettings()
