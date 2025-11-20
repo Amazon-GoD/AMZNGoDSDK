@@ -1,8 +1,5 @@
 fileFormatVersion: 2
 guid: 8b732526f36c74388907f9b43fbd91ee
-labels:
-- al_max
-- al_max_export_path-MaxSdk/Scripts/MaxTargetingData.cs
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2

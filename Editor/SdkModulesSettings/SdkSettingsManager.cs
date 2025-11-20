@@ -13,11 +13,7 @@ namespace AMZNGoDSDK.Editor
         [InitializeOnLoadMethod]
         private static void Initialize()
         {
-            if (ConfigFileIsAlreadyExist())
-            {
-                var defaultSettings = new SdkSettingsData();
-                SaveSettings(defaultSettings);
-            }
+            
         }
 
         private static bool ConfigFileIsAlreadyExist()

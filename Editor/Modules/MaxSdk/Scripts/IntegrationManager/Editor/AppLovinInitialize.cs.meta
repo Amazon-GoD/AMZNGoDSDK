@@ -1,8 +1,5 @@
 fileFormatVersion: 2
 guid: 05fd52c49ee414d3ab6281255a2f3f75
-labels:
-- al_max
-- al_max_export_path-MaxSdk/Scripts/IntegrationManager/Editor/AppLovinInitialize.cs
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2

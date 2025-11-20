@@ -1,8 +1,5 @@
 fileFormatVersion: 2
 guid: ed73837a29f5442839b763ee24db2d9f
-labels:
-- al_max
-- al_max_export_path-MaxSdk/Scripts/MaxCmpService.cs
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
