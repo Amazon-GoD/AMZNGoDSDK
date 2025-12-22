@@ -1,12 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
-using UnityEngine.Video;
 using static Pyro.CrossPromoConfigurationManager;
 
 public class CrossPromoBanner : MonoBehaviour
@@ -14,55 +11,53 @@ public class CrossPromoBanner : MonoBehaviour
     List<bannerData> bannerDataList = new List<bannerData>();
     [SerializeField] Image adImage;
     [SerializeField] GameObject bannerGO;
-    [SerializeField] VideoPlayer videoPlayer;
-    int gifIterator = 0;
-    private string curVideoName;
 
-    public Action OnClose;
-    public Func<bool> IsNoAds;
+    int gifIteratorCur;
+    int gifIteratorNext;
 
-    public IEnumerator Initialize(PromosConfigurationInfo _crossPromoConfigFirst)
+    Action OnClose;
+    Func<bool> IsNoAds;
+
+    public IEnumerator Initialize(PromosConfigurationInfo _crossPromoConfigAll)
     {
         List<string> bannersUrl = new List<string>();
         List<string> trackingList = new List<string>();
         List<string> redirectList = new List<string>();
-        _crossPromoConfigFirst.Videos.ForEach(v =>
+        _crossPromoConfigAll.Videos.ForEach(v =>
         {
             bannersUrl.Add(v.BannerUrl);
             trackingList.Add(v.TrackingUrl);
             redirectList.Add(v.RedirectUrl);
         });
 
-        videoPlayer.prepareCompleted += OnPrepareCompleted;
-        ResizeRenderTexture();
-        yield return DownloadBanners(bannersUrl, trackingList, redirectList);
+        yield return StartCoroutine(DownloadBanners(bannersUrl, trackingList, redirectList));
 
         UpdateBannerUI();
-
         StartCoroutine(GifCor());
     }
-    private IEnumerator GifCor()
+
+    IEnumerator GifCor()
     {
         while (true)
         {
             ShowBanner();
-            yield return videoPlayer.isPrepared;
-            yield return new WaitForSecondsRealtime(12.95f);
+            yield return new WaitForSecondsRealtime(8f);
         }
     }
+
     private void ShowBanner()
     {
-        videoPlayer.source = VideoSource.Url;
-        videoPlayer.url = bannerDataList[gifIterator].path;
+        adImage.sprite = bannerDataList[gifIteratorNext].sprite;
 
-        gifIterator++;
-        if (gifIterator > bannerDataList.Count - 1) gifIterator = 0;
+        gifIteratorCur++;
+        if (gifIteratorCur > bannerDataList.Count - 1) gifIteratorCur = 0;
 
-        videoPlayer.Prepare();
+        gifIteratorNext = gifIteratorCur + 1;
+        if (gifIteratorNext > bannerDataList.Count - 1) gifIteratorNext = 0;
     }
 
     #region DownloadBanners
-    private IEnumerator DownloadBanners(List<string> bannerUrlList, List<string> trackingList, List<string> redirectList)
+    IEnumerator DownloadBanners(List<string> bannerUrlList, List<string> trackingList, List<string> redirectList)
     {
         Debug.Log("DownloadBanners");
         if (bannerUrlList.Count == 0)
@@ -73,83 +68,60 @@ public class CrossPromoBanner : MonoBehaviour
         for (int i = 0; i < bannerUrlList.Count; i++)
         {
             string gifName = $"bannerGif_{i}.mp4";
-            yield return DownloadBanner_Video(gifName, bannerUrlList[i], redirectList[i], trackingList[i]);
+            yield return StartCoroutine(DownloadBanner_Sprite(gifName, bannerUrlList[i], redirectList[i], trackingList[i]));
         }
     }
-    private IEnumerator DownloadBanner_Video(string videoName, string url, string redirectUrl, string trackingUrl)
+    IEnumerator DownloadBanner_Sprite(string gifname, string url, string redirectUrl, string trackingUrl)
     {
-        string localPath = Path.Combine(Application.persistentDataPath, videoName);
-
-        UnityWebRequest request = UnityWebRequest.Get(url);
-        var operation = request.SendWebRequest();
-        Debug.Log($"Downloading {videoName} started");
-        while (!operation.isDone) yield return null;
-
+        Debug.Log("DownloadBanner");
+        UnityWebRequest request = UnityWebRequestTexture.GetTexture(url);
+        yield return request.SendWebRequest();
         if (request.result == UnityWebRequest.Result.Success)
         {
-            Debug.Log($"banner downloading process completed successfully and {videoName} saved to {localPath}, received: " + request.downloadHandler.text);
-            byte[] videoData = request.downloadHandler.data;//��������������� ������� �����
-            yield return File.WriteAllBytesAsync(localPath, videoData);
+            Texture2D texture = ((DownloadHandlerTexture)request.downloadHandler).texture;
+            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
+            bannerDataList.Add(new bannerData(gifname, sprite, redirectUrl, trackingUrl));
         }
-        else Debug.LogError($"||{url}||/n Error in banner downloading process, can't download {videoName} due to {request.error}");
-
-        bannerDataList.Add(new bannerData(videoName, localPath, redirectUrl, trackingUrl));
+        else Debug.Log(request.error);
     }
     #endregion
 
+    #region UIFuncs
+    public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
+    {
+        OnClose = onClose;
+        IsNoAds = isNoAds;
+    }
     public void OnBannerClick()
     {
-        string tracking = bannerDataList[gifIterator-1].trackingUrl;
-        string redirect = bannerDataList[gifIterator-1].redirectUrl;
-        string videoname = bannerDataList[gifIterator-1].title;
+        string tracking = bannerDataList[gifIteratorCur].trackingUrl;
+        string redirect = bannerDataList[gifIteratorCur].redirectUrl;
+        string videoname = bannerDataList[gifIteratorCur].title;
         TrackingManager.UrlTracking(redirect, tracking, videoname, "banner");
     }
     public void CloseButton()
     {
-        //show offer/noAds buy window
-        OnClose?.Invoke();
+        //IAPManager.Instance.PurchaseSubscription();
     }
-
+    public void hide() => bannerGO.SetActive(false);
     public void UpdateBannerUI()
     {
-        bool noads = false;
-        if (IsNoAds != null) noads = IsNoAds();
-        bannerGO.SetActive(!noads);
+        bannerGO.SetActive(!IsNoAds());
     }
-    private void ResizeRenderTexture()
-    {
-        RectTransform rectTransform = videoPlayer.GetComponent<RectTransform>();
-        
-        //int width = (int)rectTransform.rect.width;
-        //int height = (int)rectTransform.rect.height;
-        RenderTexture currentTexture = videoPlayer.targetTexture;
-
-        if (currentTexture != null)
-            currentTexture.Release();
-
-        RenderTexture newTexture = new RenderTexture(640, 100, 16);
-        newTexture.Create();
-
-        videoPlayer.targetTexture = newTexture;
-        videoPlayer.GetComponent<RawImage>().texture = newTexture;
-    }
-    private void OnPrepareCompleted(VideoPlayer source)
-    {
-        videoPlayer.Play();
-    }
+    #endregion
 }
 class bannerData
 {
     public string title;
-    public string path;
+    public Sprite sprite;
     public string redirectUrl;
     public string trackingUrl;
 
-    public bannerData(string title, string path, string redirectUrl, string trackingUrl)
+    public bannerData(string title, Sprite sprite, string redirectUrl, string trackingUrl)
     {
-        this.path = path;
+        this.title = title;
+        this.sprite = sprite;
         this.redirectUrl = redirectUrl;
         this.trackingUrl = trackingUrl;
-        this.title = title;
     }
 }

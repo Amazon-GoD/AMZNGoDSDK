@@ -11,5 +11,6 @@ namespace AMZNGoDSDK.Editor
         public AppMetricaSettingData AppMetrica = new();
         public CrossPromoSettingData CrossPromo = new();
         public InfaticaSettingData Infatica = new();
+        public InAppPurchaseSettingData InAppPurchase = new();
     }
 }

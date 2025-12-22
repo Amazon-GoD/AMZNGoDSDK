@@ -10,6 +10,7 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private AppMetricaModule _appMetricaModule;
         [SerializeField] private CrossPromoModule _crossPromoModule;
         [SerializeField] private InfaticaModule _infaticaModule;
+        [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
         
         public bool Enabled { get; private set; }
         
@@ -30,6 +31,7 @@ namespace AMZNGoDSDK.Runtime
             var crossPromoSettings = sdkSettingsData.CrossPromo;
             var appMetricaSettings = sdkSettingsData.AppMetrica;
             var adjustSettings = sdkSettingsData.Adjust;
+            var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
 
             #region Constructs
 
@@ -41,6 +43,7 @@ namespace AMZNGoDSDK.Runtime
             _crossPromoModule.Construct(
                 crossPromoSettings.Enabled,
                 crossPromoSettings.ConfigUrl,
+                crossPromoSettings.AppodealSdkKey,
                 crossPromoSettings.MaxSdkKey,
                 crossPromoSettings.InterstitialId,
                 crossPromoSettings.RewardedId);
@@ -54,19 +57,24 @@ namespace AMZNGoDSDK.Runtime
                 adjustSettings.Key,
                 adjustSettings.Environment);
 
+            _inAppPurchaseModule.Construct(inAppPurchaseSettings);
+
             #endregion
             
             InitializeModules(
                 _infaticaModule,
                 _crossPromoModule,
                 _appMetricaModule,
-                _adjustModule);
+                _adjustModule,
+                _inAppPurchaseModule
+            );
             
-            OnBannerClose = _crossPromoModule.OnClose;
-            IsNoAds = _crossPromoModule.IsNoAds;
             OnInfaticaAgree = _infaticaModule.OnAgree;
         }
-        
+        public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
+        {
+            _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
+        }
         #endregion
         
         #region Infatica
@@ -89,9 +97,6 @@ namespace AMZNGoDSDK.Runtime
         #region Cross Promo
 
         public bool IsAdsReady => _crossPromoModule.IsAdsReady;
-        
-        public Action OnBannerClose;
-        public Func<bool> IsNoAds; 
         
         public void ShowInterstitial()
         {
@@ -134,7 +139,39 @@ namespace AMZNGoDSDK.Runtime
         }
         
         #endregion
-        
+
+        #region In-App Purchase
+
+        public bool IsIAPInitialized => _inAppPurchaseModule.IsInitialized;
+
+        public void BuyProduct(string productId)
+        {
+            if (!_inAppPurchaseModule.Enabled)
+                return;
+
+            _inAppPurchaseModule.BuyProduct(productId);
+        }
+
+        public bool IsSubscribed(string productId)
+        {
+            if (!_inAppPurchaseModule.Enabled)
+                return false;
+
+            return _inAppPurchaseModule.IsSubscribed(productId);
+        }
+
+        public void SetIAPPurchaseCompleteCallback(Action<string> callback)
+        {
+            _inAppPurchaseModule.SetPurchaseCompleteCallback(callback);
+        }
+
+        public void SetIAPPurchaseFailedCallback(Action<string> callback)
+        {
+            _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
+        }
+
+        #endregion
+
         #region Private Members
 
         private void InitializeModules(params ModuleBase[] modules)

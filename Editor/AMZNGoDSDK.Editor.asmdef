@@ -1,7 +1,14 @@
 {
     "name": "AMZNGoDSDK.Editor",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "GUID:3bb354da3476043368633b924d1c7da0",
+        "GUID:fe25561d224ed4743af4c60938a59d0b",
+        "GUID:60bfecf5cb232594891bc622f40d6bed",
+        "GUID:08d1c582746949b40ba6a45cdb776bdf",
+        "GUID:ee41a6a4895314bdd9805718caa2c91e",
+        "GUID:96646b6455fcf4f72a0caf10d71036c1"
+    ],
     "includePlatforms": [
         "Editor"
     ],

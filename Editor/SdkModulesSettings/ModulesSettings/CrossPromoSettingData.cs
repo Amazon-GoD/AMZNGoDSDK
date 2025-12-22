@@ -6,6 +6,7 @@ namespace AMZNGoDSDK.Editor
     public class CrossPromoSettingData : ModuleSettingData
     {
         public string ConfigUrl;
+        public string AppodealSdkKey;
         public string MaxSdkKey;
         public string InterstitialId;
         public string RewardedId;

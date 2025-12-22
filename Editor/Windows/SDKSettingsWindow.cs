@@ -44,7 +44,10 @@ namespace AMZNGoDSDK.Editor
             
             // Adjust Settings
             DrawAdjustSettings();
-            
+
+            // In-App Purchase Settings
+            DrawInAppPurchaseSettings();
+
             GUILayout.FlexibleSpace();
             
             if (GUILayout.Button("Save Settings", GUILayout.Height(30)))
@@ -167,6 +170,81 @@ namespace AMZNGoDSDK.Editor
                     .EnumPopup("Environment", _currentSettings.Adjust.Environment);
             }
             
+            EditorGUILayout.EndVertical();
+            GUILayout.Space(10);
+        }
+
+        private void DrawInAppPurchaseSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            GUILayout.Label("In-App Purchase", EditorStyles.boldLabel);
+
+            _currentSettings.InAppPurchase.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.InAppPurchase.Enabled);
+
+            if (_currentSettings.InAppPurchase.Enabled)
+            {
+                _currentSettings.InAppPurchase.AppStoreTarget = (AppStoreTarget)EditorGUILayout
+                    .EnumPopup("App Store Target", _currentSettings.InAppPurchase.AppStoreTarget);
+                _currentSettings.InAppPurchase.UseFakeStoreInEditor = EditorGUILayout
+                    .Toggle("Use Fake Store in Editor", _currentSettings.InAppPurchase.UseFakeStoreInEditor);
+
+                GUILayout.Space(10);
+
+                // Subscription Products
+                GUILayout.Label("Subscription Products:", EditorStyles.miniBoldLabel);
+
+                for (int i = 0; i < _currentSettings.InAppPurchase.SubscriptionProducts.Count; i++)
+                {
+                    var product = _currentSettings.InAppPurchase.SubscriptionProducts[i];
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                    product.Enabled = EditorGUILayout.Toggle("Enabled", product.Enabled);
+
+                    if (product.Enabled)
+                    {
+                        product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
+                        product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
+                        product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
+                    }
+
+                    EditorGUILayout.EndVertical();
+                    GUILayout.Space(5);
+                }
+
+                if (GUILayout.Button("Add Subscription Product"))
+                {
+                    _currentSettings.InAppPurchase.SubscriptionProducts.Add(new SubscriptionProduct());
+                }
+
+                // Consumable Products
+                GUILayout.Space(10);
+                GUILayout.Label("Consumable Products:", EditorStyles.miniBoldLabel);
+
+                for (int i = 0; i < _currentSettings.InAppPurchase.ConsumableProducts.Count; i++)
+                {
+                    var product = _currentSettings.InAppPurchase.ConsumableProducts[i];
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                    product.Enabled = EditorGUILayout.Toggle("Enabled", product.Enabled);
+
+                    if (product.Enabled)
+                    {
+                        product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
+                        product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
+                        product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
+                    }
+
+                    EditorGUILayout.EndVertical();
+                    GUILayout.Space(5);
+                }
+
+                if (GUILayout.Button("Add Consumable Product"))
+                {
+                    _currentSettings.InAppPurchase.ConsumableProducts.Add(new ConsumableProduct());
+                }
+            }
+
             EditorGUILayout.EndVertical();
             GUILayout.Space(10);
         }

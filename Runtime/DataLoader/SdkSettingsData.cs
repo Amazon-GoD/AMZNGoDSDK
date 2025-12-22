@@ -6,10 +6,11 @@ namespace AMZNGoDSDK.Runtime
     public class SdkSettingsData
     {
         public bool Enabled;
-        
+
         public AdjustSettingData Adjust = new();
         public AppMetricaSettingData AppMetrica = new();
         public CrossPromoSettingData CrossPromo = new();
         public InfaticaSettingData Infatica = new();
+        public InAppPurchaseSettingData InAppPurchase = new();
     }
 }

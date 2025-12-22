@@ -14,30 +14,33 @@ namespace AMZNGoDSDK.Runtime {
         [SerializeField] private CrossPromoVideoManager _videoManager;
         [FormerlySerializedAs("_pyroBanner")] [SerializeField] private CrossPromoBanner _crossPromoBanner;
         [SerializeField] private CrossPromoConfigurationManager _configurationManager;
+        [SerializeField] private AppodealAdapter _appodealAdapter;
         
-        private string _configUrl = "https://pub-bbc57aaaa559422daa4079987645f56e.r2.dev/test.json";
+        private string _configUrl;
+        private string _appodealSDKKey;
         private string _maxSDKKey;
         private string _interstitialAdID;
         private string _rewardedAdID;
         private PromosConfigurationInfo _crossPromoConfigAll;
         private PromosConfigurationInfo _crossPromoConfigNotWatchedYet;
 
-        //banner submodule
-        public Action OnClose;
-        public Func<bool> IsNoAds;
-
         //general
         public bool IsAdsReady => CrossPromoManager.Instance.IsReady || MaxMediation.Instance.IsReady;
+
+        enum VideoAdType { CrossPromo, Appodeal };
+        VideoAdType videoAdType = VideoAdType.Appodeal;
 
         public void Construct(
             bool enable, 
             string configUrl, 
+            string appodealSDKKey,
             string maxSDKKey, 
             string interstitialAdID, 
             string rewardedAdID)
         {
             Enabled = enable;
             _configUrl = configUrl;
+            _appodealSDKKey = appodealSDKKey;
             _maxSDKKey = maxSDKKey;
             _interstitialAdID = interstitialAdID;
             _rewardedAdID = rewardedAdID;
@@ -52,24 +55,38 @@ namespace AMZNGoDSDK.Runtime {
         {
             yield return LoadJson();
 
-            if (IsAllVideosWatched())
+            switch (videoAdType)
             {
-                IEnumerator InitVideoBanner()
-                {
+                case VideoAdType.CrossPromo:
                     yield return _videoManager.Initialize(_crossPromoConfigAll);
-                    yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
-                }
-                MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID, () => StartCoroutine(InitVideoBanner()));
-            }
-            else
-            {
-                yield return _videoManager.Initialize(_crossPromoConfigAll);
-                yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
-                MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID);
+                    break;
+                case VideoAdType.Appodeal:
+                    _appodealAdapter.Initialize(_appodealSDKKey);
+                    break;
             }
 
-            _crossPromoBanner.OnClose = OnClose;
-            _crossPromoBanner.IsNoAds = IsNoAds;
+            yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
+
+            //if (IsAllVideosWatched())
+            //{
+            //    IEnumerator InitVideoBanner()
+            //    {
+            //        if (videoAdType == VideoAdType.CrossPromo) yield return _videoManager.Initialize(_crossPromoConfigAll);
+            //        yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
+            //    }
+            //    MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID, () => StartCoroutine(InitVideoBanner()));
+            //}
+            //else
+            //{
+            //    if (videoAdType == VideoAdType.CrossPromo) yield return _videoManager.Initialize(_crossPromoConfigAll);
+            //    yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
+            //    MaxMediation.Instance.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID);
+            //}
+        }
+
+        public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
+        {
+            _crossPromoBanner.SetBannerFuncs(onClose, isNoAds);
         }
 
         private bool IsAllVideosWatched()
@@ -100,24 +117,30 @@ namespace AMZNGoDSDK.Runtime {
 
         #region ShowAd
 
-        public void ShowInterstitial() => 
-            ShowAd();
-
-        public void ShowRewarded(Action getReward) => 
-            ShowAd(getReward);
-
-        private void ShowAd(Action getReward = null)
+        public void ShowInterstitial()
         {
-            CrossPromoManager.Instance.Show(_crossPromoConfigAll, _crossPromoConfigNotWatchedYet, getReward);
+            switch (videoAdType)
+            {
+                case VideoAdType.CrossPromo:
+                    CrossPromoManager.Instance.Show(_crossPromoConfigAll, _crossPromoConfigNotWatchedYet);
+                    break;
+                case VideoAdType.Appodeal:
+                    _appodealAdapter.Show_Interstitial();
+                    break;
+            }
+        }
 
-            //if (IsAdsReady())
-            //{
-            //    Debug.Log("Pyro show ad");
-            //}
-            //else
-            //{
-            //    //CrossPromoNotReadyCallback();
-            //}
+        public void ShowRewarded(Action getReward)
+        {
+            switch (videoAdType)
+            {
+                case VideoAdType.CrossPromo:
+                    CrossPromoManager.Instance.Show(_crossPromoConfigAll, _crossPromoConfigNotWatchedYet, getReward);
+                    break;
+                case VideoAdType.Appodeal:
+                    _appodealAdapter.Show_Rewarded(getReward);
+                    break;
+            }
         }
 
         #endregion

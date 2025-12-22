@@ -8,7 +8,9 @@
   "licensesUrl": "",
   "dependencies": {
     "com.unity.ugui": "1.0.0",
-    "com.unity.textmeshpro": "3.0.9"
+    "com.unity.textmeshpro": "3.0.9",
+    "com.unity.purchasing": "4.13.0",
+    "com.unity.services.core": "1.12.5"
   },
   "samples": [
     {
