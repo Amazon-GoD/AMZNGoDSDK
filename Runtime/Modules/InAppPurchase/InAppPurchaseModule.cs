@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Purchasing;
+using UnityEngine.Purchasing.Extension;
 using Unity.Services.Core;
 
 namespace AMZNGoDSDK.Runtime
@@ -13,9 +14,11 @@ namespace AMZNGoDSDK.Runtime
 
         private IStoreController storeController;
         private IExtensionProvider extensionProvider;
+        private readonly HashSet<string> addedProductIds = new();
 
         public Action<string> OnPurchaseComplete;
         public Action<string> OnPurchaseFailedCallback;
+        private Action<string, int> _consumableRewardSetter;
 
         public bool IsInitialized { get; private set; } = false;
 
@@ -54,23 +57,7 @@ namespace AMZNGoDSDK.Runtime
 
                 var builder = ConfigurationBuilder.Instance(module);
 
-                // Добавляем подписки
-                foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
-                {
-                    builder.AddProduct(subscription.ProductId, ProductType.Subscription);
-                    subscriptionStatuses[subscription.ProductId] = new SubscriptionStatus
-                    {
-                        ProductId = subscription.ProductId,
-                        IsSubscribed = LoadSubscriptionStatus(subscription.ProductId),
-                        RewardAmount = subscription.RewardAmount
-                    };
-                }
-
-                // Добавляем единичные товары
-                foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
-                {
-                    builder.AddProduct(consumable.ProductId, ProductType.Consumable);
-                }
+                BuildProducts(builder);
 
                 UnityPurchasing.Initialize(this, builder);
             }
@@ -81,6 +68,113 @@ namespace AMZNGoDSDK.Runtime
             }
 
             CheckExpiredSubscriptions();
+        }
+
+        private void BuildProducts(ConfigurationBuilder builder)
+        {
+            addedProductIds.Clear();
+
+            // Добавляем товары из настроек
+            foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
+            {
+                AddSubscriptionProduct(builder, subscription);
+            }
+
+            foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
+            {
+                AddConsumableProduct(builder, consumable);
+            }
+
+            // Импорт из Unity IAP каталога
+            ImportProductsFromUnityCatalog(builder);
+        }
+
+        private void AddSubscriptionProduct(ConfigurationBuilder builder, SubscriptionProduct subscription)
+        {
+            if (string.IsNullOrWhiteSpace(subscription.ProductId))
+                return;
+
+            if (!addedProductIds.Add(subscription.ProductId))
+                return;
+
+            builder.AddProduct(subscription.ProductId, ProductType.Subscription);
+
+            if (!subscriptionStatuses.ContainsKey(subscription.ProductId))
+            {
+                subscriptionStatuses[subscription.ProductId] = new SubscriptionStatus
+                {
+                    ProductId = subscription.ProductId,
+                    IsSubscribed = LoadSubscriptionStatus(subscription.ProductId),
+                    RewardAmount = subscription.RewardAmount
+                };
+            }
+        }
+
+        private void AddConsumableProduct(ConfigurationBuilder builder, ConsumableProduct consumable)
+        {
+            if (string.IsNullOrWhiteSpace(consumable.ProductId))
+                return;
+
+            if (!addedProductIds.Add(consumable.ProductId))
+                return;
+
+            // подставляем ключ награды по умолчанию
+            if (string.IsNullOrWhiteSpace(consumable.RewardKey))
+                consumable.RewardKey = consumable.ProductId;
+
+            builder.AddProduct(consumable.ProductId, ProductType.Consumable);
+        }
+
+        private void ImportProductsFromUnityCatalog(ConfigurationBuilder builder)
+        {
+            var catalog = ProductCatalog.LoadDefaultCatalog();
+
+            if (catalog == null || catalog.allProducts == null || catalog.allProducts.Count == 0)
+                return;
+
+            foreach (var item in catalog.allProducts)
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.id))
+                    continue;
+
+                if (!addedProductIds.Add(item.id))
+                    continue;
+
+                builder.AddProduct(item.id, item.type);
+
+                if (item.type == ProductType.Subscription && !subscriptionStatuses.ContainsKey(item.id))
+                {
+                    subscriptionStatuses[item.id] = new SubscriptionStatus
+                    {
+                        ProductId = item.id,
+                        IsSubscribed = LoadSubscriptionStatus(item.id),
+                        RewardAmount = 0
+                    };
+                }
+
+                if (item.type == ProductType.Subscription && settings.SubscriptionProducts.All(s => s.ProductId != item.id))
+                {
+                    settings.SubscriptionProducts.Add(new SubscriptionProduct
+                    {
+                        ProductId = item.id,
+                        DisplayName = item.id,
+                        RewardAmount = 0,
+                        Enabled = true
+                    });
+                }
+
+                if (item.type == ProductType.Consumable && settings.ConsumableProducts.All(c => c.ProductId != item.id))
+                {
+                    settings.ConsumableProducts.Add(new ConsumableProduct
+                    {
+                        ProductId = item.id,
+                        DisplayName = item.id,
+                        RewardAmount = 0,
+                        RewardKey = item.id,
+                        Enabled = true
+                    });
+                }
+            }
         }
 
         public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
@@ -149,6 +243,49 @@ namespace AMZNGoDSDK.Runtime
             OnPurchaseFailedCallback?.Invoke(product.definition.id);
         }
 
+        public void RestorePurchases(Action<bool> onComplete = null)
+        {
+            if (extensionProvider == null)
+            {
+                Debug.LogWarning("[AMZNGoDSDK] ❌ Нельзя восстановить покупки — магазин не инициализирован");
+                onComplete?.Invoke(false);
+                return;
+            }
+
+            try
+            {
+                if (settings.UseAmazonAppStore)
+                {
+                    Debug.LogWarning("[AMZNGoDSDK] ℹ️ Amazon Appstore не поддерживает явный restore — покупки подтягиваются при запросе товаров");
+                    onComplete?.Invoke(false);
+                    return;
+                }
+
+                var google = extensionProvider.GetExtension<IGooglePlayStoreExtensions>();
+                if (google != null)
+                {
+#pragma warning disable CS0618
+                    google.RestoreTransactions(success => onComplete?.Invoke(success));
+#pragma warning restore CS0618
+                    return;
+                }
+
+                var apple = extensionProvider.GetExtension<IAppleExtensions>();
+                if (apple != null)
+                {
+                    apple.RestoreTransactions(onComplete);
+                    return;
+                }
+
+                onComplete?.Invoke(false);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AMZNGoDSDK] ❌ Ошибка восстановления покупок: {e.Message}");
+                onComplete?.Invoke(false);
+            }
+        }
+
         public void BuyProduct(string productId)
         {
             if (storeController == null)
@@ -172,6 +309,12 @@ namespace AMZNGoDSDK.Runtime
             return subscriptionStatuses.ContainsKey(productId) && subscriptionStatuses[productId].IsSubscribed;
         }
 
+        public bool HasReceipt(string productId)
+        {
+            var product = storeController?.products.WithID(productId);
+            return product != null && product.hasReceipt;
+        }
+
         public Product GetProduct(string productId)
         {
             return storeController?.products.WithID(productId);
@@ -193,11 +336,14 @@ namespace AMZNGoDSDK.Runtime
 
         private void GiveConsumableReward(ConsumableProduct consumable)
         {
-            int currentCoins = PlayerPrefs.GetInt("TotalCoins", 0);
-            PlayerPrefs.SetInt("TotalCoins", currentCoins + consumable.RewardAmount);
-            PlayerPrefs.Save();
+            string rewardKey = string.IsNullOrWhiteSpace(consumable.RewardKey)
+                ? consumable.ProductId
+                : consumable.RewardKey;
 
-            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда за товар {consumable.ProductId}: {consumable.RewardAmount} монет");
+            var rewardSetter = _consumableRewardSetter ?? DefaultConsumableRewardSetter;
+            rewardSetter.Invoke(rewardKey, consumable.RewardAmount);
+
+            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда за товар {consumable.ProductId}: {consumable.RewardAmount} (key: {rewardKey})");
         }
 
         private void SetSubscriptionStatus(string productId, bool status)
@@ -252,6 +398,11 @@ namespace AMZNGoDSDK.Runtime
             OnPurchaseFailedCallback += callback;
         }
 
+        public void SetConsumableRewardSetter(Action<string, int> rewardSetter)
+        {
+            _consumableRewardSetter = rewardSetter;
+        }
+
         public override void Cleenup()
         {
             // Очистка ресурсов если необходимо
@@ -264,6 +415,13 @@ namespace AMZNGoDSDK.Runtime
             public bool IsSubscribed;
             public int RewardAmount;
             public DateTime LastCheck;
+        }
+
+        private void DefaultConsumableRewardSetter(string rewardKey, int rewardAmount)
+        {
+            int current = PlayerPrefs.GetInt(rewardKey, 0);
+            PlayerPrefs.SetInt(rewardKey, current + rewardAmount);
+            PlayerPrefs.Save();
         }
     }
 }

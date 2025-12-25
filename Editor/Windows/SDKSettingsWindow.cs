@@ -115,15 +115,17 @@ namespace AMZNGoDSDK.Editor
         private void DrawCrossPromoSettings()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            
+
             GUILayout.Label("Cross Promo", EditorStyles.boldLabel);
-            
+
             _currentSettings.CrossPromo.Enabled = EditorGUILayout.Toggle("Enabled", _currentSettings.CrossPromo.Enabled);
-            
+
             if (_currentSettings.CrossPromo.Enabled)
             {
                 _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                     .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
+                _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
+                    .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
                 _currentSettings.CrossPromo.MaxSdkKey = EditorGUILayout
                     .TextField("Max SDK Key", _currentSettings.CrossPromo.MaxSdkKey);
                 _currentSettings.CrossPromo.InterstitialId = EditorGUILayout
@@ -131,7 +133,7 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.CrossPromo.RewardedId = EditorGUILayout
                     .TextField("Rewarded Id", _currentSettings.CrossPromo.RewardedId);
             }
-            
+
             EditorGUILayout.EndVertical();
             GUILayout.Space(10);
         }
@@ -233,6 +235,7 @@ namespace AMZNGoDSDK.Editor
                         product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
                         product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
                         product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
+                        product.RewardKey = EditorGUILayout.TextField("Reward Key", string.IsNullOrEmpty(product.RewardKey) ? product.ProductId : product.RewardKey);
                     }
 
                     EditorGUILayout.EndVertical();

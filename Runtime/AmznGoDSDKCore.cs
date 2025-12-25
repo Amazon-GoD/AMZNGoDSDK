@@ -160,6 +160,22 @@ namespace AMZNGoDSDK.Runtime
             return _inAppPurchaseModule.IsSubscribed(productId);
         }
 
+        public bool HasReceipt(string productId)
+        {
+            if (!_inAppPurchaseModule.Enabled)
+                return false;
+
+            return _inAppPurchaseModule.HasReceipt(productId);
+        }
+
+        public void RestorePurchases(Action<bool> onComplete = null)
+        {
+            if (!_inAppPurchaseModule.Enabled)
+                return;
+
+            _inAppPurchaseModule.RestorePurchases(onComplete);
+        }
+
         public void SetIAPPurchaseCompleteCallback(Action<string> callback)
         {
             _inAppPurchaseModule.SetPurchaseCompleteCallback(callback);
@@ -168,6 +184,11 @@ namespace AMZNGoDSDK.Runtime
         public void SetIAPPurchaseFailedCallback(Action<string> callback)
         {
             _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
+        }
+
+        public void SetIAPConsumableRewardSetter(Action<string, int> rewardSetter)
+        {
+            _inAppPurchaseModule.SetConsumableRewardSetter(rewardSetter);
         }
 
         #endregion

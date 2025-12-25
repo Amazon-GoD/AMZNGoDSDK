@@ -136,6 +136,7 @@ namespace AMZNGoDSDK.Editor
                     ProductId = runtimeProduct.ProductId,
                     DisplayName = runtimeProduct.DisplayName,
                     RewardAmount = runtimeProduct.RewardAmount,
+                    RewardKey = runtimeProduct.RewardKey,
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -254,6 +255,7 @@ namespace AMZNGoDSDK.Editor
                     ProductId = editorProduct.ProductId,
                     DisplayName = editorProduct.DisplayName,
                     RewardAmount = editorProduct.RewardAmount,
+                    RewardKey = editorProduct.RewardKey,
                     Enabled = editorProduct.Enabled
                 });
             }

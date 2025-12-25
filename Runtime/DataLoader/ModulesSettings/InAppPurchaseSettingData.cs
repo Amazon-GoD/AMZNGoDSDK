@@ -27,6 +27,7 @@ namespace AMZNGoDSDK.Runtime
         public string ProductId;
         public string DisplayName;
         public int RewardAmount;
+        public string RewardKey;
         public bool Enabled = true;
     }
 }
