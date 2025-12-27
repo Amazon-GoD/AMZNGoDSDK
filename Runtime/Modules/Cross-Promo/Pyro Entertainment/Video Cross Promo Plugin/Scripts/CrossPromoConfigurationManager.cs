@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace Pyro
+namespace AMZNGoDSDK.Runtime
 {
     public class CrossPromoConfigurationManager : MonoBehaviour
     {
@@ -25,39 +25,49 @@ namespace Pyro
             [Tooltip("Chance value should be a float between 0 and 1.")]
             [Range(0f, 1f)]
             public float Weight;
-            public List<PromoConfiguration> Videos;
+            public List<PromoConfiguration> Videos = new();
 
             public PromosConfigurationInfo Copy()
             {
                 var confInfo = new PromosConfigurationInfo();
                 confInfo.Weight = Weight;
-                confInfo.Videos = new List<PromoConfiguration>();
                 confInfo.Videos.AddRange(Videos);
                 return confInfo;
             }
+
             public void CheckVideosShowLimit()
             {
-                if (Videos.Count <= 0) return;
-                List<string> videosToDelete = new List<string>();
+                if (Videos == null || Videos.Count == 0)
+                    return;
+
+                var videosToDelete = new List<PromoConfiguration>();
                 foreach (var videoInfo in Videos)
                 {
                     int videoShowCount = PlayerPrefs.GetInt(videoInfo.Title, 0);
-                    //Debug.Log(videoInfo.Title + " show count: " + videoShowCount);
                     if (videoShowCount >= videoInfo.MaxShowCount)
                     {
-                        videosToDelete.Add(videoInfo.Title);
+                        videosToDelete.Add(videoInfo);
                     }
                 }
 
                 foreach (var video in videosToDelete)
                 {
-                    var vid = Videos.Where(x => x.Title == video).First();
-                    Videos.ForEach(x => x.Weight += vid.Weight / (Videos.Count - 1));
+                    var vid = Videos.FirstOrDefault(x => x.Title == video.Title);
+                    if (vid == null) continue;
+
+                    foreach (var other in Videos)
+                    {
+                        if (other == vid) continue;
+                        other.Weight += vid.Weight / Mathf.Max(1, Videos.Count - 1);
+                    }
+
                     Videos.Remove(vid);
                 }
 
                 if (Videos.Count > 0)
+                {
                     Videos.First().Weight += 1 - Videos.Sum(video => video.Weight);
+                }
             }
         }
 
@@ -74,84 +84,56 @@ namespace Pyro
             public int OverlayShowDelayInSeconds;
             public int CloseShowDelayInSeconds;
             public VideoExtension FileExtension;
-            [Tooltip("Chance value should be a float between 0 and 1. The sum of all video chances should allways be 1.")]
+            [Tooltip("Chance value should be a float between 0 and 1. The sum of all video chances should always be 1.")]
             [Range(0f, 1f)]
             public float Weight;
-            public List<string> AppPackageName;
+            public List<string> AppPackageName = new();
             public int MaxShowCount;
         }
 
-        //[SerializeField]
-        //private PromosConfigurationInfo _configuration;
-
         public async Task<PromosConfigurationInfo> FetchRemoteConfigAsync(string configUrl)
         {
-            PromosConfigurationInfo _configuration = new PromosConfigurationInfo();
-            int maxRetries = 5;
-            float retryDelay = 1f;
+            var configuration = new PromosConfigurationInfo();
+            if (string.IsNullOrWhiteSpace(configUrl))
+            {
+                return configuration;
+            }
 
-            if (configUrl == string.Empty)
-                return _configuration;
-
+            const int maxRetries = 5;
+            const float retryDelay = 1f;
             int attempt = 0;
-            
+
             while (attempt < maxRetries)
             {
                 attempt++;
                 try
                 {
-                    using (UnityWebRequest request = UnityWebRequest.Get(configUrl))
+                    using var request = UnityWebRequest.Get(configUrl);
+                    var operation = request.SendWebRequest();
+                    while (!operation.isDone)
                     {
-                        // Send the request and await its completion
-                        var operation = request.SendWebRequest();
-
-                        while (!operation.isDone)
-                            await Task.Yield();
-
-                        if (request.result == UnityWebRequest.Result.ConnectionError ||
-                            request.result == UnityWebRequest.Result.ProtocolError)
-                        {
-                            Debug.LogWarning($"Attempt {attempt} failed: {request.error}");
-
-                            // ���� ��� ��������� ������� - ���������� ������� ������������
-                            if (attempt >= maxRetries)
-                            {
-                                Debug.LogError($"All attempts failed. Last error: {request.error}");
-                                return _configuration;
-                            }
-
-                            // ���� ����� ��������� ��������
-                            await Task.Delay((int)(retryDelay * 1000));
-                            continue;
-                        }
-
-                        string jsonResponse = request.downloadHandler.text;
-                        Debug.Log($"Remote config fetched: {jsonResponse}");
-
-                        // Deserialize the JSON response into the RemoteConfig object
-                        _configuration = JsonUtility.FromJson<PromosConfigurationInfo>(jsonResponse);
-
-                        List<PromoConfiguration> videosToRemove = new List<PromoConfiguration>();
-                        foreach (var video in _configuration.Videos)
-                        {
-                            foreach (var packageName in video.AppPackageName)
-                            {
-                                if (AppChecker.CheckIfAppInstalled(packageName))
-                                {
-                                    videosToRemove.Add(video);
-                                    break;
-                                }
-                            }
-                        }
-
-#if !UNITY_EDITOR && UNITY_ANDROID
-                foreach (var video in videosToRemove) _configuration.Videos.Remove(video);
-#endif
-                        float weightNeeded = 1 - _configuration.Videos.Sum(video => video.Weight);
-                        foreach (var video in _configuration.Videos) video.Weight += weightNeeded / _configuration.Videos.Count;
-                        _configuration.Videos.First().Weight += 1 - _configuration.Videos.Sum(video => video.Weight);
-                        return _configuration;
+                        await Task.Yield();
                     }
+
+                    if (request.result == UnityWebRequest.Result.ConnectionError ||
+                        request.result == UnityWebRequest.Result.ProtocolError)
+                    {
+                        Debug.LogWarning($"Attempt {attempt} failed: {request.error}");
+
+                        if (attempt >= maxRetries)
+                        {
+                            Debug.LogError($"All attempts failed. Last error: {request.error}");
+                            return configuration;
+                        }
+
+                        await Task.Delay((int)(retryDelay * 1000));
+                        continue;
+                    }
+
+                    configuration = ParseConfig(request.downloadHandler.text);
+                    NormalizeWeights(configuration);
+                    RemoveInstalledApps(configuration);
+                    return configuration;
                 }
                 catch (Exception ex)
                 {
@@ -159,55 +141,79 @@ namespace Pyro
                     if (attempt >= maxRetries)
                     {
                         Debug.LogError($"All attempts failed. Last exception: {ex}");
-                        return _configuration;
+                        return configuration;
                     }
 
                     await Task.Delay((int)(retryDelay * 1000));
                 }
             }
 
-            /////////////////////////////////////
-            using (UnityWebRequest request = UnityWebRequest.Get(configUrl))
+            return configuration;
+        }
+
+        private static PromosConfigurationInfo ParseConfig(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
             {
-                // Send the request and await its completion
-                var operation = request.SendWebRequest();
+                return new PromosConfigurationInfo();
+            }
 
-                while (!operation.isDone)
-                    await Task.Yield();
+            Debug.Log($"Remote config fetched: {json}");
+            var configuration = JsonUtility.FromJson<PromosConfigurationInfo>(json) ?? new PromosConfigurationInfo();
+            configuration.Videos = configuration.Videos ?? new List<PromoConfiguration>();
+            return configuration;
+        }
 
-                if (request.result == UnityWebRequest.Result.ConnectionError ||
-                    request.result == UnityWebRequest.Result.ProtocolError)
+        private static void NormalizeWeights(PromosConfigurationInfo configuration)
+        {
+            if (configuration?.Videos == null || configuration.Videos.Count == 0)
+            {
+                return;
+            }
+
+            var totalWeight = configuration.Videos.Sum(video => video.Weight);
+            var delta = 1f - totalWeight;
+
+            if (Mathf.Approximately(delta, 0f))
+            {
+                return;
+            }
+
+            var perVideo = delta / configuration.Videos.Count;
+            for (int i = 0; i < configuration.Videos.Count; i++)
+            {
+                configuration.Videos[i].Weight += perVideo;
+            }
+
+            configuration.Videos[0].Weight += 1 - configuration.Videos.Sum(video => video.Weight);
+        }
+
+        private static void RemoveInstalledApps(PromosConfigurationInfo configuration)
+        {
+            if (configuration?.Videos == null || configuration.Videos.Count == 0)
+            {
+                return;
+            }
+
+            var videosToRemove = new List<PromoConfiguration>();
+            foreach (var video in configuration.Videos)
+            {
+                foreach (var packageName in video.AppPackageName)
                 {
-                    Debug.LogError($"Error fetching remote config: {request.error}");
-                    return _configuration;
-                }
-
-                string jsonResponse = request.downloadHandler.text;
-                Debug.Log($"Remote config fetched: {jsonResponse}");
-
-                // Deserialize the JSON response into the RemoteConfig object
-                _configuration = JsonUtility.FromJson<PromosConfigurationInfo>(jsonResponse);
-
-                List<PromoConfiguration> videosToRemove = new List<PromoConfiguration>();
-                foreach (var video in _configuration.Videos)
-                {
-                    foreach (var packageName in video.AppPackageName)
+                    if (AppChecker.CheckIfAppInstalled(packageName))
                     {
-                        if (AppChecker.CheckIfAppInstalled(packageName))
-                        {
-                            videosToRemove.Add(video);
-                            break;
-                        }
+                        videosToRemove.Add(video);
+                        break;
                     }
                 }
+            }
 
 #if !UNITY_EDITOR && UNITY_ANDROID
-                foreach (var video in videosToRemove) _configuration.Videos.Remove(video);
-#endif
-                foreach (var video in _configuration.Videos) video.Weight = 1f / _configuration.Videos.Count;
-
-                return _configuration;
+            foreach (var video in videosToRemove)
+            {
+                configuration.Videos.Remove(video);
             }
+#endif
         }
     }
 }

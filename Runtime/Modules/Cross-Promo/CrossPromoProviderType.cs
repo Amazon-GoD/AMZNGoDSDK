@@ -2,8 +2,8 @@ namespace AMZNGoDSDK.Runtime
 {
     public enum CrossPromoProviderType
     {
-        Pyro,
-        Appodeal
+        Appodeal,
+        AppLovin
     }
 }
 

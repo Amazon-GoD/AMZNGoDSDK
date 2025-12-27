@@ -1,44 +1,64 @@
-using Pyro;
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
-using static Pyro.CrossPromoConfigurationManager;
+using static AMZNGoDSDK.Runtime.CrossPromoConfigurationManager;
 
 namespace AMZNGoDSDK.Runtime
 {
     public class CrossPromoModule : ModuleBase
     {
-#pragma warning disable CS4014 //for InitCrossPromoModulesCorAsync
+        public static CrossPromoModule Instance { get; private set; }
 
-        //Other classes
-        [SerializeField] private CrossPromoVideoManager _videoManager;
-        [FormerlySerializedAs("_pyroBanner")] [SerializeField] private CrossPromoBanner _crossPromoBanner;
+        public static event Action<PromosConfigurationInfo> OnConfigLoaded;
+        public static event Action<Action, Func<bool>> OnBannerFuncsUpdated;
+
         [SerializeField] private CrossPromoConfigurationManager _configurationManager;
         [SerializeField] private AppodealAdapter _appodealAdapter;
-        
+        [SerializeField] private MaxMediation _maxMediation;
+
         private string _configUrl;
         private string _appodealSDKKey;
         private string _maxSDKKey;
         private string _interstitialAdID;
         private string _rewardedAdID;
-        private PromosConfigurationInfo _crossPromoConfigAll;
-        private PromosConfigurationInfo _crossPromoConfigNotWatchedYet;
+        private CrossPromoProviderType _selectedProviderType;
 
-        private CrossPromoProviderType _selectedProviderType = CrossPromoProviderType.Appodeal;
-        private readonly List<ICrossPromoProvider> _providers = new();
-        private ICrossPromoProvider _activeProvider;
+        private bool _appLovinEnabled;
+        private bool _appLovinConfigured;
+        private bool _appodealInitialized;
+        private PromosConfigurationInfo _crossPromoConfig;
+        private Action _currentBannerOnClose;
+        private Func<bool> _currentIsNoAds;
 
-        //general
-        public bool IsAdsReady => (CurrentProvider?.IsReady ?? false) || MaxMediation.Instance.IsReady;
+        public bool IsAdsReady =>
+            _selectedProviderType == CrossPromoProviderType.Appodeal
+                ? (_appodealAdapter?.IsReady() ?? false)
+                : (_appLovinEnabled && (_maxMediation?.IsReady ?? false));
+
+        public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
+
+        public Action CurrentBannerOnClose => _currentBannerOnClose;
+        public Func<bool> CurrentIsNoAds => _currentIsNoAds;
+
+        private void Awake()
+        {
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
 
         public void Construct(
-            bool enable, 
-            string configUrl, 
+            bool enable,
+            string configUrl,
             string appodealSDKKey,
-            string maxSDKKey, 
-            string interstitialAdID, 
+            string maxSDKKey,
+            string interstitialAdID,
             string rewardedAdID,
             CrossPromoProviderType providerType)
         {
@@ -49,190 +69,182 @@ namespace AMZNGoDSDK.Runtime
             _interstitialAdID = interstitialAdID;
             _rewardedAdID = rewardedAdID;
             _selectedProviderType = providerType;
-            SetupProviders();
-        }
 
-        public override void Initialize() => 
-            StartCoroutine(InitCrossPromoModulesCorAsync());
-
-        #region ModuleInitializer
-
-        public IEnumerator InitCrossPromoModulesCorAsync()
-        {
-            yield return LoadJson();
-
-            if (CurrentProvider != null)
+            if (!string.IsNullOrWhiteSpace(_appodealSDKKey))
             {
-                yield return CurrentProvider.Initialize(_crossPromoConfigAll, _crossPromoConfigNotWatchedYet);
+                _appodealAdapter?.Initialize(_appodealSDKKey);
+                _appodealInitialized = true;
+            }
+            else
+            {
+                _appodealInitialized = false;
             }
 
-            yield return _crossPromoBanner.Initialize(_crossPromoConfigAll);
+            if (providerType == CrossPromoProviderType.AppLovin)
+            {
+                EnableAppLovin();
+            }
         }
 
-        public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
+        public override void Initialize() =>
+            StartCoroutine(InitCrossPromoModulesCorAsync());
+
+        private IEnumerator InitCrossPromoModulesCorAsync()
         {
-            _crossPromoBanner.SetBannerFuncs(onClose, isNoAds);
+            yield return LoadJson();
+            OnConfigLoaded?.Invoke(_crossPromoConfig);
         }
 
         private IEnumerator LoadJson()
         {
-            var operation = _configurationManager.FetchRemoteConfigAsync(_configUrl);
-            
-            while (!operation.IsCompleted) yield return null;
-
-            if (operation.IsCompletedSuccessfully)
+            if (string.IsNullOrWhiteSpace(_configUrl))
             {
-                _crossPromoConfigAll = operation.Result;
-                _crossPromoConfigNotWatchedYet = _crossPromoConfigAll.Copy();
-            }
-            else Debug.Log(operation.Exception.Message);
-        }
-
-        #endregion
-
-        #region ShowAd
-
-        public void ShowInterstitial()
-        {
-            CurrentProvider?.ShowInterstitial();
-        }
-
-        public void ShowRewarded(Action getReward)
-        {
-            CurrentProvider?.ShowRewarded(getReward);
-        }
-
-        #endregion
-
-        public override void Cleenup() { }
-        
-        #region Internal helpers
-
-        private ICrossPromoProvider CurrentProvider
-        {
-            get
-            {
-                if (_activeProvider != null)
-                    return _activeProvider;
-
-                _activeProvider = GetProvider(_selectedProviderType) ?? (_providers.Count > 0 ? _providers[0] : null);
-                return _activeProvider;
-            }
-        }
-
-        private void SetupProviders()
-        {
-            _providers.Clear();
-            _providers.Add(new PyroCrossPromoProvider(_videoManager));
-            _providers.Add(new AppodealCrossPromoProvider(_appodealAdapter, _appodealSDKKey));
-            _activeProvider = null;
-        }
-
-        private ICrossPromoProvider GetProvider(CrossPromoProviderType providerType)
-        {
-            foreach (var provider in _providers)
-            {
-                if (provider.ProviderType == providerType)
-                    return provider;
-            }
-
-            return null;
-        }
-
-        private interface ICrossPromoProvider
-        {
-            CrossPromoProviderType ProviderType { get; }
-            IEnumerator Initialize(PromosConfigurationInfo configAll, PromosConfigurationInfo configNotWatched);
-            bool IsReady { get; }
-            void ShowInterstitial();
-            void ShowRewarded(Action getReward);
-        }
-
-        private class PyroCrossPromoProvider : ICrossPromoProvider
-        {
-            private readonly CrossPromoVideoManager _videoManager;
-            private PromosConfigurationInfo _configAll;
-            private PromosConfigurationInfo _configNotWatched;
-
-            public CrossPromoProviderType ProviderType => CrossPromoProviderType.Pyro;
-            public bool IsReady => CrossPromoManager.Instance?.IsReady ?? false;
-
-            public PyroCrossPromoProvider(CrossPromoVideoManager videoManager)
-            {
-                _videoManager = videoManager;
-            }
-
-            public IEnumerator Initialize(PromosConfigurationInfo configAll, PromosConfigurationInfo configNotWatched)
-            {
-                _configAll = configAll;
-                _configNotWatched = configNotWatched;
-
-                if (_videoManager == null || _configAll == null)
-                    yield break;
-
-                yield return _videoManager.Initialize(_configAll);
-            }
-
-            public void ShowInterstitial()
-            {
-                if (_configAll == null || _configNotWatched == null)
-                    return;
-
-                CrossPromoManager.Instance?.Show(_configAll, _configNotWatched);
-            }
-
-            public void ShowRewarded(Action getReward)
-            {
-                if (_configAll == null || _configNotWatched == null)
-                    return;
-
-                CrossPromoManager.Instance?.Show(_configAll, _configNotWatched, getReward);
-            }
-        }
-
-        private class AppodealCrossPromoProvider : ICrossPromoProvider
-        {
-            private readonly AppodealAdapter _adapter;
-            private readonly string _sdkKey;
-
-            public CrossPromoProviderType ProviderType => CrossPromoProviderType.Appodeal;
-            public bool IsReady => _adapter?.IsReady() ?? false;
-
-            public AppodealCrossPromoProvider(AppodealAdapter adapter, string sdkKey)
-            {
-                _adapter = adapter;
-                _sdkKey = sdkKey;
-            }
-
-            public IEnumerator Initialize(PromosConfigurationInfo configAll, PromosConfigurationInfo configNotWatched)
-            {
-                _adapter?.Initialize(_sdkKey);
                 yield break;
             }
 
-            public void ShowInterstitial()
+            var operation = _configurationManager.FetchRemoteConfigAsync(_configUrl);
+
+            while (!operation.IsCompleted)
             {
-                _adapter?.Show_Interstitial();
+                yield return null;
             }
 
-            public void ShowRewarded(Action getReward)
+            if (operation.IsCompletedSuccessfully)
             {
-                _adapter?.Show_Rewarded(getReward);
+                _crossPromoConfig = operation.Result;
+            }
+            else
+            {
+                Debug.LogWarning($"[CrossPromoModule] Remote config load failed: {operation.Exception?.Message}");
             }
         }
 
-        #endregion
-        
-        #region Debug
-
-#if UNITY_EDITOR
-        private void Update()
+        public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
         {
-            if (Input.GetKeyDown(KeyCode.Q)) ShowInterstitial();
+            _currentBannerOnClose = onClose;
+            _currentIsNoAds = isNoAds;
+            OnBannerFuncsUpdated?.Invoke(onClose, isNoAds);
         }
-#endif
 
-        #endregion
+        public void EnableAppLovin(string sdkKey = null, string interstitialId = null, string rewardedId = null)
+        {
+            _appLovinEnabled = true;
+
+            if (!string.IsNullOrWhiteSpace(sdkKey) && _maxSDKKey != sdkKey)
+            {
+                _maxSDKKey = sdkKey;
+                _appLovinConfigured = false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(interstitialId))
+            {
+                _interstitialAdID = interstitialId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(rewardedId))
+            {
+                _rewardedAdID = rewardedId;
+            }
+
+            InitializeAppLovin();
+        }
+
+        public void ShowInterstitial()
+        {
+            if (!Enabled)
+            {
+                return;
+            }
+
+            if (_selectedProviderType == CrossPromoProviderType.Appodeal)
+            {
+                if (!_appodealInitialized)
+                {
+                    Debug.LogWarning("[CrossPromoModule] Appodeal SDK is not initialized");
+                    return;
+                }
+
+                _appodealAdapter?.Show_Interstitial();
+                if (_appodealAdapter?.IsReady() == true)
+                    return;
+                Debug.LogWarning("[CrossPromoModule] Appodeal interstitial not loaded yet, caching request");
+                return;
+            }
+
+            if (!_appLovinEnabled)
+            {
+                EnableAppLovin();
+            }
+
+            if (_appLovinEnabled && _maxMediation?.IsReady == true)
+            {
+                _maxMediation.ShowAd();
+                return;
+            }
+
+            Debug.LogWarning("[CrossPromoModule] AppLovin interstitial is not ready");
+        }
+
+        public void ShowRewarded(Action callback)
+        {
+            if (!Enabled)
+            {
+                return;
+            }
+
+            if (_selectedProviderType == CrossPromoProviderType.Appodeal)
+            {
+                if (!_appodealInitialized)
+                {
+                    Debug.LogWarning("[CrossPromoModule] Appodeal SDK is not initialized");
+                    return;
+                }
+
+                _appodealAdapter?.Show_Rewarded(callback);
+                if (_appodealAdapter?.IsReady() == true)
+                    return;
+                Debug.LogWarning("[CrossPromoModule] Appodeal rewarded not loaded yet, caching request");
+                return;
+            }
+
+            if (!_appLovinEnabled)
+            {
+                EnableAppLovin();
+            }
+
+            if (_appLovinEnabled && _maxMediation?.IsReady == true)
+            {
+                _maxMediation.ShowAd(callback);
+                return;
+            }
+
+            Debug.LogWarning("[CrossPromoModule] AppLovin rewarded is not ready");
+        }
+
+        private void InitializeAppLovin()
+        {
+            if (_appLovinConfigured)
+            {
+                return;
+            }
+
+            if (_maxMediation == null)
+            {
+                Debug.LogWarning("[CrossPromoModule] MaxMediation component is missing");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_maxSDKKey))
+            {
+                Debug.LogWarning("[CrossPromoModule] Max SDK key is not provided");
+                return;
+            }
+
+            _maxMediation.Initialize(_maxSDKKey, _interstitialAdID, _rewardedAdID);
+            _appLovinConfigured = true;
+        }
+
+        public override void Cleenup() { }
     }
 }
 

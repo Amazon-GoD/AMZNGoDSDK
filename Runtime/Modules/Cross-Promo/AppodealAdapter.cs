@@ -23,7 +23,16 @@ public class AppodealAdapter : MonoBehaviour, IInterstitialAdListener, IRewarded
         Appodeal.SetAutoCache(AppodealAdType.Interstitial, true);
         Appodeal.SetAutoCache(AppodealAdType.RewardedVideo, true);
 
+        AppodealCallbacks.RewardedVideo.OnFinished += OnRewardedVideoFinishedEvent;
+        AppodealCallbacks.RewardedVideo.OnClosed += OnRewardedVideoClosedEvent;
+
         Debug.Log("[AppodealAdapter] Initialized with key: " + key);
+    }
+
+    private void OnDestroy()
+    {
+        AppodealCallbacks.RewardedVideo.OnFinished -= OnRewardedVideoFinishedEvent;
+        AppodealCallbacks.RewardedVideo.OnClosed -= OnRewardedVideoClosedEvent;
     }
 
     public void Show_Interstitial()
@@ -62,100 +71,80 @@ public class AppodealAdapter : MonoBehaviour, IInterstitialAdListener, IRewarded
     }
 
     // IInterstitialAdListener implementation
-    public void onInterstitialLoaded(bool isPrecache) { }
-    public void onInterstitialFailedToLoad() { }
-    public void onInterstitialShowFailed() { }
-    public void onInterstitialShown() { }
-    public void onInterstitialClosed() { }
-    public void onInterstitialClicked() { }
-    public void onInterstitialExpired() { }
+    public void onInterstitialLoaded(bool isPrecache) { Debug.Log("[AppodealAdapter] Interstitial loaded"); }
+    public void onInterstitialFailedToLoad() { Debug.LogWarning("[AppodealAdapter] Interstitial failed to load"); }
+    public void onInterstitialShowFailed() { Debug.LogWarning("[AppodealAdapter] Interstitial show failed"); }
+    public void onInterstitialShown() { Debug.Log("[AppodealAdapter] Interstitial shown"); }
+    public void onInterstitialClosed() { Debug.Log("[AppodealAdapter] Interstitial closed"); }
+    public void onInterstitialClicked() { Debug.Log("[AppodealAdapter] Interstitial clicked"); }
+    public void onInterstitialExpired() { Debug.Log("[AppodealAdapter] Interstitial expired"); }
 
     // IRewardedVideoAdListener implementation
-    public void onRewardedVideoLoaded(bool isPrecache) { }
-    public void onRewardedVideoFailedToLoad() { }
-    public void onRewardedVideoShowFailed() { }
-    public void onRewardedVideoShown() { }
+    public void onRewardedVideoLoaded(bool isPrecache) { Debug.Log("[AppodealAdapter] Rewarded video loaded"); }
+    public void onRewardedVideoFailedToLoad() { Debug.LogWarning("[AppodealAdapter] Rewarded video failed to load"); }
+    public void onRewardedVideoShowFailed() { Debug.LogWarning("[AppodealAdapter] Rewarded video show failed"); }
+    public void onRewardedVideoShown() { Debug.Log("[AppodealAdapter] Rewarded video shown"); }
     public void onRewardedVideoFinished(double amount, string currency)
     {
         Debug.Log("[AppodealAdapter] Rewarded video finished, calling callback");
-        _onRewardedCallback?.Invoke();
-        _onRewardedCallback = null;
+        InvokeRewardedCallback();
     }
-    public void onRewardedVideoClosed(bool finished) { }
-    public void onRewardedVideoExpired() { }
-    public void onRewardedVideoClicked() { }
-    public void OnInterstitialLoaded(bool isPrecache)
+    public void onRewardedVideoClosed(bool finished)
     {
-        throw new NotImplementedException();
+        Debug.Log("[AppodealAdapter] Rewarded video closed");
+        if (finished)
+        {
+            InvokeRewardedCallback();
+        }
     }
+    public void onRewardedVideoExpired() { Debug.Log("[AppodealAdapter] Rewarded video expired"); }
+    public void onRewardedVideoClicked() { Debug.Log("[AppodealAdapter] Rewarded video clicked"); }
+    public void OnInterstitialLoaded(bool isPrecache) { Debug.Log("[AppodealAdapter] Interstitial loaded (new callback)"); }
+    public void OnInterstitialFailedToLoad() { Debug.LogWarning("[AppodealAdapter] Interstitial failed to load (new callback)"); }
+    public void OnInterstitialShowFailed() { Debug.LogWarning("[AppodealAdapter] Interstitial show failed (new callback)"); }
+    public void OnInterstitialShown() { Debug.Log("[AppodealAdapter] Interstitial shown (new callback)"); }
+    public void OnInterstitialClosed() { Debug.Log("[AppodealAdapter] Interstitial closed (new callback)"); }
+    public void OnInterstitialClicked() { Debug.Log("[AppodealAdapter] Interstitial clicked (new callback)"); }
+    public void OnInterstitialExpired() { Debug.Log("[AppodealAdapter] Interstitial expired (new callback)"); }
 
-    public void OnInterstitialFailedToLoad()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnInterstitialShowFailed()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnInterstitialShown()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnInterstitialClosed()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnInterstitialClicked()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnInterstitialExpired()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnRewardedVideoLoaded(bool isPrecache)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnRewardedVideoFailedToLoad()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnRewardedVideoShowFailed()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void OnRewardedVideoShown()
-    {
-        throw new NotImplementedException();
-    }
-
+    public void OnRewardedVideoLoaded(bool isPrecache) { Debug.Log("[AppodealAdapter] Rewarded loaded (new callback)"); }
+    public void OnRewardedVideoFailedToLoad() { Debug.LogWarning("[AppodealAdapter] Rewarded failed to load (new callback)"); }
+    public void OnRewardedVideoShowFailed() { Debug.LogWarning("[AppodealAdapter] Rewarded show failed (new callback)"); }
+    public void OnRewardedVideoShown() { Debug.Log("[AppodealAdapter] Rewarded shown (new callback)"); }
     public void OnRewardedVideoFinished(double amount, string currency)
     {
-        throw new NotImplementedException();
+        Debug.Log("[AppodealAdapter] Rewarded finished (new callback)");
+        InvokeRewardedCallback();
     }
-
     public void OnRewardedVideoClosed(bool finished)
     {
-        throw new NotImplementedException();
+        Debug.Log("[AppodealAdapter] Rewarded closed (new callback)");
+        if (finished)
+        {
+            InvokeRewardedCallback();
+        }
+    }
+    public void OnRewardedVideoExpired() { Debug.Log("[AppodealAdapter] Rewarded expired (new callback)"); }
+    public void OnRewardedVideoClicked() { Debug.Log("[AppodealAdapter] Rewarded clicked (new callback)"); }
+
+    private void OnRewardedVideoFinishedEvent(object sender, RewardedVideoFinishedEventArgs args)
+    {
+        Debug.Log("[AppodealAdapter] Rewarded finished event");
+        InvokeRewardedCallback();
     }
 
-    public void OnRewardedVideoExpired()
+    private void OnRewardedVideoClosedEvent(object sender, RewardedVideoClosedEventArgs args)
     {
-        throw new NotImplementedException();
+        Debug.Log("[AppodealAdapter] Rewarded closed event finished=" + args.Finished);
+        if (args.Finished)
+        {
+            InvokeRewardedCallback();
+        }
     }
 
-    public void OnRewardedVideoClicked()
+    private void InvokeRewardedCallback()
     {
-        throw new NotImplementedException();
+        _onRewardedCallback?.Invoke();
+        _onRewardedCallback = null;
     }
 }
