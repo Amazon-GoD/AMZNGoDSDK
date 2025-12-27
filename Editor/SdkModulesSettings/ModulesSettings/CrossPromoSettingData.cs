@@ -1,4 +1,5 @@
 using System;
+using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -10,6 +11,7 @@ namespace AMZNGoDSDK.Editor
         public string MaxSdkKey;
         public string InterstitialId;
         public string RewardedId;
+        public CrossPromoProviderType ProviderType = CrossPromoProviderType.Appodeal;
     }
 }
 

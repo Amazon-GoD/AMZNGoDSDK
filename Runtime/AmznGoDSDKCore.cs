@@ -46,7 +46,8 @@ namespace AMZNGoDSDK.Runtime
                 crossPromoSettings.AppodealSdkKey,
                 crossPromoSettings.MaxSdkKey,
                 crossPromoSettings.InterstitialId,
-                crossPromoSettings.RewardedId);
+                crossPromoSettings.RewardedId,
+                crossPromoSettings.ProviderType);
             
             _appMetricaModule.Construct(
                 appMetricaSettings.Enabled,

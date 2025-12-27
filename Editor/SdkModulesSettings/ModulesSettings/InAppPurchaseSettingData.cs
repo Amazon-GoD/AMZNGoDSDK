@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine.Purchasing;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -10,6 +11,7 @@ namespace AMZNGoDSDK.Editor
         public List<ConsumableProduct> ConsumableProducts = new();
         public AppStoreTarget AppStoreTarget = AppStoreTarget.AmazonAppStore;
         public bool UseFakeStoreInEditor = true;
+        public List<CatalogImportedProduct> CatalogImportedProducts = new();
     }
 
     [Serializable]
@@ -29,6 +31,13 @@ namespace AMZNGoDSDK.Editor
         public int RewardAmount;
         public string RewardKey;
         public bool Enabled = true;
+    }
+
+    [Serializable]
+    public class CatalogImportedProduct
+    {
+        public string ProductId;
+        public ProductType Type;
     }
 
     public enum AppStoreTarget

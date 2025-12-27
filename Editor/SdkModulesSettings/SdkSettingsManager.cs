@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -89,7 +90,8 @@ namespace AMZNGoDSDK.Editor
                 MaxSdkKey = runtimeSettings.MaxSdkKey,
                 AppodealSdkKey = runtimeSettings.AppodealSdkKey,
                 InterstitialId = runtimeSettings.InterstitialId,
-                RewardedId = runtimeSettings.RewardedId
+                RewardedId = runtimeSettings.RewardedId,
+                ProviderType = runtimeSettings.ProviderType
             };
         }
 
@@ -208,7 +210,8 @@ namespace AMZNGoDSDK.Editor
                 MaxSdkKey = editorSettings.MaxSdkKey,
                 AppodealSdkKey = editorSettings.AppodealSdkKey,
                 InterstitialId = editorSettings.InterstitialId,
-                RewardedId = editorSettings.RewardedId
+                RewardedId = editorSettings.RewardedId,
+                ProviderType = editorSettings.ProviderType
             };
         }
 

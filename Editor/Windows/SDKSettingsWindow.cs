@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Purchasing;
+using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -132,6 +134,8 @@ namespace AMZNGoDSDK.Editor
                     .TextField("Interstitial Id", _currentSettings.CrossPromo.InterstitialId);
                 _currentSettings.CrossPromo.RewardedId = EditorGUILayout
                     .TextField("Rewarded Id", _currentSettings.CrossPromo.RewardedId);
+                _currentSettings.CrossPromo.ProviderType = (CrossPromoProviderType)EditorGUILayout
+                    .EnumPopup("Provider", _currentSettings.CrossPromo.ProviderType);
             }
 
             EditorGUILayout.EndVertical();
@@ -246,10 +250,43 @@ namespace AMZNGoDSDK.Editor
                 {
                     _currentSettings.InAppPurchase.ConsumableProducts.Add(new ConsumableProduct());
                 }
+
+                GUILayout.Space(10);
+                GUILayout.Label("Catalog Imports:", EditorStyles.miniBoldLabel);
+
+                if (GUILayout.Button("Refresh Catalog"))
+                {
+                    InAppPurchaseCatalogHelper.RefreshCatalog(_currentSettings.InAppPurchase);
+                }
+
+                if (_currentSettings.InAppPurchase.CatalogImportedProducts.Count == 0)
+                {
+                    EditorGUILayout.HelpBox("No catalog products are imported yet. Refresh catalog to see available IDs.", MessageType.Info);
+                }
+                else
+                {
+                    foreach (var catalogProduct in _currentSettings.InAppPurchase.CatalogImportedProducts)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField($"{catalogProduct.ProductId} ({catalogProduct.Type})");
+                        if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                        {
+                            RemoveCatalogProduct(catalogProduct.ProductId);
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+                }
             }
 
             EditorGUILayout.EndVertical();
             GUILayout.Space(10);
+        }
+
+        private void RemoveCatalogProduct(string productId)
+        {
+            _currentSettings.InAppPurchase.SubscriptionProducts.RemoveAll(p => p.ProductId == productId);
+            _currentSettings.InAppPurchase.ConsumableProducts.RemoveAll(p => p.ProductId == productId);
+            _currentSettings.InAppPurchase.CatalogImportedProducts.RemoveAll(p => p.ProductId == productId);
         }
     }
 }
