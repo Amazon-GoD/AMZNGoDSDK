@@ -11,7 +11,8 @@ namespace AMZNGoDSDK.Editor
     {
         private static Dictionary<string, bool> _dependenciesInfo = new();
         
-        private Vector2 _scrollPosition;
+        private Vector2 _settingsScrollPosition;
+        private Vector2 _dependenciesScrollPosition;
         private SdkSettingsData _currentSettings;
 
         [MenuItem("AMZN GoD/Settings", false, 0)]
@@ -27,44 +28,43 @@ namespace AMZNGoDSDK.Editor
 
         private void OnGUI()
         {
+            _settingsScrollPosition = EditorGUILayout.BeginScrollView(_settingsScrollPosition);
             GUILayout.Space(10);
-            
+
             _currentSettings.Enabled = EditorGUILayout.Toggle("SDK Enabled:", _currentSettings.Enabled);
-            
+
             GUILayout.Space(10);
-            
+
             GUILayout.Label("SDK Module Settings:", EditorStyles.boldLabel);
-            
+
             // Infatica Settings
             DrawInfaticaSettings();
-            
+
             // Cross-promo Settings
             DrawCrossPromoSettings();
-            
+
             // AppMetrica Settings
             DrawAppMetricaSettings();
-            
+
             // Adjust Settings
             DrawAdjustSettings();
 
             // In-App Purchase Settings
             DrawInAppPurchaseSettings();
 
-            GUILayout.FlexibleSpace();
-            
             if (GUILayout.Button("Save Settings", GUILayout.Height(30)))
             {
                 SdkSettingsManager.SaveSettings(_currentSettings);
                 EditorUtility.DisplayDialog("Success", "Settings saved successfully!", "OK");
             }
-            
+
             GUILayout.Space(10);
-            
+
             // Dependencies section
             GUILayout.Label("Required External Dependencies:", EditorStyles.boldLabel);
-            
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.Height(200));
-            
+
+            _dependenciesScrollPosition = EditorGUILayout.BeginScrollView(_dependenciesScrollPosition, GUILayout.Height(200));
+
             foreach (var dependency in _dependenciesInfo)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -75,11 +75,11 @@ namespace AMZNGoDSDK.Editor
                 EditorGUILayout.EndVertical();
                 GUILayout.Space(5);
             }
-            
+
             EditorGUILayout.EndScrollView();
-            
+
             GUILayout.Space(20);
-            
+
             EditorGUILayout.HelpBox(
                 $"Total dependencies configured: {_dependenciesInfo.Count}\n\n" +
                 "Dependencies will be automatically checked when Unity starts.\nIf any dependencies are missing, SDK will be install it again.", 
@@ -92,6 +92,9 @@ namespace AMZNGoDSDK.Editor
                     SdkDependencyManager.InstallMissingDependencies();
                 }
             }
+
+            GUILayout.Space(10);
+            EditorGUILayout.EndScrollView();
         }
 
         private void DrawInfaticaSettings()
@@ -211,7 +214,15 @@ namespace AMZNGoDSDK.Editor
                     {
                         product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
                         product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
-                        product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
+                    }
+
+                    if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))
+                    {
+                        _currentSettings.InAppPurchase.SubscriptionProducts.RemoveAt(i);
+                        i--;
+                        EditorGUILayout.EndVertical();
+                        GUILayout.Space(5);
+                        continue;
                     }
 
                     EditorGUILayout.EndVertical();
@@ -240,6 +251,15 @@ namespace AMZNGoDSDK.Editor
                         product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
                         product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
                         product.RewardKey = EditorGUILayout.TextField("Reward Key", string.IsNullOrEmpty(product.RewardKey) ? product.ProductId : product.RewardKey);
+                    }
+
+                    if (GUILayout.Button("Remove Consumable", GUILayout.Height(20)))
+                    {
+                        _currentSettings.InAppPurchase.ConsumableProducts.RemoveAt(i);
+                        i--;
+                        EditorGUILayout.EndVertical();
+                        GUILayout.Space(5);
+                        continue;
                     }
 
                     EditorGUILayout.EndVertical();
