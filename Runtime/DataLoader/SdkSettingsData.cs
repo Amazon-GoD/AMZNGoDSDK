@@ -12,6 +12,7 @@ namespace AMZNGoDSDK.Runtime
         public CrossPromoSettingData CrossPromo = new();
         public InfaticaSettingData Infatica = new();
         public InAppPurchaseSettingData InAppPurchase = new();
+        public FirebaseSettingData Firebase = new();
         public InternetConnectionSettingData InternetConnection = new();
     }
 }

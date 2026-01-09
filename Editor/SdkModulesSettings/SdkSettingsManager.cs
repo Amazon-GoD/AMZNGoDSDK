@@ -53,6 +53,7 @@ namespace AMZNGoDSDK.Editor
                 CrossPromo = ConvertCrossPromoSettingsToEditor(runtimeSettings.CrossPromo),
                 Infatica = ConvertInfaticaSettingsToEditor(runtimeSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase),
+                Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection)
             };
 
@@ -147,6 +148,18 @@ namespace AMZNGoDSDK.Editor
             return editorSettings;
         }
 
+        private static FirebaseSettingData ConvertFirebaseSettingsToEditor(Runtime.FirebaseSettingData runtimeSettings)
+        {
+            runtimeSettings ??= new Runtime.FirebaseSettingData();
+
+            return new FirebaseSettingData
+            {
+                Enabled = runtimeSettings.Enabled,
+                EnableAnalytics = runtimeSettings.EnableAnalytics,
+                EnableCrashlytics = runtimeSettings.EnableCrashlytics
+            };
+        }
+
         private static InternetConnectionSettingData ConvertInternetConnectionSettingsToEditor(Runtime.InternetConnectionSettingData runtimeSettings)
         {
             return new InternetConnectionSettingData
@@ -185,6 +198,7 @@ namespace AMZNGoDSDK.Editor
                 CrossPromo = ConvertCrossPromoSettings(editorSettings.CrossPromo),
                 Infatica = ConvertInfaticaSettings(editorSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase),
+                Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection)
             };
 
@@ -277,6 +291,16 @@ namespace AMZNGoDSDK.Editor
             }
 
             return runtimeSettings;
+        }
+
+        private static Runtime.FirebaseSettingData ConvertFirebaseSettings(FirebaseSettingData editorSettings)
+        {
+            return new Runtime.FirebaseSettingData
+            {
+                Enabled = editorSettings.Enabled,
+                EnableAnalytics = editorSettings.EnableAnalytics,
+                EnableCrashlytics = editorSettings.EnableCrashlytics
+            };
         }
 
         private static Runtime.InternetConnectionSettingData ConvertInternetConnectionSettings(InternetConnectionSettingData editorSettings)

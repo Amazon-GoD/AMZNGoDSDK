@@ -44,6 +44,7 @@ namespace AMZNGoDSDK.Editor
             DrawInfaticaSettings();
             DrawCrossPromoSettings();
             DrawAppMetricaSettings();
+            DrawFirebaseSettings();
             DrawAdjustSettings();
             DrawInAppPurchaseSettings();
 
@@ -134,16 +135,28 @@ namespace AMZNGoDSDK.Editor
                 {
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                         .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
-                    _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
-                        .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
-                    _currentSettings.CrossPromo.MaxSdkKey = EditorGUILayout
-                        .TextField("Max SDK Key", _currentSettings.CrossPromo.MaxSdkKey);
-                    _currentSettings.CrossPromo.InterstitialId = EditorGUILayout
-                        .TextField("Interstitial Id", _currentSettings.CrossPromo.InterstitialId);
-                    _currentSettings.CrossPromo.RewardedId = EditorGUILayout
-                        .TextField("Rewarded Id", _currentSettings.CrossPromo.RewardedId);
                     _currentSettings.CrossPromo.ProviderType = (CrossPromoProviderType)EditorGUILayout
                         .EnumPopup("Provider", _currentSettings.CrossPromo.ProviderType);
+
+                    switch (_currentSettings.CrossPromo.ProviderType)
+                    {
+                        case CrossPromoProviderType.Appodeal:
+                            GUILayout.Space(6);
+                            EditorGUILayout.LabelField("Appodeal SDK", EditorStyles.miniBoldLabel);
+                            _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
+                                .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
+                            break;
+                        case CrossPromoProviderType.AppLovin:
+                            GUILayout.Space(6);
+                            EditorGUILayout.LabelField("AppLovin (Appodeal Max) SDK", EditorStyles.miniBoldLabel);
+                            _currentSettings.CrossPromo.MaxSdkKey = EditorGUILayout
+                                .TextField("Max SDK Key", _currentSettings.CrossPromo.MaxSdkKey);
+                            _currentSettings.CrossPromo.InterstitialId = EditorGUILayout
+                                .TextField("Interstitial Id", _currentSettings.CrossPromo.InterstitialId);
+                            _currentSettings.CrossPromo.RewardedId = EditorGUILayout
+                                .TextField("Rewarded Id", _currentSettings.CrossPromo.RewardedId);
+                            break;
+                    }
                 });
         }
         
@@ -157,6 +170,21 @@ namespace AMZNGoDSDK.Editor
                 {
                     _currentSettings.AppMetrica.Key = EditorGUILayout
                         .TextField("Key", _currentSettings.AppMetrica.Key);
+                });
+        }
+        
+        private void DrawFirebaseSettings()
+        {
+            _currentSettings.Firebase.Enabled = DrawModuleSection(
+                "Firebase",
+                "Firebase Analytics и Crashlytics: события и отчёты об ошибках.",
+                _currentSettings.Firebase.Enabled,
+                () =>
+                {
+                    _currentSettings.Firebase.EnableAnalytics = EditorGUILayout
+                        .Toggle("Enable Analytics", _currentSettings.Firebase.EnableAnalytics);
+                    _currentSettings.Firebase.EnableCrashlytics = EditorGUILayout
+                        .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
                 });
         }
         

@@ -12,6 +12,7 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private CrossPromoModule _crossPromoModule;
         [SerializeField] private InfaticaModule _infaticaModule;
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
+        [SerializeField] private FirebaseModule _firebaseModule;
         [SerializeField] private InternetConnectionModule _internetConnectionModule;
         
         public bool Enabled { get; private set; }
@@ -30,6 +31,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             var internetSettings = sdkSettingsData.InternetConnection;
+            var firebaseSettings = sdkSettingsData.Firebase;
             var infaticaSettings = sdkSettingsData.Infatica;
             var crossPromoSettings = sdkSettingsData.CrossPromo;
             var appMetricaSettings = sdkSettingsData.AppMetrica;
@@ -37,10 +39,16 @@ namespace AMZNGoDSDK.Runtime
             var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
 
             EnsureInternetConnectionModule();
+            EnsureFirebaseModule();
 
             #region Constructs
 
             _internetConnectionModule.Construct(internetSettings.Enabled, internetSettings);
+
+            _firebaseModule.Construct(
+                firebaseSettings.Enabled,
+                firebaseSettings.EnableAnalytics,
+                firebaseSettings.EnableCrashlytics);
 
             _infaticaModule.Construct(
                 infaticaSettings.Enabled, 
@@ -70,6 +78,7 @@ namespace AMZNGoDSDK.Runtime
             #endregion
             
             StartCoroutine(InitializeWhenReady(
+                _firebaseModule,
                 _infaticaModule,
                 _crossPromoModule,
                 _appMetricaModule,
@@ -222,6 +231,42 @@ namespace AMZNGoDSDK.Runtime
             _internetConnectionModule = GetComponent<InternetConnectionModule>();
             if (_internetConnectionModule == null)
                 _internetConnectionModule = gameObject.AddComponent<InternetConnectionModule>();
+        }
+
+        private void EnsureFirebaseModule()
+        {
+            if (_firebaseModule != null)
+                return;
+
+            _firebaseModule = GetComponent<FirebaseModule>();
+            if (_firebaseModule == null)
+                _firebaseModule = gameObject.AddComponent<FirebaseModule>();
+        }
+
+        public bool IsFirebaseReady => _firebaseModule != null && _firebaseModule.IsInitialized;
+
+        public void LogFirebaseEvent(string eventName, Dictionary<string, string> parameters = null)
+        {
+            if (_firebaseModule == null || !_firebaseModule.Enabled)
+                return;
+
+            _firebaseModule.LogEvent(eventName, parameters);
+        }
+
+        public void RecordFirebaseException(Exception exception)
+        {
+            if (_firebaseModule == null || !_firebaseModule.Enabled)
+                return;
+
+            _firebaseModule.RecordException(exception);
+        }
+
+        public void LogFirebaseCrash(string message)
+        {
+            if (_firebaseModule == null || !_firebaseModule.Enabled)
+                return;
+
+            _firebaseModule.LogCrash(message);
         }
 
         private void InitializeModules(params ModuleBase[] modules)
