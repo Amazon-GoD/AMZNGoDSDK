@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,6 +12,7 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private CrossPromoModule _crossPromoModule;
         [SerializeField] private InfaticaModule _infaticaModule;
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
+        [SerializeField] private InternetConnectionModule _internetConnectionModule;
         
         public bool Enabled { get; private set; }
         
@@ -27,13 +29,18 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            var internetSettings = sdkSettingsData.InternetConnection;
             var infaticaSettings = sdkSettingsData.Infatica;
             var crossPromoSettings = sdkSettingsData.CrossPromo;
             var appMetricaSettings = sdkSettingsData.AppMetrica;
             var adjustSettings = sdkSettingsData.Adjust;
             var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
 
+            EnsureInternetConnectionModule();
+
             #region Constructs
+
+            _internetConnectionModule.Construct(internetSettings.Enabled, internetSettings);
 
             _infaticaModule.Construct(
                 infaticaSettings.Enabled, 
@@ -62,13 +69,12 @@ namespace AMZNGoDSDK.Runtime
 
             #endregion
             
-            InitializeModules(
+            StartCoroutine(InitializeWhenReady(
                 _infaticaModule,
                 _crossPromoModule,
                 _appMetricaModule,
                 _adjustModule,
-                _inAppPurchaseModule
-            );
+                _inAppPurchaseModule));
             
             OnInfaticaAgree = _infaticaModule.OnAgree;
         }
@@ -195,6 +201,28 @@ namespace AMZNGoDSDK.Runtime
         #endregion
 
         #region Private Members
+
+        private IEnumerator InitializeWhenReady(params ModuleBase[] modules)
+        {
+            if (_internetConnectionModule != null && _internetConnectionModule.Enabled)
+            {
+                _internetConnectionModule.Initialize();
+                if (!_internetConnectionModule.IsConnected)
+                    yield return _internetConnectionModule.WaitUntilConnected();
+            }
+
+            InitializeModules(modules);
+        }
+
+        private void EnsureInternetConnectionModule()
+        {
+            if (_internetConnectionModule != null)
+                return;
+
+            _internetConnectionModule = GetComponent<InternetConnectionModule>();
+            if (_internetConnectionModule == null)
+                _internetConnectionModule = gameObject.AddComponent<InternetConnectionModule>();
+        }
 
         private void InitializeModules(params ModuleBase[] modules)
         {

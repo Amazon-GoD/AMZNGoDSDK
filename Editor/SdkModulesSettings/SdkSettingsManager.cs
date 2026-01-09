@@ -52,7 +52,8 @@ namespace AMZNGoDSDK.Editor
                 AppMetrica = ConvertAppMetricaSettingsToEditor(runtimeSettings.AppMetrica),
                 CrossPromo = ConvertCrossPromoSettingsToEditor(runtimeSettings.CrossPromo),
                 Infatica = ConvertInfaticaSettingsToEditor(runtimeSettings.Infatica),
-                InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase)
+                InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase),
+                InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection)
             };
 
             return editorSettings;
@@ -146,6 +147,17 @@ namespace AMZNGoDSDK.Editor
             return editorSettings;
         }
 
+        private static InternetConnectionSettingData ConvertInternetConnectionSettingsToEditor(Runtime.InternetConnectionSettingData runtimeSettings)
+        {
+            return new InternetConnectionSettingData
+            {
+                Enabled = runtimeSettings.Enabled,
+                CheckIntervalSeconds = runtimeSettings.CheckIntervalSeconds,
+                PauseGameWhenOffline = runtimeSettings.PauseGameWhenOffline,
+                ShowBanner = runtimeSettings.ShowBanner,
+            };
+        }
+
         public static void SaveSettings(SdkSettingsData settings)
         {
             // Convert Editor settings to Runtime settings
@@ -172,7 +184,8 @@ namespace AMZNGoDSDK.Editor
                 AppMetrica = ConvertAppMetricaSettings(editorSettings.AppMetrica),
                 CrossPromo = ConvertCrossPromoSettings(editorSettings.CrossPromo),
                 Infatica = ConvertInfaticaSettings(editorSettings.Infatica),
-                InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase)
+                InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase),
+                InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection)
             };
 
             return runtimeSettings;
@@ -264,6 +277,17 @@ namespace AMZNGoDSDK.Editor
             }
 
             return runtimeSettings;
+        }
+
+        private static Runtime.InternetConnectionSettingData ConvertInternetConnectionSettings(InternetConnectionSettingData editorSettings)
+        {
+            return new Runtime.InternetConnectionSettingData
+            {
+                Enabled = editorSettings.Enabled,
+                CheckIntervalSeconds = editorSettings.CheckIntervalSeconds,
+                PauseGameWhenOffline = editorSettings.PauseGameWhenOffline,
+                ShowBanner = editorSettings.ShowBanner,
+            };
         }
     }
 }
