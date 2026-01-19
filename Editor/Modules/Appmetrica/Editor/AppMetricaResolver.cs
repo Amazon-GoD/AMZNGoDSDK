@@ -30,7 +30,6 @@ namespace Io.AppMetrica.Editor {
         internal static readonly Dictionary<string, Feature> SupportedFeatures = new Dictionary<string, Feature>
         {
             [SupportedFeatureNames.AppHudAdapter] = new AppHudAdapter("AppHudAdapter"),
-            [SupportedFeatureNames.AppLovinAdRevenueV8] = new AppLovinAdRevenueV8("AppLovinAdRevenueV8"),
             [SupportedFeatureNames.IronSourceAdRevenueV8] = new IronSourceAdRevenueV8("IronSourceAdRevenueV8"),
             [SupportedFeatureNames.FyberAdRevenueV3] = new FyberAdRevenueV3("FyberAdRevenueV3"),
             [SupportedFeatureNames.TopOnAdRevenueV2] = new TopOnAdRevenueV2("TopOnAdRevenueV2"),

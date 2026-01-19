@@ -91,11 +91,7 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 ConfigUrl = runtimeSettings.ConfigUrl,
-                MaxSdkKey = runtimeSettings.MaxSdkKey,
-                AppodealSdkKey = runtimeSettings.AppodealSdkKey,
-                InterstitialId = runtimeSettings.InterstitialId,
-                RewardedId = runtimeSettings.RewardedId,
-                ProviderType = runtimeSettings.ProviderType
+                AppodealSdkKey = runtimeSettings.AppodealSdkKey
             };
         }
 
@@ -289,11 +285,7 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 ConfigUrl = editorSettings.ConfigUrl,
-                MaxSdkKey = editorSettings.MaxSdkKey,
-                AppodealSdkKey = editorSettings.AppodealSdkKey,
-                InterstitialId = editorSettings.InterstitialId,
-                RewardedId = editorSettings.RewardedId,
-                ProviderType = editorSettings.ProviderType
+                AppodealSdkKey = editorSettings.AppodealSdkKey
             };
         }
 

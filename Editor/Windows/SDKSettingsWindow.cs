@@ -136,34 +136,16 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.CrossPromo.Enabled = DrawModuleSection(
                 "Cross Promo",
-                "Показ рекламы Appodeal/AppLovin с гибкой конфигурацией и динамическими баннерами.",
+                "Показ рекламы Appodeal с гибкой конфигурацией и динамическими баннерами.",
                 _currentSettings.CrossPromo.Enabled,
                 () =>
                 {
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                         .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
-                    _currentSettings.CrossPromo.ProviderType = (CrossPromoProviderType)EditorGUILayout
-                        .EnumPopup("Provider", _currentSettings.CrossPromo.ProviderType);
-
-                    switch (_currentSettings.CrossPromo.ProviderType)
-                    {
-                        case CrossPromoProviderType.Appodeal:
-                            GUILayout.Space(6);
-                            EditorGUILayout.LabelField("Appodeal SDK", EditorStyles.miniBoldLabel);
-                            _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
-                                .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
-                            break;
-                        case CrossPromoProviderType.AppLovin:
-                            GUILayout.Space(6);
-                            EditorGUILayout.LabelField("AppLovin (Appodeal Max) SDK", EditorStyles.miniBoldLabel);
-                            _currentSettings.CrossPromo.MaxSdkKey = EditorGUILayout
-                                .TextField("Max SDK Key", _currentSettings.CrossPromo.MaxSdkKey);
-                            _currentSettings.CrossPromo.InterstitialId = EditorGUILayout
-                                .TextField("Interstitial Id", _currentSettings.CrossPromo.InterstitialId);
-                            _currentSettings.CrossPromo.RewardedId = EditorGUILayout
-                                .TextField("Rewarded Id", _currentSettings.CrossPromo.RewardedId);
-                            break;
-                    }
+                    GUILayout.Space(6);
+                    EditorGUILayout.LabelField("Appodeal SDK", EditorStyles.miniBoldLabel);
+                    _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
+                        .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
                 });
         }
         
@@ -364,13 +346,16 @@ namespace AMZNGoDSDK.Editor
                     }
                     else
                     {
-                        foreach (var catalogProduct in _currentSettings.InAppPurchase.CatalogImportedProducts)
+                        for (int i = 0; i < _currentSettings.InAppPurchase.CatalogImportedProducts.Count; i++)
                         {
+                            var catalogProduct = _currentSettings.InAppPurchase.CatalogImportedProducts[i];
                             EditorGUILayout.BeginHorizontal();
                             EditorGUILayout.LabelField($"{catalogProduct.ProductId} ({catalogProduct.Type})");
                             if (GUILayout.Button("Remove", GUILayout.Width(70)))
                             {
                                 RemoveCatalogProduct(catalogProduct.ProductId);
+                                EditorGUILayout.EndHorizontal();
+                                break;
                             }
                             EditorGUILayout.EndHorizontal();
                         }

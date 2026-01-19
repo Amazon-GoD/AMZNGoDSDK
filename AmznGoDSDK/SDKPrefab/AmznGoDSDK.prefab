@@ -906,7 +906,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _configurationManager: {fileID: 8472638220944599029}
   _appodealAdapter: {fileID: 8853871585331395261}
-  _maxMediation: {fileID: 7162830871776330931}
 --- !u!1 &4199741556978639485
 GameObject:
   m_ObjectHideFlags: 0
@@ -1165,50 +1164,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _continueButton: {fileID: 29914304067608562}
---- !u!1 &4727558935237461161
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 9176037318244333379}
-  - component: {fileID: 7162830871776330931}
-  m_Layer: 0
-  m_Name: ApplovinModule
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &9176037318244333379
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4727558935237461161}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 4040931040593048813}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &7162830871776330931
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4727558935237461161}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d3e08db31827547f99fbffd3267ba8da, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &5038832722847901919
 GameObject:
   m_ObjectHideFlags: 0
@@ -1554,7 +1509,6 @@ Transform:
   - {fileID: 2125269821841321334}
   - {fileID: 362438791930097297}
   - {fileID: 2933690180802740919}
-  - {fileID: 9176037318244333379}
   - {fileID: 3508364295925013600}
   - {fileID: 126779452428811929}
   - {fileID: 4491395057500491501}
@@ -1704,7 +1658,6 @@ GameObject:
   - component: {fileID: 2552163286025168577}
   - component: {fileID: 1812692911800555878}
   - component: {fileID: 8472638220944599029}
-  - component: {fileID: 9067445873416778304}
   - component: {fileID: 1522291941760331810}
   - component: {fileID: 8853871585331395261}
   m_Layer: 5
@@ -1844,18 +1797,6 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8fa5df9b4448c447f8d706aec4e2f639, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
---- !u!114 &9067445873416778304
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6697683000501414854}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d3e08db31827547f99fbffd3267ba8da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!114 &1522291941760331810
@@ -2747,6 +2688,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 8417843971253195713, guid: 952ed99df478bb645b6a67961ce9ed1f, type: 3}
+      propertyPath: adImage
+      value: 
+      objectReference: {fileID: 2448590755781441417}
+    - target: {fileID: 8417843971253195713, guid: 952ed99df478bb645b6a67961ce9ed1f, type: 3}
+      propertyPath: bannerGO
+      value: 
+      objectReference: {fileID: 2211141876866176832}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
