@@ -12,6 +12,7 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private CrossPromoModule _crossPromoModule;
         [SerializeField] private InfaticaModule _infaticaModule;
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
+        [SerializeField] private InAppPurchaseModuleInitializer _inAppPurchaseModuleInitializer;
         [SerializeField] private FirebaseModule _firebaseModule;
         [SerializeField] private InternetConnectionModule _internetConnectionModule;
         
@@ -74,6 +75,9 @@ namespace AMZNGoDSDK.Runtime
                 adjustSettings.Environment);
 
             _inAppPurchaseModule.Construct(inAppPurchaseSettings);
+
+            EnsureInAppPurchaseModuleInitializer();
+            _inAppPurchaseModuleInitializer.Initialize(_inAppPurchaseModule);
 
             #endregion
             
@@ -231,6 +235,16 @@ namespace AMZNGoDSDK.Runtime
             _internetConnectionModule = GetComponent<InternetConnectionModule>();
             if (_internetConnectionModule == null)
                 _internetConnectionModule = gameObject.AddComponent<InternetConnectionModule>();
+        }
+
+        private void EnsureInAppPurchaseModuleInitializer()
+        {
+            if (_inAppPurchaseModuleInitializer != null)
+                return;
+
+            _inAppPurchaseModuleInitializer = GetComponent<InAppPurchaseModuleInitializer>();
+            if (_inAppPurchaseModuleInitializer == null)
+                _inAppPurchaseModuleInitializer = gameObject.AddComponent<InAppPurchaseModuleInitializer>();
         }
 
         private void EnsureFirebaseModule()

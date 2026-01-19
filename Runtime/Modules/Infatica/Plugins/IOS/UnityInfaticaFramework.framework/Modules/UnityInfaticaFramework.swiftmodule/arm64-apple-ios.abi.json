@@ -1,0 +1,914 @@
+{
+  "ABIRoot": {
+    "kind": "Root",
+    "name": "UnityInfaticaFramework",
+    "printedName": "UnityInfaticaFramework",
+    "children": [
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework",
+        "declAttributes": [
+          "RawDocComment"
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "CoreLocation",
+        "printedName": "CoreLocation",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "SwiftUI",
+        "printedName": "SwiftUI",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "UIKit",
+        "printedName": "UIKit",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "os.log",
+        "printedName": "os.log",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "Combine",
+        "printedName": "Combine",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "LocationPermissionManager",
+        "printedName": "LocationPermissionManager",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "shared",
+            "printedName": "shared",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "LocationPermissionManager",
+                "printedName": "UnityInfaticaFramework.LocationPermissionManager",
+                "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(cpy)shared",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC6sharedACvpZ",
+            "moduleName": "UnityInfaticaFramework",
+            "static": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "Final",
+              "HasStorage",
+              "AccessControl",
+              "ObjC"
+            ],
+            "isLet": true,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "LocationPermissionManager",
+                    "printedName": "UnityInfaticaFramework.LocationPermissionManager",
+                    "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(cm)shared",
+                "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC6sharedACvgZ",
+                "moduleName": "UnityInfaticaFramework",
+                "static": true,
+                "implicit": true,
+                "declAttributes": [
+                  "Final",
+                  "ObjC"
+                ],
+                "accessorKind": "get"
+              }
+            ]
+          },
+          {
+            "kind": "Function",
+            "name": "locationManagerDidChangeAuthorization",
+            "printedName": "locationManagerDidChangeAuthorization(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CLLocationManager",
+                "printedName": "CoreLocation.CLLocationManager",
+                "usr": "c:objc(cs)CLLocationManager"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(im)locationManagerDidChangeAuthorization:",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC08locationF22DidChangeAuthorizationyySo010CLLocationF0CF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "locationManagerDidChangeAuthorization:",
+            "declAttributes": [
+              "ObjC",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "locationManager",
+            "printedName": "locationManager(_:didChangeAuthorization:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CLLocationManager",
+                "printedName": "CoreLocation.CLLocationManager",
+                "usr": "c:objc(cs)CLLocationManager"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CLAuthorizationStatus",
+                "printedName": "CoreLocation.CLAuthorizationStatus",
+                "usr": "c:@E@CLAuthorizationStatus"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(im)locationManager:didChangeAuthorizationStatus:",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC08locationF0_22didChangeAuthorizationySo010CLLocationF0C_So21CLAuthorizationStatusVtF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "locationManager:didChangeAuthorizationStatus:",
+            "declAttributes": [
+              "ObjC",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "configureAndStartBackgroundLocation",
+            "printedName": "configureAndStartBackgroundLocation()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(im)configureAndStartBackgroundLocation",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC027configureAndStartBackgroundD0yyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "locationManager",
+            "printedName": "locationManager(_:didUpdateLocations:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CLLocationManager",
+                "printedName": "CoreLocation.CLLocationManager",
+                "usr": "c:objc(cs)CLLocationManager"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Array",
+                "printedName": "[_LocationEssentials.CLLocation]",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "CLLocation",
+                    "printedName": "_LocationEssentials.CLLocation",
+                    "usr": "c:objc(cs)CLLocation"
+                  }
+                ],
+                "usr": "s:Sa"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(im)locationManager:didUpdateLocations:",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC08locationF0_18didUpdateLocationsySo010CLLocationF0C_SaySo0K0CGtF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "locationManager:didUpdateLocations:",
+            "declAttributes": [
+              "ObjC",
+              "AccessControl",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "locationManager",
+            "printedName": "locationManager(_:didFailWithError:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "CLLocationManager",
+                "printedName": "CoreLocation.CLLocationManager",
+                "usr": "c:objc(cs)CLLocationManager"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Error",
+                "printedName": "any Swift.Error",
+                "usr": "s:s5ErrorP"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager(im)locationManager:didFailWithError:",
+            "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC08locationF0_16didFailWithErrorySo010CLLocationF0C_s0K0_ptF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "locationManager:didFailWithError:",
+            "declAttributes": [
+              "ObjC",
+              "AccessControl"
+            ],
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "c:@M@UnityInfaticaFramework@objc(cs)LocationPermissionManager",
+        "mangledName": "$s22UnityInfaticaFramework25LocationPermissionManagerC",
+        "moduleName": "UnityInfaticaFramework",
+        "declAttributes": [
+          "AccessControl",
+          "ObjC",
+          "RawDocComment"
+        ],
+        "superclassUsr": "c:objc(cs)NSObject",
+        "hasMissingDesignatedInitializers": true,
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "ObservableObject",
+            "printedName": "ObservableObject",
+            "children": [
+              {
+                "kind": "TypeWitness",
+                "name": "ObjectWillChangePublisher",
+                "printedName": "ObjectWillChangePublisher",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "ObservableObjectPublisher",
+                    "printedName": "Combine.ObservableObjectPublisher",
+                    "usr": "s:7Combine25ObservableObjectPublisherC"
+                  }
+                ]
+              }
+            ],
+            "usr": "s:7Combine16ObservableObjectP",
+            "mangledName": "$s7Combine16ObservableObjectP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Escapable",
+            "printedName": "Escapable",
+            "usr": "s:s9EscapableP",
+            "mangledName": "$ss9EscapableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          }
+        ]
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "os.log",
+        "printedName": "os.log",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "UIKit",
+        "printedName": "UIKit",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "os.log",
+        "printedName": "os.log",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "Import",
+        "name": "UIKit",
+        "printedName": "UIKit",
+        "declKind": "Import",
+        "moduleName": "UnityInfaticaFramework"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "AgentManager",
+        "printedName": "AgentManager",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "shared",
+            "printedName": "shared",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "AgentManager",
+                "printedName": "UnityInfaticaFramework.AgentManager",
+                "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(cpy)shared",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC6sharedACvpZ",
+            "moduleName": "UnityInfaticaFramework",
+            "static": true,
+            "declAttributes": [
+              "HasInitialValue",
+              "Final",
+              "HasStorage",
+              "AccessControl",
+              "ObjC"
+            ],
+            "isLet": true,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "AgentManager",
+                    "printedName": "UnityInfaticaFramework.AgentManager",
+                    "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(cm)shared",
+                "mangledName": "$s22UnityInfaticaFramework12AgentManagerC6sharedACvgZ",
+                "moduleName": "UnityInfaticaFramework",
+                "static": true,
+                "implicit": true,
+                "declAttributes": [
+                  "Final",
+                  "ObjC"
+                ],
+                "accessorKind": "get"
+              }
+            ]
+          },
+          {
+            "kind": "Function",
+            "name": "createIfNeeded",
+            "printedName": "createIfNeeded(dataDir:apiVersion:partnerID:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "Swift.String?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "hasDefaultArg": true,
+                "usr": "s:Sq"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Int32",
+                "printedName": "Swift.Int32",
+                "hasDefaultArg": true,
+                "usr": "s:s5Int32V"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)createIfNeededWithDataDir:apiVersion:partnerID:",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC14createIfNeeded7dataDir10apiVersion9partnerIDySSSg_s5Int32VSStF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "createIfNeededWithDataDir:apiVersion:partnerID:",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "startIfNeeded",
+            "printedName": "startIfNeeded()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)startIfNeeded",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC13startIfNeededyyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "startNetworkThreadIfNeededWithDelay",
+            "printedName": "startNetworkThreadIfNeededWithDelay()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)startNetworkThreadIfNeededWithDelay",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC35startNetworkThreadIfNeededWithDelayyyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "beginBackgroundTaskIfNeeded",
+            "printedName": "beginBackgroundTaskIfNeeded()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)beginBackgroundTaskIfNeeded",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC27beginBackgroundTaskIfNeededyyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "endBackgroundTaskIfNeeded",
+            "printedName": "endBackgroundTaskIfNeeded()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)endBackgroundTaskIfNeeded",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC25endBackgroundTaskIfNeededyyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "stopAsync",
+            "printedName": "stopAsync(timeout:completion:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Double",
+                "printedName": "Swift.Double",
+                "hasDefaultArg": true,
+                "usr": "s:Sd"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "(() -> ())?",
+                "children": [
+                  {
+                    "kind": "TypeFunc",
+                    "name": "Function",
+                    "printedName": "() -> ()",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Void",
+                        "printedName": "()"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Void",
+                        "printedName": "()"
+                      }
+                    ]
+                  }
+                ],
+                "hasDefaultArg": true,
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)stopAsyncWithTimeout:completion:",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC9stopAsync7timeout10completionySd_yycSgtF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "stopAsyncWithTimeout:completion:",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "currentId",
+            "printedName": "currentId()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "Swift.String?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager(im)currentId",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC9currentIdSSSgyF",
+            "moduleName": "UnityInfaticaFramework",
+            "declAttributes": [
+              "AccessControl",
+              "ObjC",
+              "RawDocComment"
+            ],
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "startWork",
+            "printedName": "startWork(id:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@CM@UnityInfaticaFramework@objc(cs)AgentManager(im)startWorkWithId:",
+            "mangledName": "$s22UnityInfaticaFramework12AgentManagerC9startWork2idySS_tF",
+            "moduleName": "UnityInfaticaFramework",
+            "objc_name": "startWorkWithId:",
+            "declAttributes": [
+              "Dynamic",
+              "AccessControl",
+              "ObjC"
+            ],
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Class",
+        "usr": "c:@M@UnityInfaticaFramework@objc(cs)AgentManager",
+        "mangledName": "$s22UnityInfaticaFramework12AgentManagerC",
+        "moduleName": "UnityInfaticaFramework",
+        "declAttributes": [
+          "AccessControl",
+          "ObjC"
+        ],
+        "superclassUsr": "c:objc(cs)NSObject",
+        "hasMissingDesignatedInitializers": true,
+        "inheritsConvenienceInitializers": true,
+        "superclassNames": [
+          "ObjectiveC.NSObject"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Escapable",
+            "printedName": "Escapable",
+            "usr": "s:s9EscapableP",
+            "mangledName": "$ss9EscapableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CVarArg",
+            "printedName": "CVarArg",
+            "usr": "s:s7CVarArgP",
+            "mangledName": "$ss7CVarArgP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObservingPublishing",
+            "printedName": "_KeyValueCodingAndObservingPublishing",
+            "usr": "s:10Foundation37_KeyValueCodingAndObservingPublishingP",
+            "mangledName": "$s10Foundation37_KeyValueCodingAndObservingPublishingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "_KeyValueCodingAndObserving",
+            "printedName": "_KeyValueCodingAndObserving",
+            "usr": "s:10Foundation27_KeyValueCodingAndObservingP",
+            "mangledName": "$s10Foundation27_KeyValueCodingAndObservingP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomStringConvertible",
+            "printedName": "CustomStringConvertible",
+            "usr": "s:s23CustomStringConvertibleP",
+            "mangledName": "$ss23CustomStringConvertibleP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "CustomDebugStringConvertible",
+            "printedName": "CustomDebugStringConvertible",
+            "usr": "s:s28CustomDebugStringConvertibleP",
+            "mangledName": "$ss28CustomDebugStringConvertibleP"
+          }
+        ]
+      }
+    ],
+    "json_format_version": 8
+  },
+  "ConstValues": [
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/LocationPermissionManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 712,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/LocationPermissionManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 768,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/LocationPermissionManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 859,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/BackgroundKeepAlive.swift",
+      "kind": "FloatLiteral",
+      "offset": 320,
+      "length": 3,
+      "value": "5.0"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/BackgroundKeepAlive.swift",
+      "kind": "StringLiteral",
+      "offset": 370,
+      "length": 20,
+      "value": "\"bg.keepalive.queue\""
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/BackgroundKeepAlive.swift",
+      "kind": "BooleanLiteral",
+      "offset": 419,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "StringLiteral",
+      "offset": 262,
+      "length": 12,
+      "value": "\"AgentEvent\""
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 437,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 471,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 518,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "BooleanLiteral",
+      "offset": 553,
+      "length": 5,
+      "value": "false"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "IntegerLiteral",
+      "offset": 790,
+      "length": 1,
+      "value": "1"
+    },
+    {
+      "filePath": "\/Users\/onix\/Downloads\/UnityInfaticaFrameworkWithLib\/UnityInfaticaFramework\/AgentManager.swift",
+      "kind": "FloatLiteral",
+      "offset": 4291,
+      "length": 3,
+      "value": "6.0"
+    }
+  ]
+}

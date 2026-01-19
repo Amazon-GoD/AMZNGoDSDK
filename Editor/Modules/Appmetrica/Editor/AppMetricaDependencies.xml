@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <dependencies>
     <androidPackages>
-        <androidPackage spec="io.appmetrica.analytics:analytics:7.13.0"/>
+        <androidPackage spec="io.appmetrica.analytics:analytics:7.14.0"/>
         <androidPackage spec="androidx.annotation:annotation:1.7.1"/>
     </androidPackages>
     <iosPods>

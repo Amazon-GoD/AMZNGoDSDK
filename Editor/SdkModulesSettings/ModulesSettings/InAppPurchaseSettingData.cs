@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.Purchasing;
+using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -20,6 +21,8 @@ namespace AMZNGoDSDK.Editor
         public string ProductId;
         public string DisplayName;
         public int RewardAmount;
+        public int DurationDays = 30;
+        public List<SubscriptionConsumableReward> ConsumableRewards = new();
         public bool Enabled = true;
     }
 
@@ -30,6 +33,7 @@ namespace AMZNGoDSDK.Editor
         public string DisplayName;
         public int RewardAmount;
         public string RewardKey;
+        public ConsumableRewardType RewardType = ConsumableRewardType.Default;
         public bool Enabled = true;
     }
 
@@ -44,5 +48,14 @@ namespace AMZNGoDSDK.Editor
     {
         AmazonAppStore,
         GooglePlay
+    }
+
+    [Serializable]
+    public class SubscriptionConsumableReward
+    {
+        public string ProductId;
+        public int RewardAmount;
+        public ConsumableRewardType RewardType = ConsumableRewardType.Default;
+        public string RewardKey;
     }
 }

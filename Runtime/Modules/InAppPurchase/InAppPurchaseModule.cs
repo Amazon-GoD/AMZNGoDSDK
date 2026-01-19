@@ -16,14 +16,23 @@ namespace AMZNGoDSDK.Runtime
         private IExtensionProvider extensionProvider;
         private readonly HashSet<string> addedProductIds = new();
 
+        private readonly Dictionary<ConsumableRewardType, Action<string, int>> _rewardTypeHandlers =
+            new();
+        private Action<string, int> _defaultConsumableRewardSetter;
+
         public Action<string> OnPurchaseComplete;
         public Action<string> OnPurchaseFailedCallback;
-        private Action<string, int> _consumableRewardSetter;
 
         public bool IsInitialized { get; private set; } = false;
 
         // Словарь для отслеживания статуса подписок
         private Dictionary<string, SubscriptionStatus> subscriptionStatuses = new();
+
+        private void Awake()
+        {
+            _defaultConsumableRewardSetter = DefaultConsumableRewardSetter;
+            _rewardTypeHandlers[ConsumableRewardType.Default] = _defaultConsumableRewardSetter;
+        }
 
         public void Construct(InAppPurchaseSettingData iapSettings)
         {
@@ -99,14 +108,31 @@ namespace AMZNGoDSDK.Runtime
 
             builder.AddProduct(subscription.ProductId, ProductType.Subscription);
 
-            if (!subscriptionStatuses.ContainsKey(subscription.ProductId))
+            RegisterSubscriptionStatus(subscription);
+        }
+
+        private void RegisterSubscriptionStatus(SubscriptionProduct subscription)
+        {
+            if (subscription == null || string.IsNullOrWhiteSpace(subscription.ProductId))
+                return;
+
+            if (!subscriptionStatuses.TryGetValue(subscription.ProductId, out var status))
             {
-                subscriptionStatuses[subscription.ProductId] = new SubscriptionStatus
+                status = new SubscriptionStatus
                 {
                     ProductId = subscription.ProductId,
-                    IsSubscribed = LoadSubscriptionStatus(subscription.ProductId),
-                    RewardAmount = subscription.RewardAmount
+                    RewardAmount = subscription.RewardAmount,
+                    ExpiresAt = LoadSubscriptionExpiration(subscription.ProductId)
                 };
+
+                subscriptionStatuses[subscription.ProductId] = status;
+            }
+            else
+            {
+                status.RewardAmount = subscription.RewardAmount;
+
+                if (status.ExpiresAt == DateTime.MinValue)
+                    status.ExpiresAt = LoadSubscriptionExpiration(subscription.ProductId);
             }
         }
 
@@ -144,12 +170,13 @@ namespace AMZNGoDSDK.Runtime
 
                 if (item.type == ProductType.Subscription && !subscriptionStatuses.ContainsKey(item.id))
                 {
-                    subscriptionStatuses[item.id] = new SubscriptionStatus
+                    RegisterSubscriptionStatus(new SubscriptionProduct
                     {
                         ProductId = item.id,
-                        IsSubscribed = LoadSubscriptionStatus(item.id),
-                        RewardAmount = 0
-                    };
+                        DisplayName = item.id,
+                        RewardAmount = 0,
+                        Enabled = true
+                    });
                 }
 
                 if (item.type == ProductType.Subscription && settings.SubscriptionProducts.All(s => s.ProductId != item.id))
@@ -184,15 +211,9 @@ namespace AMZNGoDSDK.Runtime
 
             Debug.Log("[AMZNGoDSDK] 🟢 Unity IAP инициализирован");
 
-            // Проверяем активные подписки
-            foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
+            foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
             {
-                var product = storeController.products.WithID(subscription.ProductId);
-                if (product != null && product.hasReceipt)
-                {
-                    Debug.Log($"[AMZNGoDSDK] ✅ Подписка активна: {subscription.ProductId}");
-                    SetSubscriptionStatus(subscription.ProductId, true);
-                }
+                Debug.Log($"[AMZNGoDSDK] ✅ Подписка активна: {status.ProductId} (до {status.ExpiresAt.ToLocalTime():G})");
             }
 
             IsInitialized = true;
@@ -219,8 +240,9 @@ namespace AMZNGoDSDK.Runtime
             if (subscriptionProduct != null)
             {
                 Debug.Log($"[AMZNGoDSDK] 🎉 Подписка успешно куплена: {productId}");
-                SetSubscriptionStatus(productId, true);
+                ExtendSubscription(subscriptionProduct);
                 GiveSubscriptionReward(subscriptionProduct);
+                GrantSubscriptionConsumables(subscriptionProduct);
             }
             else
             {
@@ -304,10 +326,16 @@ namespace AMZNGoDSDK.Runtime
             storeController.InitiatePurchase(productId);
         }
 
-        public bool IsSubscribed(string productId)
+        public bool HasSubscription(string productId)
         {
-            return subscriptionStatuses.ContainsKey(productId) && subscriptionStatuses[productId].IsSubscribed;
+            if (string.IsNullOrWhiteSpace(productId))
+                return false;
+
+            return subscriptionStatuses.TryGetValue(productId, out var status) && status.IsActive;
         }
+
+        public bool IsSubscribed(string productId) =>
+            HasSubscription(productId);
 
         public bool HasReceipt(string productId)
         {
@@ -336,56 +364,106 @@ namespace AMZNGoDSDK.Runtime
 
         private void GiveConsumableReward(ConsumableProduct consumable)
         {
+            if (consumable == null)
+                return;
+
             string rewardKey = string.IsNullOrWhiteSpace(consumable.RewardKey)
                 ? consumable.ProductId
                 : consumable.RewardKey;
 
-            var rewardSetter = _consumableRewardSetter ?? DefaultConsumableRewardSetter;
-            rewardSetter.Invoke(rewardKey, consumable.RewardAmount);
+            int amount = Math.Max(1, consumable.RewardAmount);
+            ConsumableRewardType rewardType = consumable.RewardType;
 
-            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда за товар {consumable.ProductId}: {consumable.RewardAmount} (key: {rewardKey})");
+            ApplyConsumableReward(rewardKey, amount, rewardType);
         }
 
-        private void SetSubscriptionStatus(string productId, bool status)
-        {
-            if (subscriptionStatuses.ContainsKey(productId))
-            {
-                subscriptionStatuses[productId].IsSubscribed = status;
-                subscriptionStatuses[productId].LastCheck = DateTime.UtcNow;
-
-                PlayerPrefs.SetInt($"SubscriptionStatus_{productId}", status ? 1 : 0);
-                PlayerPrefs.SetString($"SubscriptionLastCheck_{productId}", DateTime.UtcNow.ToString("o"));
-                PlayerPrefs.Save();
-            }
-        }
-
-        private bool LoadSubscriptionStatus(string productId)
-        {
-#if UNITY_EDITOR
-            return false;
-#else
-            return PlayerPrefs.GetInt($"SubscriptionStatus_{productId}", 0) == 1;
-#endif
-        }
 
         private void CheckExpiredSubscriptions()
         {
-            foreach (var subscription in subscriptionStatuses)
+            foreach (var status in subscriptionStatuses.Values)
             {
-                string lastCheckKey = $"SubscriptionLastCheck_{subscription.Key}";
-                string lastCheckStr = PlayerPrefs.GetString(lastCheckKey, "");
-
-                if (!DateTime.TryParse(lastCheckStr, out DateTime lastCheck))
-                {
+                if (status.IsActive || status.ExpiresAt == DateTime.MinValue)
                     continue;
-                }
 
-                if ((DateTime.UtcNow - lastCheck).TotalDays >= 7)
-                {
-                    Debug.LogWarning($"[AMZNGoDSDK] ⚠️ Более 7 дней без обновлений — подписка считается отменённой: {subscription.Key}");
-                    SetSubscriptionStatus(subscription.Key, false);
-                }
+                Debug.LogWarning($"[AMZNGoDSDK] ⚠️ Подписка истекла: {status.ProductId} (до {status.ExpiresAt:G})");
+                SaveSubscriptionStatus(status);
             }
+        }
+
+        private void ExtendSubscription(SubscriptionProduct subscription)
+        {
+            if (subscription == null || !subscriptionStatuses.TryGetValue(subscription.ProductId, out var status))
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            DateTime basePoint = status.IsActive ? status.ExpiresAt : now;
+            int durationDays = Math.Max(1, subscription.DurationDays);
+            status.ExpiresAt = basePoint.AddDays(durationDays);
+
+            SaveSubscriptionStatus(status);
+        }
+
+        private void GrantSubscriptionConsumables(SubscriptionProduct subscription)
+        {
+            if (subscription?.ConsumableRewards == null || subscription.ConsumableRewards.Count == 0)
+                return;
+
+            foreach (var reward in subscription.ConsumableRewards)
+            {
+                if (reward == null || string.IsNullOrWhiteSpace(reward.ProductId))
+                    continue;
+
+                int amount = Math.Max(1, reward.RewardAmount);
+                string rewardKey = string.IsNullOrWhiteSpace(reward.RewardKey) ? reward.ProductId : reward.RewardKey;
+                ConsumableRewardType rewardType = reward.RewardType;
+
+                if (rewardType == default)
+                    rewardType = ResolveConsumableRewardType(reward.ProductId);
+
+                ApplyConsumableReward(rewardKey, amount, rewardType);
+            }
+        }
+
+        private void ApplyConsumableReward(string rewardKey, int rewardAmount, ConsumableRewardType rewardType)
+        {
+            if (string.IsNullOrWhiteSpace(rewardKey) || rewardAmount <= 0)
+                return;
+
+            if (!_rewardTypeHandlers.TryGetValue(rewardType, out var handler))
+                handler = _defaultConsumableRewardSetter ?? DefaultConsumableRewardSetter;
+
+            handler.Invoke(rewardKey, rewardAmount);
+            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда ({rewardType}) {rewardKey}: {rewardAmount}");
+        }
+
+        private ConsumableRewardType ResolveConsumableRewardType(string productId)
+        {
+            var consumable = settings.ConsumableProducts.FirstOrDefault(c => c.ProductId == productId);
+
+            if (consumable == null)
+                return ConsumableRewardType.Default;
+
+            return consumable.RewardType;
+        }
+
+        private DateTime LoadSubscriptionExpiration(string productId)
+        {
+#if UNITY_EDITOR
+            return DateTime.MinValue;
+#else
+            var stored = PlayerPrefs.GetString($"SubscriptionExpires_{productId}", "");
+            return DateTime.TryParse(stored, out var expiration) ? expiration : DateTime.MinValue;
+#endif
+        }
+
+        private void SaveSubscriptionStatus(SubscriptionStatus status)
+        {
+            if (status == null)
+                return;
+
+            PlayerPrefs.SetString($"SubscriptionExpires_{status.ProductId}", status.ExpiresAt.ToString("o"));
+            PlayerPrefs.SetInt($"SubscriptionStatus_{status.ProductId}", status.IsActive ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public void SetPurchaseCompleteCallback(System.Action<string> callback)
@@ -400,7 +478,16 @@ namespace AMZNGoDSDK.Runtime
 
         public void SetConsumableRewardSetter(Action<string, int> rewardSetter)
         {
-            _consumableRewardSetter = rewardSetter;
+            _defaultConsumableRewardSetter = rewardSetter ?? DefaultConsumableRewardSetter;
+            _rewardTypeHandlers[ConsumableRewardType.Default] = _defaultConsumableRewardSetter;
+        }
+
+        public void RegisterConsumableRewardType(ConsumableRewardType rewardType, Action<string, int> handler)
+        {
+            if (handler == null)
+                return;
+
+            _rewardTypeHandlers[rewardType] = handler;
         }
 
         public override void Cleenup()
@@ -412,9 +499,10 @@ namespace AMZNGoDSDK.Runtime
         private class SubscriptionStatus
         {
             public string ProductId;
-            public bool IsSubscribed;
             public int RewardAmount;
-            public DateTime LastCheck;
+            public DateTime ExpiresAt;
+
+            public bool IsActive => ExpiresAt > DateTime.UtcNow;
         }
 
         private void DefaultConsumableRewardSetter(string rewardKey, int rewardAmount)

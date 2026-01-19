@@ -1,7 +1,8 @@
 using System;
-using UnityEngine;
 using AppodealStack.Monetization.Api;
 using AppodealStack.Monetization.Common;
+using UnityEngine;
+
 
 public class AppodealAdapter : MonoBehaviour, IInterstitialAdListener, IRewardedVideoAdListener
 {

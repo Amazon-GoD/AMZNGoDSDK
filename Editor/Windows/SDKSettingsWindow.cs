@@ -50,8 +50,15 @@ namespace AMZNGoDSDK.Editor
 
             if (GUILayout.Button("Save Settings", GUILayout.Height(30)))
             {
-                SdkSettingsManager.SaveSettings(_currentSettings);
-                EditorUtility.DisplayDialog("Success", "Settings saved successfully!", "OK");
+                if (!SdkSettingsManager.ValidateInAppPurchaseProductIds(_currentSettings.InAppPurchase, out var message))
+                {
+                    EditorUtility.DisplayDialog("Ошибка", message, "OK");
+                }
+                else
+                {
+                    SdkSettingsManager.SaveSettings(_currentSettings);
+                    EditorUtility.DisplayDialog("Success", "Settings saved successfully!", "OK");
+                }
             }
 
             GUILayout.Space(10);
@@ -233,6 +240,61 @@ namespace AMZNGoDSDK.Editor
                             product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
                         }
 
+                    product.DurationDays = EditorGUILayout.IntField("Duration (days)", Math.Max(1, product.DurationDays));
+
+                    GUILayout.Space(5);
+                    GUILayout.Label("Subscription Consumables:", EditorStyles.miniBoldLabel);
+
+                    for (int rewardIndex = 0; rewardIndex < product.ConsumableRewards.Count; rewardIndex++)
+                    {
+                        var reward = product.ConsumableRewards[rewardIndex];
+                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                        var consumableOptions = _currentSettings.InAppPurchase.ConsumableProducts
+                            .Where(c => !string.IsNullOrWhiteSpace(c.ProductId))
+                            .Select(c => c.ProductId)
+                            .ToArray();
+
+                        if (consumableOptions.Length > 0)
+                        {
+                            int currentIndex = Mathf.Max(0, Array.IndexOf(consumableOptions, reward.ProductId));
+                            currentIndex = Mathf.Clamp(EditorGUILayout.Popup("Consumable ID", currentIndex, consumableOptions), 0, consumableOptions.Length - 1);
+                            reward.ProductId = consumableOptions[currentIndex];
+
+                            var mappedConsumable = _currentSettings.InAppPurchase.ConsumableProducts
+                                .FirstOrDefault(c => c.ProductId == reward.ProductId);
+
+                            if (mappedConsumable != null)
+                            {
+                                EditorGUILayout.LabelField("Reward Amount", mappedConsumable.RewardAmount.ToString());
+                                EditorGUILayout.LabelField("Reward Key", string.IsNullOrEmpty(mappedConsumable.RewardKey) ? mappedConsumable.ProductId : mappedConsumable.RewardKey);
+                                EditorGUILayout.LabelField("Reward Type", mappedConsumable.RewardType.ToString());
+                            }
+                        }
+                        else
+                        {
+                            EditorGUILayout.LabelField("Добавьте consumable товар выше, чтобы выбрать его здесь.");
+                            reward.ProductId = string.Empty;
+                        }
+
+                        if (GUILayout.Button("Remove Consumable Reward", GUILayout.Height(20)))
+                        {
+                            product.ConsumableRewards.RemoveAt(rewardIndex);
+                            rewardIndex--;
+                            EditorGUILayout.EndVertical();
+                            GUILayout.Space(5);
+                            continue;
+                        }
+
+                        EditorGUILayout.EndVertical();
+                        GUILayout.Space(5);
+                    }
+
+                    if (GUILayout.Button("Add Consumable Reward"))
+                    {
+                        product.ConsumableRewards.Add(new SubscriptionConsumableReward());
+                    }
+
                         if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))
                         {
                             _currentSettings.InAppPurchase.SubscriptionProducts.RemoveAt(i);
@@ -267,6 +329,7 @@ namespace AMZNGoDSDK.Editor
                             product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
                             product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
                             product.RewardKey = EditorGUILayout.TextField("Reward Key", string.IsNullOrEmpty(product.RewardKey) ? product.ProductId : product.RewardKey);
+                            product.RewardType = (ConsumableRewardType)EditorGUILayout.EnumPopup("Reward Type", product.RewardType);
                         }
 
                         if (GUILayout.Button("Remove Consumable", GUILayout.Height(20)))

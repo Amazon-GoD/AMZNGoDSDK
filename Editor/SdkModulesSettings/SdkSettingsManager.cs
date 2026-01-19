@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using AMZNGoDSDK.Runtime;
@@ -128,6 +130,8 @@ namespace AMZNGoDSDK.Editor
                     ProductId = runtimeProduct.ProductId,
                     DisplayName = runtimeProduct.DisplayName,
                     RewardAmount = runtimeProduct.RewardAmount,
+                    DurationDays = runtimeProduct.DurationDays,
+                    ConsumableRewards = ConvertSubscriptionConsumableRewardsToEditor(runtimeProduct.ConsumableRewards),
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -141,6 +145,7 @@ namespace AMZNGoDSDK.Editor
                     DisplayName = runtimeProduct.DisplayName,
                     RewardAmount = runtimeProduct.RewardAmount,
                     RewardKey = runtimeProduct.RewardKey,
+                    RewardType = runtimeProduct.RewardType,
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -169,6 +174,56 @@ namespace AMZNGoDSDK.Editor
                 PauseGameWhenOffline = runtimeSettings.PauseGameWhenOffline,
                 ShowBanner = runtimeSettings.ShowBanner,
             };
+        }
+
+        private static List<SubscriptionConsumableReward> ConvertSubscriptionConsumableRewardsToEditor(List<Runtime.SubscriptionConsumableReward> runtimeRewards)
+        {
+            var editorRewards = new List<SubscriptionConsumableReward>();
+
+            if (runtimeRewards == null)
+                return editorRewards;
+
+            foreach (var runtimeReward in runtimeRewards)
+            {
+                editorRewards.Add(new SubscriptionConsumableReward
+                {
+                    ProductId = runtimeReward.ProductId,
+                    RewardAmount = runtimeReward.RewardAmount,
+                    RewardKey = runtimeReward.RewardKey,
+                    RewardType = runtimeReward.RewardType
+                });
+            }
+
+            return editorRewards;
+        }
+
+        public static bool ValidateInAppPurchaseProductIds(InAppPurchaseSettingData settings, out string message)
+        {
+            var subscriptionIds = settings.SubscriptionProducts
+                .Select(x => x.ProductId?.Trim())
+                .Where(x => !string.IsNullOrEmpty(x))
+                .ToArray();
+
+            var consumableIds = settings.ConsumableProducts
+                .Select(x => x.ProductId?.Trim())
+                .Where(x => !string.IsNullOrEmpty(x))
+                .ToArray();
+
+            var ids = subscriptionIds
+                .Concat(consumableIds)
+                .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToArray();
+
+            if (ids.Length == 0)
+            {
+                message = string.Empty;
+                return true;
+            }
+
+            message = $"Невозможно сохранить: повторяются идентификаторы продуктов ({string.Join(", ", ids)}). Каждый ProductId должен быть уникальным.";
+            return false;
         }
 
         public static void SaveSettings(SdkSettingsData settings)
@@ -273,6 +328,8 @@ namespace AMZNGoDSDK.Editor
                     ProductId = editorProduct.ProductId,
                     DisplayName = editorProduct.DisplayName,
                     RewardAmount = editorProduct.RewardAmount,
+                    DurationDays = editorProduct.DurationDays,
+                    ConsumableRewards = ConvertSubscriptionConsumableRewards(editorProduct.ConsumableRewards),
                     Enabled = editorProduct.Enabled
                 });
             }
@@ -286,11 +343,33 @@ namespace AMZNGoDSDK.Editor
                     DisplayName = editorProduct.DisplayName,
                     RewardAmount = editorProduct.RewardAmount,
                     RewardKey = editorProduct.RewardKey,
+                    RewardType = editorProduct.RewardType,
                     Enabled = editorProduct.Enabled
                 });
             }
 
             return runtimeSettings;
+        }
+
+        private static List<Runtime.SubscriptionConsumableReward> ConvertSubscriptionConsumableRewards(List<SubscriptionConsumableReward> editorRewards)
+        {
+            var runtimeRewards = new List<Runtime.SubscriptionConsumableReward>();
+
+            if (editorRewards == null)
+                return runtimeRewards;
+
+            foreach (var reward in editorRewards)
+            {
+                runtimeRewards.Add(new Runtime.SubscriptionConsumableReward
+                {
+                    ProductId = reward.ProductId,
+                    RewardAmount = reward.RewardAmount,
+                    RewardKey = reward.RewardKey,
+                    RewardType = reward.RewardType
+                });
+            }
+
+            return runtimeRewards;
         }
 
         private static Runtime.FirebaseSettingData ConvertFirebaseSettings(FirebaseSettingData editorSettings)
