@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -41,3 +42,4 @@ namespace Io.AppMetrica.Editor.Features.Utils {
         }
     }
 }
+#endif

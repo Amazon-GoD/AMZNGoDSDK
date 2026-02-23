@@ -1,3 +1,4 @@
+#if AMZN_ADJUST_ENABLED
 using System;
 using System.IO;
 using System.Linq;
@@ -341,3 +342,4 @@ namespace AdjustSdk
     #endif
     }
 }
+#endif

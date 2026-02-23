@@ -1,3 +1,4 @@
+#if AMZN_CROSSPROMO_ENABLED
 using System;
 using AppodealStack.Monetization.Api;
 using AppodealStack.Monetization.Common;
@@ -149,3 +150,4 @@ public class AppodealAdapter : MonoBehaviour, IInterstitialAdListener, IRewarded
         _onRewardedCallback = null;
     }
 }
+#endif

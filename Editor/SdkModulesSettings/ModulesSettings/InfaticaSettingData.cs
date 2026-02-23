@@ -5,6 +5,7 @@ namespace AMZNGoDSDK.Editor
     [Serializable]
     public class InfaticaSettingData : ModuleSettingData
     {
+        public string PartnerId = "";
         public InfaticaMode Mode;
         public bool BatteryOptimizationIgnoreAsking;
         public enum InfaticaMode

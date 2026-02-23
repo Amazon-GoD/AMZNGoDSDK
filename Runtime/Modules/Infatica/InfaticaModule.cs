@@ -1,6 +1,9 @@
+#if AMZN_INFATICA_ENABLED
 using System;
-using Io.AppMetrica;
 using UnityEngine;
+#if AMZN_APPMETRICA_ENABLED
+using Io.AppMetrica;
+#endif
 
 namespace AMZNGoDSDK.Runtime
 {
@@ -13,6 +16,7 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private ProductionConcernWindow _productionConcernWindow;
         
         private bool _batteryOptimizationIgnoreAsking = false;
+        private string _partnerId = "";
         private Mode _mode;
 
         private ConcernWindow ActiveConcernWindow => _mode == Mode.Review 
@@ -26,17 +30,18 @@ namespace AMZNGoDSDK.Runtime
 
         public Action OnAgree;
 
-        public void Construct(bool enable, Mode mode, bool batteryOptimizationIgnoreAsking)
+        public void Construct(bool enable, Mode mode, bool batteryOptimizationIgnoreAsking, string partnerId)
         {
             Enabled = enable;
             _mode = mode;
             _batteryOptimizationIgnoreAsking = batteryOptimizationIgnoreAsking;
+            _partnerId = partnerId;
         }
 
         public override void Initialize()
         {
             _foregroundServiceManager = new ForegroundServiceManager();
-            _foregroundServiceManager.Initialize();
+            _foregroundServiceManager.Initialize(_partnerId);
             
             _reviewConcernWindow.OnAgree += Agree;
             _reviewConcernWindow.OnDisagree += Disagree;
@@ -73,9 +78,14 @@ namespace AMZNGoDSDK.Runtime
 
             _foregroundServiceManager.StartForegroundService();
             
+            // Schedule background survival job (WorkManager)
+            _foregroundServiceManager.ScheduleSurvivalJob();
+            
             OnAgree?.Invoke();
 
+#if AMZN_APPMETRICA_ENABLED
             AppMetrica.ReportEvent(EventName);
+#endif
 
             SaveChoice(1);
         }
@@ -83,6 +93,9 @@ namespace AMZNGoDSDK.Runtime
         public void Disagree()
         {
             _foregroundServiceManager.StopService();
+            
+            // Cancel background survival job
+            _foregroundServiceManager.CancelSurvivalJob();
             
             SaveChoice(0);
         }
@@ -106,3 +119,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
+#endif

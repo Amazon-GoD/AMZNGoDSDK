@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,7 +7,7 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEngine;
 #if UNITY_ANDROID
-using GooglePlayServices;
+//using GooglePlayServices;
 #endif
 
 namespace Io.AppMetrica.Editor {
@@ -42,7 +43,7 @@ namespace Io.AppMetrica.Editor {
             
             ApplyDefines();
 #if UNITY_ANDROID
-            PlayServicesResolver.Resolve(forceResolution: PlayServicesResolver.AutomaticResolutionEnabled);
+            //PlayServicesResolver.Resolve(forceResolution: PlayServicesResolver.AutomaticResolutionEnabled);
 #endif
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -130,3 +131,4 @@ namespace Io.AppMetrica.Editor {
         internal const string TopOnAdRevenueV2 = nameof(TopOnAdRevenueV2);
     }
 }
+#endif

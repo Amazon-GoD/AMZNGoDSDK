@@ -1,6 +1,10 @@
 {
     "name": "UniWebView-CSharp.Editor",
-    "references": ["GUID:343deaaf83e0cee4ca978e7df0b80d21","GUID:2bafac87e7f4b9b418d9448d219b01ab"],
+    "rootNamespace": "",
+    "references": [
+        "GUID:343deaaf83e0cee4ca978e7df0b80d21",
+        "GUID:2bafac87e7f4b9b418d9448d219b01ab"
+    ],
     "includePlatforms": [
         "Editor"
     ],
@@ -8,7 +12,7 @@
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
-    "autoReferenced": true,
+    "autoReferenced": false,
     "defineConstraints": [],
     "versionDefines": [],
     "noEngineReferences": false

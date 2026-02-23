@@ -1,5 +1,4 @@
 using System;
-using AdjustSdk;
 
 namespace AMZNGoDSDK.Runtime
 {
@@ -8,6 +7,12 @@ namespace AMZNGoDSDK.Runtime
     {
         public string Key;
         public AdjustEnvironment Environment;
+        
+        public enum AdjustEnvironment
+        {
+            Sandbox = 0,
+            Production = 1
+        }
     }
 }
 

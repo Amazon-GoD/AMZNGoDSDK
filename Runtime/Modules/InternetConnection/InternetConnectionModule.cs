@@ -1,3 +1,4 @@
+#if AMZN_INTERNETCONNECTION_ENABLED
 using System;
 using System.Collections;
 using UnityEngine;
@@ -130,4 +131,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
-
+#endif

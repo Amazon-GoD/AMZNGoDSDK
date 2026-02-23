@@ -1,3 +1,4 @@
+#if AMZN_IAP_ENABLED
 using System;
 
 namespace AMZNGoDSDK.Runtime
@@ -10,4 +11,4 @@ namespace AMZNGoDSDK.Runtime
         PremiumEnergy = 2
     }
 }
-
+#endif

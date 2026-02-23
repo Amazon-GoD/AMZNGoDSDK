@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 // https://github.com/mhallin/SimpleJSON.NET
 // SimpleJSON.NET is licensed under a 3-Clause BSD License:
 //
@@ -749,3 +750,4 @@ namespace Io.AppMetrica.Editor.Features.Utils {
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if AMZN_FIREBASE_ENABLED
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -134,4 +135,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
-
+#endif

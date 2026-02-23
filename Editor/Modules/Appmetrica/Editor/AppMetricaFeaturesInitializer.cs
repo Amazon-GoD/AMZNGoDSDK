@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 using UnityEditor;
 
 namespace Io.AppMetrica.Editor {
@@ -16,3 +17,4 @@ namespace Io.AppMetrica.Editor {
         }
     }
 }
+#endif

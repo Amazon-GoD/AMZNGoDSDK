@@ -1,3 +1,4 @@
+#if AMZN_ADJUST_ENABLED
 // Inspired by: https://github.com/facebook/facebook-sdk-for-unity/blob/master/Facebook.Unity.Settings/FacebookSettings.cs
 
 using System.Collections.Generic;
@@ -192,3 +193,4 @@ namespace AdjustSdk
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if AMZN_CROSSPROMO_ENABLED
 using System;
 using System.Collections;
 using UnityEngine;
@@ -143,4 +144,4 @@ namespace AMZNGoDSDK.Runtime
         public override void Cleenup() { }
     }
 }
-
+#endif

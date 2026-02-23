@@ -1,3 +1,4 @@
+#if AMZN_ADJUST_ENABLED
 using AdjustSdk;
 using System.Collections.Generic;
 
@@ -6,9 +7,9 @@ namespace AMZNGoDSDK.Runtime
     public class AdjustModule : ModuleBase
     {
         private string _adjustKey;
-        private AdjustEnvironment _environment;
+        private AdjustSdk.AdjustEnvironment _environment;
 
-        public void Construct(bool enable, string adjustKey, AdjustEnvironment environment)
+        public void Construct(bool enable, string adjustKey, AdjustSdk.AdjustEnvironment environment)
         {
             Enabled = enable;
             _adjustKey = adjustKey;
@@ -36,4 +37,4 @@ namespace AMZNGoDSDK.Runtime
         public override void Cleenup() { }
     }
 }
-
+#endif

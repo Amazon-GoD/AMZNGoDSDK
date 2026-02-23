@@ -1,3 +1,4 @@
+#if AMZN_CROSSPROMO_ENABLED
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -7,4 +8,4 @@ namespace AMZNGoDSDK.Runtime
         // Compatibility wrapper that keeps the old PyroBanner type alive.
     }
 }
-
+#endif

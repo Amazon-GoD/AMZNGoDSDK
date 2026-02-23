@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 #if UNITY_IPHONE || UNITY_IOS
 using System.IO;
 using Io.AppMetrica.Editor.Features.Utils;
@@ -23,4 +24,5 @@ namespace Io.AppMetrica.Editor {
         }
     }
 }
+#endif
 #endif

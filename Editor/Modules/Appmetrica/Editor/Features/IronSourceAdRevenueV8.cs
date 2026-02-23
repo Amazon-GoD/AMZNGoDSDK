@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 using Io.AppMetrica.Editor.Features.Utils;
 
 namespace Io.AppMetrica.Editor.Features {
@@ -15,3 +16,4 @@ namespace Io.AppMetrica.Editor.Features {
         }
     }
 }
+#endif

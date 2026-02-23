@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 using UnityEditor;
 using UnityEngine;
 
@@ -15,3 +16,4 @@ namespace Io.AppMetrica.Editor {
         }
     }
 }
+#endif

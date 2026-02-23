@@ -7,14 +7,28 @@ namespace AMZNGoDSDK.Runtime
 {
     public sealed class AmznGoDSDKCore : MonoBehaviourSingletonPersistent<AmznGoDSDKCore>
     {
+#if AMZN_ADJUST_ENABLED
         [SerializeField] private AdjustModule _adjustModule;
+#endif
+#if AMZN_APPMETRICA_ENABLED
         [SerializeField] private AppMetricaModule _appMetricaModule;
+#endif
+#if AMZN_CROSSPROMO_ENABLED
         [SerializeField] private CrossPromoModule _crossPromoModule;
+#endif
+#if AMZN_INFATICA_ENABLED
         [SerializeField] private InfaticaModule _infaticaModule;
+#endif
+#if AMZN_IAP_ENABLED
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
         [SerializeField] private InAppPurchaseModuleInitializer _inAppPurchaseModuleInitializer;
+#endif
+#if AMZN_FIREBASE_ENABLED
         [SerializeField] private FirebaseModule _firebaseModule;
+#endif
+#if AMZN_INTERNETCONNECTION_ENABLED
         [SerializeField] private InternetConnectionModule _internetConnectionModule;
+#endif
         
         public bool Enabled { get; private set; }
         
@@ -39,64 +53,113 @@ namespace AMZNGoDSDK.Runtime
             var adjustSettings = sdkSettingsData.Adjust;
             var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
 
+#if AMZN_INTERNETCONNECTION_ENABLED
             EnsureInternetConnectionModule();
+#endif
+#if AMZN_FIREBASE_ENABLED
             EnsureFirebaseModule();
+#endif
 
             #region Constructs
 
+#if AMZN_INTERNETCONNECTION_ENABLED
             _internetConnectionModule.Construct(internetSettings.Enabled, internetSettings);
+#endif
 
+#if AMZN_FIREBASE_ENABLED
             _firebaseModule.Construct(
                 firebaseSettings.Enabled,
                 firebaseSettings.EnableAnalytics,
                 firebaseSettings.EnableCrashlytics);
+#endif
 
+#if AMZN_INFATICA_ENABLED
+            var infaticaMode = infaticaSettings.Mode == InfaticaSettingData.InfaticaMode.Review
+                ? InfaticaModule.Mode.Review
+                : InfaticaModule.Mode.Production;
+            
             _infaticaModule.Construct(
                 infaticaSettings.Enabled, 
-                infaticaSettings.Mode, 
-                infaticaSettings.BatteryOptimizationIgnoreAsking);
+                infaticaMode, 
+                infaticaSettings.BatteryOptimizationIgnoreAsking,
+                infaticaSettings.PartnerId);
+#endif
             
+#if AMZN_CROSSPROMO_ENABLED
             _crossPromoModule.Construct(
                 crossPromoSettings.Enabled,
                 crossPromoSettings.ConfigUrl,
                 crossPromoSettings.AppodealSdkKey);
+#endif
             
+#if AMZN_APPMETRICA_ENABLED
             _appMetricaModule.Construct(
                 appMetricaSettings.Enabled,
                 appMetricaSettings.Key);
+#endif
+            
+#if AMZN_ADJUST_ENABLED
+            var adjustEnvironment = adjustSettings.Environment == AdjustSettingData.AdjustEnvironment.Production
+                ? AdjustSdk.AdjustEnvironment.Production
+                : AdjustSdk.AdjustEnvironment.Sandbox;
             
             _adjustModule.Construct(
                 adjustSettings.Enabled,
                 adjustSettings.Key,
-                adjustSettings.Environment);
+                adjustEnvironment);
+#endif
 
+#if AMZN_IAP_ENABLED
             _inAppPurchaseModule.Construct(inAppPurchaseSettings);
 
             EnsureInAppPurchaseModuleInitializer();
             _inAppPurchaseModuleInitializer.Initialize(_inAppPurchaseModule);
+#endif
 
             #endregion
             
-            StartCoroutine(InitializeWhenReady(
-                _firebaseModule,
-                _infaticaModule,
-                _crossPromoModule,
-                _appMetricaModule,
-                _adjustModule,
-                _inAppPurchaseModule));
+            var modules = new List<ModuleBase>();
+#if AMZN_FIREBASE_ENABLED
+            modules.Add(_firebaseModule);
+#endif
+#if AMZN_INFATICA_ENABLED
+            modules.Add(_infaticaModule);
+#endif
+#if AMZN_CROSSPROMO_ENABLED
+            modules.Add(_crossPromoModule);
+#endif
+#if AMZN_APPMETRICA_ENABLED
+            modules.Add(_appMetricaModule);
+#endif
+#if AMZN_ADJUST_ENABLED
+            modules.Add(_adjustModule);
+#endif
+#if AMZN_IAP_ENABLED
+            modules.Add(_inAppPurchaseModule);
+#endif
+
+            StartCoroutine(InitializeWhenReady(modules.ToArray()));
             
+#if AMZN_INFATICA_ENABLED
             OnInfaticaAgree = _infaticaModule.OnAgree;
+#endif
         }
         public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
         {
+#if AMZN_CROSSPROMO_ENABLED
             _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
+#endif
         }
         #endregion
         
         #region Infatica
         
+#if AMZN_INFATICA_ENABLED
         public bool IsInfaticaAgree => _infaticaModule.IsAgree;
-        public InfaticaModule.Mode InfaticaMode => _infaticaModule.CurrentMode;
+        public InfaticaSettingData.InfaticaMode InfaticaMode => 
+            _infaticaModule.CurrentMode == InfaticaModule.Mode.Review 
+                ? InfaticaSettingData.InfaticaMode.Review 
+                : InfaticaSettingData.InfaticaMode.Production;
         
         public Action OnInfaticaAgree;
         
@@ -107,11 +170,17 @@ namespace AMZNGoDSDK.Runtime
             
             _infaticaModule.ChangeChoice();
         }
+#else
+        public bool IsInfaticaAgree => false;
+        public Action OnInfaticaAgree;
+        public void ShowInfaticaBanner() { }
+#endif
         
         #endregion
         
         #region Cross Promo
 
+#if AMZN_CROSSPROMO_ENABLED
         public bool IsAdsReady => _crossPromoModule.IsAdsReady;
         
         public void ShowInterstitial()
@@ -129,11 +198,17 @@ namespace AMZNGoDSDK.Runtime
             
             _crossPromoModule.ShowRewarded(callback);
         }
+#else
+        public bool IsAdsReady => false;
+        public void ShowInterstitial() { }
+        public void ShowRewarded(Action callback) { }
+#endif
 
         #endregion
         
         #region AppMetrica
 
+#if AMZN_APPMETRICA_ENABLED
         public void ReportEventAppMetrica(string eventName, Dictionary<string, string> args)
         {
             if(!_appMetricaModule.Enabled)
@@ -141,11 +216,15 @@ namespace AMZNGoDSDK.Runtime
             
             _appMetricaModule.ReportEvent(eventName, args);
         }
+#else
+        public void ReportEventAppMetrica(string eventName, Dictionary<string, string> args) { }
+#endif
         
         #endregion
         
         #region Adjust
 
+#if AMZN_ADJUST_ENABLED
         public void ReportEventAdjust(string token, Dictionary<string, string> args)
         {
             if(!_adjustModule.Enabled)
@@ -153,11 +232,15 @@ namespace AMZNGoDSDK.Runtime
             
             _adjustModule.ReportEvent(token, args);
         }
+#else
+        public void ReportEventAdjust(string token, Dictionary<string, string> args) { }
+#endif
         
         #endregion
 
         #region In-App Purchase
 
+#if AMZN_IAP_ENABLED
         public bool IsIAPInitialized => _inAppPurchaseModule.IsInitialized;
 
         public void BuyProduct(string productId)
@@ -206,6 +289,16 @@ namespace AMZNGoDSDK.Runtime
         {
             _inAppPurchaseModule.SetConsumableRewardSetter(rewardSetter);
         }
+#else
+        public bool IsIAPInitialized => false;
+        public void BuyProduct(string productId) { }
+        public bool IsSubscribed(string productId) => false;
+        public bool HasReceipt(string productId) => false;
+        public void RestorePurchases(Action<bool> onComplete = null) { }
+        public void SetIAPPurchaseCompleteCallback(Action<string> callback) { }
+        public void SetIAPPurchaseFailedCallback(Action<string> callback) { }
+        public void SetIAPConsumableRewardSetter(Action<string, int> rewardSetter) { }
+#endif
 
         #endregion
 
@@ -213,16 +306,20 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator InitializeWhenReady(params ModuleBase[] modules)
         {
+#if AMZN_INTERNETCONNECTION_ENABLED
             if (_internetConnectionModule != null && _internetConnectionModule.Enabled)
             {
                 _internetConnectionModule.Initialize();
                 if (!_internetConnectionModule.IsConnected)
                     yield return _internetConnectionModule.WaitUntilConnected();
             }
+#endif
 
             InitializeModules(modules);
+            yield break;
         }
 
+#if AMZN_INTERNETCONNECTION_ENABLED
         private void EnsureInternetConnectionModule()
         {
             if (_internetConnectionModule != null)
@@ -232,7 +329,9 @@ namespace AMZNGoDSDK.Runtime
             if (_internetConnectionModule == null)
                 _internetConnectionModule = gameObject.AddComponent<InternetConnectionModule>();
         }
+#endif
 
+#if AMZN_IAP_ENABLED
         private void EnsureInAppPurchaseModuleInitializer()
         {
             if (_inAppPurchaseModuleInitializer != null)
@@ -242,7 +341,9 @@ namespace AMZNGoDSDK.Runtime
             if (_inAppPurchaseModuleInitializer == null)
                 _inAppPurchaseModuleInitializer = gameObject.AddComponent<InAppPurchaseModuleInitializer>();
         }
+#endif
 
+#if AMZN_FIREBASE_ENABLED
         private void EnsureFirebaseModule()
         {
             if (_firebaseModule != null)
@@ -278,6 +379,12 @@ namespace AMZNGoDSDK.Runtime
 
             _firebaseModule.LogCrash(message);
         }
+#else
+        public bool IsFirebaseReady => false;
+        public void LogFirebaseEvent(string eventName, Dictionary<string, string> parameters = null) { }
+        public void RecordFirebaseException(Exception exception) { }
+        public void LogFirebaseCrash(string message) { }
+#endif
 
         private void InitializeModules(params ModuleBase[] modules)
         {

@@ -1,3 +1,4 @@
+#if AMZN_IAP_ENABLED
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -52,4 +53,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
-
+#endif

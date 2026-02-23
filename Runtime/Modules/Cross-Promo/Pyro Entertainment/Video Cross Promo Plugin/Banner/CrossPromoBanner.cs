@@ -1,3 +1,4 @@
+#if AMZN_CROSSPROMO_ENABLED
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -293,3 +294,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
+#endif

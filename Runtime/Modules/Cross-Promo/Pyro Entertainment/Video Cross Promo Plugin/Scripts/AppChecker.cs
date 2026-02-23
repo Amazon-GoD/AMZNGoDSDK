@@ -1,3 +1,4 @@
+#if AMZN_CROSSPROMO_ENABLED
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -27,3 +28,4 @@ namespace AMZNGoDSDK.Runtime
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 namespace Io.AppMetrica.Editor.Features {
     internal class FyberAdRevenueV3 : Feature {
         public FyberAdRevenueV3(string featureName) : base(featureName) {}
@@ -7,3 +8,4 @@ namespace Io.AppMetrica.Editor.Features {
         internal override bool IsAutoEnableable => false;
     }
 }
+#endif

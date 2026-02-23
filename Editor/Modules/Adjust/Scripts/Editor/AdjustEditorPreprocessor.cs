@@ -1,4 +1,5 @@
-﻿using System.IO;
+#if AMZN_ADJUST_ENABLED
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -365,3 +366,4 @@ namespace AdjustSdk
 #endif
     }
 }
+#endif

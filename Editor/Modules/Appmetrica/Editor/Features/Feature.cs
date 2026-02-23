@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 namespace Io.AppMetrica.Editor.Features {
     internal abstract class Feature {
         protected Feature(string featureName) {
@@ -53,3 +54,4 @@ namespace Io.AppMetrica.Editor.Features {
         }
     }
 }
+#endif

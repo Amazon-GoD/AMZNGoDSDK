@@ -1,3 +1,4 @@
+#if AMZN_APPMETRICA_ENABLED
 #if UNITY_ANDROID
 using UnityEditor.Android;
 using System.IO;
@@ -78,4 +79,5 @@ namespace Io.AppMetrica.Editor {
         }
     }
 }
+#endif
 #endif

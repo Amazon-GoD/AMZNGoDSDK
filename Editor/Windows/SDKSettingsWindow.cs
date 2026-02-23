@@ -18,15 +18,27 @@ namespace AMZNGoDSDK.Editor
         private Vector2 _dependenciesScrollPosition;
         private SdkSettingsData _currentSettings;
 
-        [MenuItem("AMZN GoD/Settings", false, 0)]
-        public static async void ShowWindow()
+        [MenuItem("AMZN GoD/SDK Settings", false, 0)]
+        public static void ShowWindow()
         {
-            _dependenciesInfo = 
-                await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
-            
             var window = GetWindow<SDKSettingsWindow>("AMZN GoD SDK Settings");
             window.minSize = new Vector2(400, 600);
             window._currentSettings = SdkSettingsManager.LoadSettings();
+            
+            // Load dependencies info asynchronously
+            LoadDependenciesAsync();
+        }
+        
+        //[MenuItem("AMZN GoD/Settings/Open SDK Settings", false, 0)]
+        public static void ShowWindowAlt()
+        {
+            ShowWindow();
+        }
+        
+        private static async void LoadDependenciesAsync()
+        {
+            _dependenciesInfo = 
+                await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
         }
 
         private void OnGUI()
@@ -35,6 +47,14 @@ namespace AMZNGoDSDK.Editor
             GUILayout.Space(10);
 
             _currentSettings.Enabled = EditorGUILayout.Toggle("SDK Enabled:", _currentSettings.Enabled);
+
+            GUILayout.Space(5);
+            
+            // Conditional Compilation Info
+            EditorGUILayout.HelpBox(
+                "💡 Conditional Compilation: Disabled modules are excluded from builds using define symbols. " +
+                "This reduces build size and compilation time. Click 'Module Status' to see active modules.",
+                MessageType.Info);
 
             GUILayout.Space(10);
 
@@ -48,6 +68,8 @@ namespace AMZNGoDSDK.Editor
             DrawAdjustSettings();
             DrawInAppPurchaseSettings();
 
+            EditorGUILayout.BeginHorizontal();
+            
             if (GUILayout.Button("Save Settings", GUILayout.Height(30)))
             {
                 if (!SdkSettingsManager.ValidateInAppPurchaseProductIds(_currentSettings.InAppPurchase, out var message))
@@ -57,9 +79,20 @@ namespace AMZNGoDSDK.Editor
                 else
                 {
                     SdkSettingsManager.SaveSettings(_currentSettings);
-                    EditorUtility.DisplayDialog("Success", "Settings saved successfully!", "OK");
+                    EditorUtility.DisplayDialog("Success", 
+                        "Settings saved successfully!\n\n" +
+                        "Define symbols have been updated for conditional compilation.\n" +
+                        "Unity will recompile scripts automatically.", 
+                        "OK");
                 }
             }
+            
+            if (GUILayout.Button("Module Status", GUILayout.Height(30), GUILayout.Width(120)))
+            {
+                ModuleStatusWindow.ShowWindow();
+            }
+            
+            EditorGUILayout.EndHorizontal();
 
             GUILayout.Space(10);
 
@@ -125,6 +158,8 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Infatica.Enabled,
                 () =>
                 {
+                    _currentSettings.Infatica.PartnerId = EditorGUILayout
+                        .TextField("Partner ID", _currentSettings.Infatica.PartnerId);
                     _currentSettings.Infatica.Mode = (InfaticaSettingData.InfaticaMode)EditorGUILayout
                         .EnumPopup("Mode", _currentSettings.Infatica.Mode);
                     _currentSettings.Infatica.BatteryOptimizationIgnoreAsking = EditorGUILayout

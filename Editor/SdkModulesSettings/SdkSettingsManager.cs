@@ -64,7 +64,7 @@ namespace AMZNGoDSDK.Editor
 
         private static AdjustSettingData ConvertAdjustSettingsToEditor(Runtime.AdjustSettingData runtimeSettings)
         {
-            var adjustEnvironment = runtimeSettings.Environment == AdjustSdk.AdjustEnvironment.Production
+            var adjustEnvironment = runtimeSettings.Environment == Runtime.AdjustSettingData.AdjustEnvironment.Production
                 ? AdjustSettingData.AdjustEnvironment.Production
                 : AdjustSettingData.AdjustEnvironment.Sandbox;
 
@@ -97,7 +97,7 @@ namespace AMZNGoDSDK.Editor
 
         private static InfaticaSettingData ConvertInfaticaSettingsToEditor(Runtime.InfaticaSettingData runtimeSettings)
         {
-            var mode = runtimeSettings.Mode == Runtime.InfaticaModule.Mode.Review
+            var mode = runtimeSettings.Mode == Runtime.InfaticaSettingData.InfaticaMode.Review
                 ? InfaticaSettingData.InfaticaMode.Review
                 : InfaticaSettingData.InfaticaMode.Production;
 
@@ -237,6 +237,19 @@ namespace AMZNGoDSDK.Editor
             File.WriteAllText(fullPath, json);
 
             AssetDatabase.Refresh();
+            
+            Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS STARTED =====");
+            Debug.Log($"[SdkSettingsManager] Infatica.Enabled = {settings.Infatica.Enabled}");
+            
+            // Обновляем define symbols для условной компиляции
+            Debug.Log("[SdkSettingsManager] Updating define symbols...");
+            ModuleDefineManager.UpdateDefineSymbols(settings);
+            
+            // Обновляем папки модулей если включено авто-обновление
+            Debug.Log("[SdkSettingsManager] Calling ModuleFolderManager.OnSettingsSaved...");
+            ModuleFolderManager.OnSettingsSaved(settings);
+            
+            Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS COMPLETED =====");
         }
 
         private static Runtime.SdkSettingsData ConvertToRuntimeSettings(SdkSettingsData editorSettings)
@@ -259,8 +272,8 @@ namespace AMZNGoDSDK.Editor
         private static Runtime.AdjustSettingData ConvertAdjustSettings(AdjustSettingData editorSettings)
         {
             var adjustEnvironment = editorSettings.Environment == AdjustSettingData.AdjustEnvironment.Production
-                ? AdjustSdk.AdjustEnvironment.Production
-                : AdjustSdk.AdjustEnvironment.Sandbox;
+                ? Runtime.AdjustSettingData.AdjustEnvironment.Production
+                : Runtime.AdjustSettingData.AdjustEnvironment.Sandbox;
 
             return new Runtime.AdjustSettingData
             {
@@ -292,8 +305,8 @@ namespace AMZNGoDSDK.Editor
         private static Runtime.InfaticaSettingData ConvertInfaticaSettings(InfaticaSettingData editorSettings)
         {
             var mode = editorSettings.Mode == InfaticaSettingData.InfaticaMode.Review
-                ? Runtime.InfaticaModule.Mode.Review
-                : Runtime.InfaticaModule.Mode.Production;
+                ? Runtime.InfaticaSettingData.InfaticaMode.Review
+                : Runtime.InfaticaSettingData.InfaticaMode.Production;
 
             return new Runtime.InfaticaSettingData
             {
