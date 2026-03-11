@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Purchasing;
 using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
@@ -158,6 +157,11 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Infatica.Enabled,
                 () =>
                 {
+                    _currentSettings.Infatica.SdkVersion = (InfaticaSettingData.InfaticaSdkVersion)EditorGUILayout
+                        .EnumPopup("SDK Version", _currentSettings.Infatica.SdkVersion);
+
+                    GUILayout.Space(4);
+
                     _currentSettings.Infatica.PartnerId = EditorGUILayout
                         .TextField("Partner ID", _currentSettings.Infatica.PartnerId);
                     _currentSettings.Infatica.Mode = (InfaticaSettingData.InfaticaMode)EditorGUILayout
@@ -231,15 +235,10 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.InAppPurchase.Enabled = DrawModuleSection(
                 "In-App Purchase",
-                "Управление Unity IAP, подписками и consumable товарами с автоматическими наградами.",
+                "Управление Amazon IAP, подписками и consumable товарами с автоматическими наградами.",
                 _currentSettings.InAppPurchase.Enabled,
                 () =>
                 {
-                    _currentSettings.InAppPurchase.AppStoreTarget = (AppStoreTarget)EditorGUILayout
-                        .EnumPopup("App Store Target", _currentSettings.InAppPurchase.AppStoreTarget);
-                    _currentSettings.InAppPurchase.UseFakeStoreInEditor = EditorGUILayout
-                        .Toggle("Use Fake Store in Editor", _currentSettings.InAppPurchase.UseFakeStoreInEditor);
-
                     GUILayout.Space(10);
 
                     GUILayout.Label("Subscription Products:", EditorStyles.miniBoldLabel);
@@ -366,43 +365,7 @@ namespace AMZNGoDSDK.Editor
                     {
                         _currentSettings.InAppPurchase.ConsumableProducts.Add(new ConsumableProduct());
                     }
-
-                    GUILayout.Space(10);
-                    GUILayout.Label("Catalog Imports:", EditorStyles.miniBoldLabel);
-
-                    if (GUILayout.Button("Refresh Catalog"))
-                    {
-                        InAppPurchaseCatalogHelper.RefreshCatalog(_currentSettings.InAppPurchase);
-                    }
-
-                    if (_currentSettings.InAppPurchase.CatalogImportedProducts.Count == 0)
-                    {
-                        EditorGUILayout.HelpBox("No catalog products are imported yet. Refresh catalog to see available IDs.", MessageType.Info);
-                    }
-                    else
-                    {
-                        for (int i = 0; i < _currentSettings.InAppPurchase.CatalogImportedProducts.Count; i++)
-                        {
-                            var catalogProduct = _currentSettings.InAppPurchase.CatalogImportedProducts[i];
-                            EditorGUILayout.BeginHorizontal();
-                            EditorGUILayout.LabelField($"{catalogProduct.ProductId} ({catalogProduct.Type})");
-                            if (GUILayout.Button("Remove", GUILayout.Width(70)))
-                            {
-                                RemoveCatalogProduct(catalogProduct.ProductId);
-                                EditorGUILayout.EndHorizontal();
-                                break;
-                            }
-                            EditorGUILayout.EndHorizontal();
-                        }
-                    }
                 });
-        }
-
-        private void RemoveCatalogProduct(string productId)
-        {
-            _currentSettings.InAppPurchase.SubscriptionProducts.RemoveAll(p => p.ProductId == productId);
-            _currentSettings.InAppPurchase.ConsumableProducts.RemoveAll(p => p.ProductId == productId);
-            _currentSettings.InAppPurchase.CatalogImportedProducts.RemoveAll(p => p.ProductId == productId);
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)

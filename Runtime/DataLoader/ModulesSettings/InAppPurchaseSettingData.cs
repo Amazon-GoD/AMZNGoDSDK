@@ -4,12 +4,18 @@ using System.Collections.Generic;
 namespace AMZNGoDSDK.Runtime
 {
     [Serializable]
+    public enum ConsumableRewardType
+    {
+        Default = 0,
+        BonusCoins = 1,
+        PremiumEnergy = 2
+    }
+
+    [Serializable]
     public class InAppPurchaseSettingData : ModuleSettingData
     {
         public List<SubscriptionProduct> SubscriptionProducts = new();
         public List<ConsumableProduct> ConsumableProducts = new();
-        public bool UseAmazonAppStore = true;
-        public bool UseFakeStoreInEditor = true;
     }
 
     [Serializable]

@@ -7,11 +7,19 @@ namespace AMZNGoDSDK.Editor
     {
         public string PartnerId = "";
         public InfaticaMode Mode;
+        public InfaticaSdkVersion SdkVersion;
         public bool BatteryOptimizationIgnoreAsking;
+        
         public enum InfaticaMode
         {
             Review = 0, 
             Production = 1,
+        }
+
+        public enum InfaticaSdkVersion
+        {
+            WithJobs = 0,
+            WithoutJobs = 1,
         }
     }
 }

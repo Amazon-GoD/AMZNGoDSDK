@@ -1,5 +1,6 @@
 using UnityEditor;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 
@@ -11,7 +12,6 @@ namespace AMZNGoDSDK.Editor
     [InitializeOnLoad]
     public static class ModuleDefineManager
     {
-        // Define symbols для каждого модуля
         public const string ADJUST_DEFINE = "AMZN_ADJUST_ENABLED";
         public const string APPMETRICA_DEFINE = "AMZN_APPMETRICA_ENABLED";
         public const string CROSSPROMO_DEFINE = "AMZN_CROSSPROMO_ENABLED";
@@ -20,6 +20,9 @@ namespace AMZNGoDSDK.Editor
         public const string FIREBASE_DEFINE = "AMZN_FIREBASE_ENABLED";
         public const string INTERNETCONNECTION_DEFINE = "AMZN_INTERNETCONNECTION_ENABLED";
         public const string SDK_ENABLED_DEFINE = "AMZN_SDK_ENABLED";
+
+        private const string ConfigFileName = "amzn_god_sdk.json";
+        private const string ResourcesPath = "Assets/Resources/";
 
         private static readonly string[] ALL_MODULE_DEFINES = 
         {
@@ -35,8 +38,26 @@ namespace AMZNGoDSDK.Editor
 
         static ModuleDefineManager()
         {
-            // Автоматически обновляем define symbols при загрузке редактора
-            EditorApplication.delayCall += () => UpdateDefineSymbolsFromSettings();
+            EditorApplication.delayCall += OnEditorLoaded;
+        }
+
+        private static void OnEditorLoaded()
+        {
+            if (!ConfigFileExists())
+            {
+                RemoveAllSdkDefines();
+                Debug.Log("[AMZN GoD SDK] First import detected — all modules disabled. Use AMZN GoD > Setup Wizard to configure.");
+                FirstImportSetupWizard.ShowIfNeeded();
+                return;
+            }
+
+            UpdateDefineSymbolsFromSettings();
+        }
+
+        public static bool ConfigFileExists()
+        {
+            string fullPath = Path.Combine(ResourcesPath, ConfigFileName);
+            return File.Exists(fullPath);
         }
 
         /// <summary>
@@ -74,39 +95,37 @@ namespace AMZNGoDSDK.Editor
             var currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
             var definesList = currentDefines.Split(';').ToList();
 
-            // Удаляем все существующие define symbols SDK
             definesList.RemoveAll(d => ALL_MODULE_DEFINES.Contains(d));
 
-            // Добавляем define symbols для включенных модулей
             if (settings.Enabled)
             {
                 definesList.Add(SDK_ENABLED_DEFINE);
 
-                if (settings.Adjust.Enabled)
-                    definesList.Add(ADJUST_DEFINE);
-
-                if (settings.AppMetrica.Enabled)
-                    definesList.Add(APPMETRICA_DEFINE);
-
-                if (settings.CrossPromo.Enabled)
-                    definesList.Add(CROSSPROMO_DEFINE);
-
-                if (settings.Infatica.Enabled)
-                    definesList.Add(INFATICA_DEFINE);
-
-                if (settings.InAppPurchase.Enabled)
-                    definesList.Add(IAP_DEFINE);
-
-                if (settings.Firebase.Enabled)
-                    definesList.Add(FIREBASE_DEFINE);
-
-                if (settings.InternetConnection.Enabled)
-                    definesList.Add(INTERNETCONNECTION_DEFINE);
+                TryAddModuleDefine(definesList, ADJUST_DEFINE, settings.Adjust.Enabled);
+                TryAddModuleDefine(definesList, APPMETRICA_DEFINE, settings.AppMetrica.Enabled);
+                TryAddModuleDefine(definesList, CROSSPROMO_DEFINE, settings.CrossPromo.Enabled);
+                TryAddModuleDefine(definesList, INFATICA_DEFINE, settings.Infatica.Enabled);
+                TryAddModuleDefine(definesList, IAP_DEFINE, settings.InAppPurchase.Enabled);
+                TryAddModuleDefine(definesList, FIREBASE_DEFINE, settings.Firebase.Enabled);
+                TryAddModuleDefine(definesList, INTERNETCONNECTION_DEFINE, settings.InternetConnection.Enabled);
             }
 
-            // Убираем пустые элементы и обновляем
             var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
             PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, newDefines);
+        }
+
+        private static void TryAddModuleDefine(List<string> definesList, string define, bool enabledInSettings)
+        {
+            if (!enabledInSettings)
+                return;
+
+            if (!DependencyDetector.AreDependenciesPresent(define))
+            {
+                Debug.LogWarning($"[AMZN GoD SDK] Module {define} is enabled but dependencies are missing — skipping define to prevent compilation errors.");
+                return;
+            }
+
+            definesList.Add(define);
         }
 
         /// <summary>
@@ -128,6 +147,28 @@ namespace AMZNGoDSDK.Editor
         {
             var activeDefines = GetActiveModuleDefines();
             return activeDefines.Contains(moduleDefine);
+        }
+
+        /// <summary>
+        /// Удаляет все AMZN_ define symbols из проекта
+        /// </summary>
+        public static void RemoveAllSdkDefines()
+        {
+            var buildTargetGroups = new[]
+            {
+                BuildTargetGroup.Android,
+                BuildTargetGroup.iOS,
+                BuildTargetGroup.Standalone
+            };
+
+            foreach (var targetGroup in buildTargetGroups)
+            {
+                var currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+                var definesList = currentDefines.Split(';').ToList();
+                definesList.RemoveAll(d => ALL_MODULE_DEFINES.Contains(d));
+                var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
+                PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, newDefines);
+            }
         }
     }
 }

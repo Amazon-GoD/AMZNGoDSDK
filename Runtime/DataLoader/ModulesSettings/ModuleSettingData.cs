@@ -5,6 +5,6 @@ namespace AMZNGoDSDK.Runtime
     [Serializable]
     public abstract class ModuleSettingData
     {
-        public bool Enabled = true;
+        public bool Enabled = false;
     }
 }

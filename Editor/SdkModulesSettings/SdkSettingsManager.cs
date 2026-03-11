@@ -101,10 +101,15 @@ namespace AMZNGoDSDK.Editor
                 ? InfaticaSettingData.InfaticaMode.Review
                 : InfaticaSettingData.InfaticaMode.Production;
 
+            var sdkVersion = runtimeSettings.SdkVersion == Runtime.InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
+                ? InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
+                : InfaticaSettingData.InfaticaSdkVersion.WithJobs;
+
             return new InfaticaSettingData
             {
                 Enabled = runtimeSettings.Enabled,
                 Mode = mode,
+                SdkVersion = sdkVersion,
                 BatteryOptimizationIgnoreAsking = runtimeSettings.BatteryOptimizationIgnoreAsking
             };
         }
@@ -113,12 +118,9 @@ namespace AMZNGoDSDK.Editor
         {
             var editorSettings = new InAppPurchaseSettingData
             {
-                Enabled = runtimeSettings.Enabled,
-                AppStoreTarget = runtimeSettings.UseAmazonAppStore ? AppStoreTarget.AmazonAppStore : AppStoreTarget.GooglePlay,
-                UseFakeStoreInEditor = runtimeSettings.UseFakeStoreInEditor
+                Enabled = runtimeSettings.Enabled
             };
 
-            // Convert subscription products
             foreach (var runtimeProduct in runtimeSettings.SubscriptionProducts)
             {
                 editorSettings.SubscriptionProducts.Add(new SubscriptionProduct
@@ -132,7 +134,6 @@ namespace AMZNGoDSDK.Editor
                 });
             }
 
-            // Convert consumable products
             foreach (var runtimeProduct in runtimeSettings.ConsumableProducts)
             {
                 editorSettings.ConsumableProducts.Add(new ConsumableProduct
@@ -239,7 +240,7 @@ namespace AMZNGoDSDK.Editor
             AssetDatabase.Refresh();
             
             Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS STARTED =====");
-            Debug.Log($"[SdkSettingsManager] Infatica.Enabled = {settings.Infatica.Enabled}");
+            Debug.Log($"[SdkSettingsManager] Infatica.Enabled = {settings.Infatica.Enabled}, SdkVersion = {settings.Infatica.SdkVersion}");
             
             // Обновляем define symbols для условной компиляции
             Debug.Log("[SdkSettingsManager] Updating define symbols...");
@@ -308,10 +309,15 @@ namespace AMZNGoDSDK.Editor
                 ? Runtime.InfaticaSettingData.InfaticaMode.Review
                 : Runtime.InfaticaSettingData.InfaticaMode.Production;
 
+            var sdkVersion = editorSettings.SdkVersion == InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
+                ? Runtime.InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
+                : Runtime.InfaticaSettingData.InfaticaSdkVersion.WithJobs;
+
             return new Runtime.InfaticaSettingData
             {
                 Enabled = editorSettings.Enabled,
                 Mode = mode,
+                SdkVersion = sdkVersion,
                 BatteryOptimizationIgnoreAsking = editorSettings.BatteryOptimizationIgnoreAsking
             };
         }
@@ -320,12 +326,9 @@ namespace AMZNGoDSDK.Editor
         {
             var runtimeSettings = new Runtime.InAppPurchaseSettingData
             {
-                Enabled = editorSettings.Enabled,
-                UseAmazonAppStore = editorSettings.AppStoreTarget == AppStoreTarget.AmazonAppStore,
-                UseFakeStoreInEditor = editorSettings.UseFakeStoreInEditor
+                Enabled = editorSettings.Enabled
             };
 
-            // Convert subscription products
             foreach (var editorProduct in editorSettings.SubscriptionProducts)
             {
                 runtimeSettings.SubscriptionProducts.Add(new Runtime.SubscriptionProduct
@@ -339,7 +342,6 @@ namespace AMZNGoDSDK.Editor
                 });
             }
 
-            // Convert consumable products
             foreach (var editorProduct in editorSettings.ConsumableProducts)
             {
                 runtimeSettings.ConsumableProducts.Add(new Runtime.ConsumableProduct

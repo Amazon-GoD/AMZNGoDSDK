@@ -2,20 +2,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using com.amazon.device.iap.cpt;
 using UnityEngine;
-using UnityEngine.Purchasing;
-using UnityEngine.Purchasing.Extension;
-using Unity.Services.Core;
 
 namespace AMZNGoDSDK.Runtime
 {
-    public class InAppPurchaseModule : ModuleBase, IStoreListener
+    public class InAppPurchaseModule : ModuleBase
     {
         private InAppPurchaseSettingData settings;
 
-        private IStoreController storeController;
-        private IExtensionProvider extensionProvider;
-        private readonly HashSet<string> addedProductIds = new();
+        private IAmazonIapV2 iapService;
+        private readonly HashSet<string> registeredProductIds = new();
+        private readonly Dictionary<string, ProductData> productDataCache = new();
+        private readonly HashSet<string> ownedSkus = new();
 
         private readonly Dictionary<ConsumableRewardType, Action<string, int>> _rewardTypeHandlers =
             new();
@@ -26,8 +25,10 @@ namespace AMZNGoDSDK.Runtime
 
         public bool IsInitialized { get; private set; } = false;
 
-        // Словарь для отслеживания статуса подписок
         private Dictionary<string, SubscriptionStatus> subscriptionStatuses = new();
+
+        private Action<bool> _restoreCallback;
+        private bool _isRestoring;
 
         private void Awake()
         {
@@ -46,70 +47,255 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled)
                 return;
 
-            InitializeAsync();
+            InitializeAmazonIAP();
         }
 
-        private async void InitializeAsync()
+        private void InitializeAmazonIAP()
         {
             try
             {
-                await UnityServices.InitializeAsync();
-                Debug.Log("[AMZNGoDSDK] 🟢 Unity Gaming Services инициализированы");
+                iapService = AmazonIapV2Impl.Instance;
 
-                var module = StandardPurchasingModule.Instance(
-                    settings.UseAmazonAppStore ? AppStore.AmazonAppStore : AppStore.GooglePlay
-                );
+                iapService.AddGetProductDataResponseListener(OnGetProductDataResponse);
+                iapService.AddPurchaseResponseListener(OnPurchaseResponseHandler);
+                iapService.AddGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
 
-                if (settings.UseFakeStoreInEditor)
+                var allSkus = new List<string>();
+
+                foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
                 {
-                    module.useFakeStoreUIMode = FakeStoreUIMode.StandardUser;
+                    if (string.IsNullOrWhiteSpace(subscription.ProductId))
+                        continue;
+
+                    if (!registeredProductIds.Add(subscription.ProductId))
+                        continue;
+
+                    allSkus.Add(subscription.ProductId);
+                    RegisterSubscriptionStatus(subscription);
                 }
 
-                var builder = ConfigurationBuilder.Instance(module);
+                foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
+                {
+                    if (string.IsNullOrWhiteSpace(consumable.ProductId))
+                        continue;
 
-                BuildProducts(builder);
+                    if (!registeredProductIds.Add(consumable.ProductId))
+                        continue;
 
-                UnityPurchasing.Initialize(this, builder);
+                    if (string.IsNullOrWhiteSpace(consumable.RewardKey))
+                        consumable.RewardKey = consumable.ProductId;
+
+                    allSkus.Add(consumable.ProductId);
+                }
+
+                if (allSkus.Count > 0)
+                {
+                    iapService.GetProductData(new SkusInput { Skus = allSkus });
+                }
+
+                iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
+
+                Debug.Log("[AMZNGoDSDK] Amazon IAP initialized");
+                IsInitialized = true;
             }
             catch (Exception e)
             {
-                Debug.LogError($"[AMZNGoDSDK] ❌ Ошибка инициализации Unity Gaming Services: {e.Message}");
+                Debug.LogError($"[AMZNGoDSDK] Amazon IAP initialization error: {e.Message}");
                 IsInitialized = true;
             }
 
             CheckExpiredSubscriptions();
         }
 
-        private void BuildProducts(ConfigurationBuilder builder)
+        private void OnGetProductDataResponse(GetProductDataResponse response)
         {
-            addedProductIds.Clear();
-
-            // Добавляем товары из настроек
-            foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
+            if (response.Status != "SUCCESSFUL")
             {
-                AddSubscriptionProduct(builder, subscription);
+                Debug.LogWarning($"[AMZNGoDSDK] GetProductData failed: {response.Status}");
+                return;
             }
 
-            foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
+            if (response.ProductDataMap != null)
             {
-                AddConsumableProduct(builder, consumable);
+                foreach (var kvp in response.ProductDataMap)
+                    productDataCache[kvp.Key] = kvp.Value;
             }
 
-            // Импорт из Unity IAP каталога
-            ImportProductsFromUnityCatalog(builder);
+            if (response.UnavailableSkus != null && response.UnavailableSkus.Count > 0)
+                Debug.LogWarning($"[AMZNGoDSDK] Unavailable SKUs: {string.Join(", ", response.UnavailableSkus)}");
+
+            Debug.Log($"[AMZNGoDSDK] Product data loaded: {productDataCache.Count} products");
         }
 
-        private void AddSubscriptionProduct(ConfigurationBuilder builder, SubscriptionProduct subscription)
+        private void OnPurchaseResponseHandler(PurchaseResponse response)
         {
-            if (string.IsNullOrWhiteSpace(subscription.ProductId))
+            if (response.Status == "SUCCESSFUL" || response.Status == "ALREADY_PURCHASED")
+            {
+                var receipt = response.PurchaseReceipt;
+                if (receipt == null)
+                    return;
+
+                string productId = receipt.Sku;
+                ownedSkus.Add(productId);
+
+                if (response.Status == "SUCCESSFUL")
+                {
+                    var subscriptionProduct = settings.SubscriptionProducts
+                        .FirstOrDefault(s => s.ProductId == productId);
+
+                    if (subscriptionProduct != null)
+                    {
+                        Debug.Log($"[AMZNGoDSDK] Subscription purchased: {productId}");
+                        ExtendSubscription(subscriptionProduct);
+                        GiveSubscriptionReward(subscriptionProduct);
+                        GrantSubscriptionConsumables(subscriptionProduct);
+                    }
+                    else
+                    {
+                        var consumableProduct = settings.ConsumableProducts
+                            .FirstOrDefault(c => c.ProductId == productId);
+
+                        if (consumableProduct != null)
+                        {
+                            Debug.Log($"[AMZNGoDSDK] Product purchased: {productId}");
+                            GiveConsumableReward(consumableProduct);
+                        }
+                    }
+                }
+
+                iapService.NotifyFulfillment(new NotifyFulfillmentInput
+                {
+                    ReceiptId = receipt.ReceiptId,
+                    FulfillmentResult = "FULFILLED"
+                });
+
+                OnPurchaseComplete?.Invoke(productId);
+            }
+            else
+            {
+                string productId = response.PurchaseReceipt?.Sku ?? "unknown";
+                Debug.LogWarning($"[AMZNGoDSDK] Purchase failed: {productId} - {response.Status}");
+                OnPurchaseFailedCallback?.Invoke(productId);
+            }
+        }
+
+        private void OnGetPurchaseUpdatesResponse(GetPurchaseUpdatesResponse response)
+        {
+            if (response.Status != "SUCCESSFUL")
+            {
+                Debug.LogWarning($"[AMZNGoDSDK] GetPurchaseUpdates failed: {response.Status}");
+                CompleteRestore(false);
+                return;
+            }
+
+            if (response.Receipts != null)
+            {
+                foreach (var receipt in response.Receipts)
+                {
+                    if (receipt.CancelDate != 0)
+                    {
+                        ownedSkus.Remove(receipt.Sku);
+                        continue;
+                    }
+
+                    ownedSkus.Add(receipt.Sku);
+
+                    if (receipt.ProductType == "SUBSCRIPTION")
+                    {
+                        var sub = settings.SubscriptionProducts
+                            .FirstOrDefault(s => s.ProductId == receipt.Sku);
+
+                        if (sub != null && !HasSubscription(sub.ProductId))
+                            ExtendSubscription(sub);
+                    }
+
+                    iapService.NotifyFulfillment(new NotifyFulfillmentInput
+                    {
+                        ReceiptId = receipt.ReceiptId,
+                        FulfillmentResult = "FULFILLED"
+                    });
+                }
+            }
+
+            if (response.HasMore)
+            {
+                iapService.GetPurchaseUpdates(new ResetInput { Reset = false });
+            }
+            else
+            {
+                CompleteRestore(true);
+
+                foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
+                    Debug.Log($"[AMZNGoDSDK] Active subscription: {status.ProductId} (until {status.ExpiresAt.ToLocalTime():G})");
+            }
+        }
+
+        private void CompleteRestore(bool success)
+        {
+            if (!_isRestoring)
                 return;
 
-            if (!addedProductIds.Add(subscription.ProductId))
+            _restoreCallback?.Invoke(success);
+            _restoreCallback = null;
+            _isRestoring = false;
+        }
+
+        public void RestorePurchases(Action<bool> onComplete = null)
+        {
+            if (iapService == null)
+            {
+                Debug.LogWarning("[AMZNGoDSDK] Cannot restore purchases — not initialized");
+                onComplete?.Invoke(false);
                 return;
+            }
 
-            builder.AddProduct(subscription.ProductId, ProductType.Subscription);
+            _restoreCallback = onComplete;
+            _isRestoring = true;
+            iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
+        }
 
-            RegisterSubscriptionStatus(subscription);
+        public void BuyProduct(string productId)
+        {
+            if (iapService == null)
+            {
+                Debug.LogError("[AMZNGoDSDK] Store not initialized. Purchase impossible.");
+                return;
+            }
+
+            if (!registeredProductIds.Contains(productId))
+            {
+                Debug.LogError($"[AMZNGoDSDK] Product not registered: {productId}");
+                return;
+            }
+
+            iapService.Purchase(new SkuInput { Sku = productId });
+        }
+
+        public bool HasSubscription(string productId)
+        {
+            if (string.IsNullOrWhiteSpace(productId))
+                return false;
+
+            return subscriptionStatuses.TryGetValue(productId, out var status) && status.IsActive;
+        }
+
+        public bool IsSubscribed(string productId) =>
+            HasSubscription(productId);
+
+        public bool HasReceipt(string productId)
+        {
+            return ownedSkus.Contains(productId);
+        }
+
+        public ProductData GetProduct(string productId)
+        {
+            productDataCache.TryGetValue(productId, out var data);
+            return data;
+        }
+
+        public IEnumerable<ProductData> GetAllProducts()
+        {
+            return productDataCache.Values;
         }
 
         private void RegisterSubscriptionStatus(SubscriptionProduct subscription)
@@ -137,230 +323,13 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private void AddConsumableProduct(ConfigurationBuilder builder, ConsumableProduct consumable)
-        {
-            if (string.IsNullOrWhiteSpace(consumable.ProductId))
-                return;
-
-            if (!addedProductIds.Add(consumable.ProductId))
-                return;
-
-            // подставляем ключ награды по умолчанию
-            if (string.IsNullOrWhiteSpace(consumable.RewardKey))
-                consumable.RewardKey = consumable.ProductId;
-
-            builder.AddProduct(consumable.ProductId, ProductType.Consumable);
-        }
-
-        private void ImportProductsFromUnityCatalog(ConfigurationBuilder builder)
-        {
-            var catalog = ProductCatalog.LoadDefaultCatalog();
-
-            if (catalog == null || catalog.allProducts == null || catalog.allProducts.Count == 0)
-                return;
-
-            foreach (var item in catalog.allProducts)
-            {
-                if (item == null || string.IsNullOrWhiteSpace(item.id))
-                    continue;
-
-                if (!addedProductIds.Add(item.id))
-                    continue;
-
-                builder.AddProduct(item.id, item.type);
-
-                if (item.type == ProductType.Subscription && !subscriptionStatuses.ContainsKey(item.id))
-                {
-                    RegisterSubscriptionStatus(new SubscriptionProduct
-                    {
-                        ProductId = item.id,
-                        DisplayName = item.id,
-                        RewardAmount = 0,
-                        Enabled = true
-                    });
-                }
-
-                if (item.type == ProductType.Subscription && settings.SubscriptionProducts.All(s => s.ProductId != item.id))
-                {
-                    settings.SubscriptionProducts.Add(new SubscriptionProduct
-                    {
-                        ProductId = item.id,
-                        DisplayName = item.id,
-                        RewardAmount = 0,
-                        Enabled = true
-                    });
-                }
-
-                if (item.type == ProductType.Consumable && settings.ConsumableProducts.All(c => c.ProductId != item.id))
-                {
-                    settings.ConsumableProducts.Add(new ConsumableProduct
-                    {
-                        ProductId = item.id,
-                        DisplayName = item.id,
-                        RewardAmount = 0,
-                        RewardKey = item.id,
-                        Enabled = true
-                    });
-                }
-            }
-        }
-
-        public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
-        {
-            storeController = controller;
-            extensionProvider = extensions;
-
-            Debug.Log("[AMZNGoDSDK] 🟢 Unity IAP инициализирован");
-
-            foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
-            {
-                Debug.Log($"[AMZNGoDSDK] ✅ Подписка активна: {status.ProductId} (до {status.ExpiresAt.ToLocalTime():G})");
-            }
-
-            IsInitialized = true;
-        }
-
-        public void OnInitializeFailed(InitializationFailureReason error)
-        {
-            Debug.LogError($"[AMZNGoDSDK] ❌ IAP инициализация не удалась: {error}");
-            IsInitialized = true;
-        }
-
-        public void OnInitializeFailed(InitializationFailureReason error, string message)
-        {
-            Debug.LogError($"[AMZNGoDSDK] ❌ IAP инициализация не удалась: {error} - {message}");
-            IsInitialized = true;
-        }
-
-        public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
-        {
-            string productId = args.purchasedProduct.definition.id;
-
-            // Проверяем, является ли это подпиской
-            var subscriptionProduct = settings.SubscriptionProducts.FirstOrDefault(s => s.ProductId == productId);
-            if (subscriptionProduct != null)
-            {
-                Debug.Log($"[AMZNGoDSDK] 🎉 Подписка успешно куплена: {productId}");
-                ExtendSubscription(subscriptionProduct);
-                GiveSubscriptionReward(subscriptionProduct);
-                GrantSubscriptionConsumables(subscriptionProduct);
-            }
-            else
-            {
-                // Это единичный товар
-                var consumableProduct = settings.ConsumableProducts.FirstOrDefault(c => c.ProductId == productId);
-                if (consumableProduct != null)
-                {
-                    Debug.Log($"[AMZNGoDSDK] 🎉 Товар успешно куплен: {productId}");
-                    GiveConsumableReward(consumableProduct);
-                }
-            }
-
-            OnPurchaseComplete?.Invoke(productId);
-            return PurchaseProcessingResult.Complete;
-        }
-
-        public void OnPurchaseFailed(Product product, PurchaseFailureReason failureReason)
-        {
-            Debug.LogWarning($"[AMZNGoDSDK] ❌ Покупка не удалась: {product.definition.id} - {failureReason}");
-            OnPurchaseFailedCallback?.Invoke(product.definition.id);
-        }
-
-        public void RestorePurchases(Action<bool> onComplete = null)
-        {
-            if (extensionProvider == null)
-            {
-                Debug.LogWarning("[AMZNGoDSDK] ❌ Нельзя восстановить покупки — магазин не инициализирован");
-                onComplete?.Invoke(false);
-                return;
-            }
-
-            try
-            {
-                if (settings.UseAmazonAppStore)
-                {
-                    Debug.LogWarning("[AMZNGoDSDK] ℹ️ Amazon Appstore не поддерживает явный restore — покупки подтягиваются при запросе товаров");
-                    onComplete?.Invoke(false);
-                    return;
-                }
-
-                var google = extensionProvider.GetExtension<IGooglePlayStoreExtensions>();
-                if (google != null)
-                {
-#pragma warning disable CS0618
-                    google.RestoreTransactions(success => onComplete?.Invoke(success));
-#pragma warning restore CS0618
-                    return;
-                }
-
-                var apple = extensionProvider.GetExtension<IAppleExtensions>();
-                if (apple != null)
-                {
-                    apple.RestoreTransactions(onComplete);
-                    return;
-                }
-
-                onComplete?.Invoke(false);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[AMZNGoDSDK] ❌ Ошибка восстановления покупок: {e.Message}");
-                onComplete?.Invoke(false);
-            }
-        }
-
-        public void BuyProduct(string productId)
-        {
-            if (storeController == null)
-            {
-                Debug.LogError("[AMZNGoDSDK] ❌ Магазин не инициализирован. Покупка невозможна.");
-                return;
-            }
-
-            var product = storeController.products.WithID(productId);
-            if (product == null)
-            {
-                Debug.LogError($"[AMZNGoDSDK] ❌ Продукт не найден: {productId}");
-                return;
-            }
-
-            storeController.InitiatePurchase(productId);
-        }
-
-        public bool HasSubscription(string productId)
-        {
-            if (string.IsNullOrWhiteSpace(productId))
-                return false;
-
-            return subscriptionStatuses.TryGetValue(productId, out var status) && status.IsActive;
-        }
-
-        public bool IsSubscribed(string productId) =>
-            HasSubscription(productId);
-
-        public bool HasReceipt(string productId)
-        {
-            var product = storeController?.products.WithID(productId);
-            return product != null && product.hasReceipt;
-        }
-
-        public Product GetProduct(string productId)
-        {
-            return storeController?.products.WithID(productId);
-        }
-
-        public IEnumerable<Product> GetAllProducts()
-        {
-            return storeController?.products.all ?? Enumerable.Empty<Product>();
-        }
-
         private void GiveSubscriptionReward(SubscriptionProduct subscription)
         {
             int currentCoins = PlayerPrefs.GetInt("TotalCoins", 0);
             PlayerPrefs.SetInt("TotalCoins", currentCoins + subscription.RewardAmount);
             PlayerPrefs.Save();
 
-            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда за подписку {subscription.ProductId}: {subscription.RewardAmount} монет");
+            Debug.Log($"[AMZNGoDSDK] Subscription reward {subscription.ProductId}: {subscription.RewardAmount} coins");
         }
 
         private void GiveConsumableReward(ConsumableProduct consumable)
@@ -378,7 +347,6 @@ namespace AMZNGoDSDK.Runtime
             ApplyConsumableReward(rewardKey, amount, rewardType);
         }
 
-
         private void CheckExpiredSubscriptions()
         {
             foreach (var status in subscriptionStatuses.Values)
@@ -386,7 +354,7 @@ namespace AMZNGoDSDK.Runtime
                 if (status.IsActive || status.ExpiresAt == DateTime.MinValue)
                     continue;
 
-                Debug.LogWarning($"[AMZNGoDSDK] ⚠️ Подписка истекла: {status.ProductId} (до {status.ExpiresAt:G})");
+                Debug.LogWarning($"[AMZNGoDSDK] Subscription expired: {status.ProductId} (until {status.ExpiresAt:G})");
                 SaveSubscriptionStatus(status);
             }
         }
@@ -434,7 +402,7 @@ namespace AMZNGoDSDK.Runtime
                 handler = _defaultConsumableRewardSetter ?? DefaultConsumableRewardSetter;
 
             handler.Invoke(rewardKey, rewardAmount);
-            Debug.Log($"[AMZNGoDSDK] 💎 Выдана награда ({rewardType}) {rewardKey}: {rewardAmount}");
+            Debug.Log($"[AMZNGoDSDK] Reward ({rewardType}) {rewardKey}: {rewardAmount}");
         }
 
         private ConsumableRewardType ResolveConsumableRewardType(string productId)
@@ -493,7 +461,12 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Cleenup()
         {
-            // Очистка ресурсов если необходимо
+            if (iapService != null)
+            {
+                iapService.RemoveGetProductDataResponseListener(OnGetProductDataResponse);
+                iapService.RemovePurchaseResponseListener(OnPurchaseResponseHandler);
+                iapService.RemoveGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
+            }
         }
 
         [Serializable]

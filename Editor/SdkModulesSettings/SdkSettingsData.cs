@@ -5,7 +5,7 @@ namespace AMZNGoDSDK.Editor
     [Serializable]
     public class SdkSettingsData
     {
-        public bool Enabled = true;
+        public bool Enabled = false;
         
         public AdjustSettingData Adjust = new();
         public AppMetricaSettingData AppMetrica = new();
