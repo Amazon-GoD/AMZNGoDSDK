@@ -44,6 +44,9 @@ namespace AMZNGoDSDK.Runtime
                 var videosToDelete = new List<PromoConfiguration>();
                 foreach (var videoInfo in Videos)
                 {
+                    if (videoInfo.MaxShowCount <= 0)
+                        continue;
+
                     int videoShowCount = PlayerPrefs.GetInt(videoInfo.Title, 0);
                     if (videoShowCount >= videoInfo.MaxShowCount)
                     {

@@ -54,6 +54,12 @@ namespace AMZNGoDSDK.Editor
                 {
                     "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection"
                 }
+            },
+            {
+                "InGameDebugConsole", new[]
+                {
+                    "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole"
+                }
             }
         };
 
@@ -109,6 +115,10 @@ namespace AMZNGoDSDK.Editor
 
             // InternetConnection
             if (UpdateModuleFolderState("InternetConnection", settings.InternetConnection.Enabled))
+                renamedCount++;
+
+            // InGameDebugConsole
+            if (UpdateModuleFolderState("InGameDebugConsole", settings.DebugConsole.Enabled))
                 renamedCount++;
 
             Debug.Log($"=== Updated {renamedCount} module folders ===");
@@ -305,6 +315,7 @@ namespace AMZNGoDSDK.Editor
                 CheckInfaticaPluginsStatus(settings.Infatica.SdkVersion);
             CheckModuleFolderStatus("InAppPurchase", settings.InAppPurchase.Enabled);
             CheckModuleFolderStatus("InternetConnection", settings.InternetConnection.Enabled);
+            CheckModuleFolderStatus("InGameDebugConsole", settings.DebugConsole.Enabled);
 
             Debug.Log("============================================");
 
@@ -404,6 +415,9 @@ namespace AMZNGoDSDK.Editor
             
             Debug.Log("[Module Folders] Checking InternetConnection...");
             if (UpdateModuleFolderState("InternetConnection", settings.InternetConnection.Enabled)) updated++;
+            
+            Debug.Log("[Module Folders] Checking InGameDebugConsole...");
+            if (UpdateModuleFolderState("InGameDebugConsole", settings.DebugConsole.Enabled)) updated++;
             
             if (updated > 0)
             {

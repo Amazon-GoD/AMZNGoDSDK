@@ -6,6 +6,7 @@ namespace AMZNGoDSDK.Editor
     public class InfaticaSettingData : ModuleSettingData
     {
         public string PartnerId = "";
+        public string NotificationTitle = "";
         public InfaticaMode Mode;
         public InfaticaSdkVersion SdkVersion;
         public bool BatteryOptimizationIgnoreAsking;

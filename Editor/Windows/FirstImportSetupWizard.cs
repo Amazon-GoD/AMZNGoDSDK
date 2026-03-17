@@ -173,8 +173,10 @@ namespace AMZNGoDSDK.Editor
             settings.InAppPurchase.Enabled = GetToggle(ModuleDefineManager.IAP_DEFINE);
             settings.Firebase.Enabled = GetToggle(ModuleDefineManager.FIREBASE_DEFINE);
             settings.InternetConnection.Enabled = GetToggle(ModuleDefineManager.INTERNETCONNECTION_DEFINE);
+            settings.DebugConsole.Enabled = GetToggle(ModuleDefineManager.DEBUGCONSOLE_DEFINE);
 
-            SdkSettingsManager.SaveSettings(settings);
+            if (!SdkSettingsManager.SaveSettings(settings))
+                return;
 
             Debug.Log("[AMZN GoD SDK] Setup complete — settings saved, defines updated.");
             EditorUtility.DisplayDialog("Setup Complete",

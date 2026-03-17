@@ -66,6 +66,7 @@ namespace AMZNGoDSDK.Editor
             DrawFirebaseSettings();
             DrawAdjustSettings();
             DrawInAppPurchaseSettings();
+            DrawDebugConsoleSettings();
 
             EditorGUILayout.BeginHorizontal();
             
@@ -77,12 +78,14 @@ namespace AMZNGoDSDK.Editor
                 }
                 else
                 {
-                    SdkSettingsManager.SaveSettings(_currentSettings);
-                    EditorUtility.DisplayDialog("Success", 
-                        "Settings saved successfully!\n\n" +
-                        "Define symbols have been updated for conditional compilation.\n" +
-                        "Unity will recompile scripts automatically.", 
-                        "OK");
+                    if (SdkSettingsManager.SaveSettings(_currentSettings))
+                    {
+                        EditorUtility.DisplayDialog("Success", 
+                            "Settings saved successfully!\n\n" +
+                            "Define symbols have been updated for conditional compilation.\n" +
+                            "Unity will recompile scripts automatically.", 
+                            "OK");
+                    }
                 }
             }
             
@@ -164,6 +167,10 @@ namespace AMZNGoDSDK.Editor
 
                     _currentSettings.Infatica.PartnerId = EditorGUILayout
                         .TextField("Partner ID", _currentSettings.Infatica.PartnerId);
+                    _currentSettings.Infatica.NotificationTitle = EditorGUILayout
+                        .TextField(
+                            new GUIContent("Notification Title", "Заголовок уведомления сервиса. Если пусто — \"Welcome to <Product Name>\"."),
+                            _currentSettings.Infatica.NotificationTitle);
                     _currentSettings.Infatica.Mode = (InfaticaSettingData.InfaticaMode)EditorGUILayout
                         .EnumPopup("Mode", _currentSettings.Infatica.Mode);
                     _currentSettings.Infatica.BatteryOptimizationIgnoreAsking = EditorGUILayout
@@ -185,6 +192,23 @@ namespace AMZNGoDSDK.Editor
                     EditorGUILayout.LabelField("Appodeal SDK", EditorStyles.miniBoldLabel);
                     _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
                         .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
+
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Cross-Promo Tracking", EditorStyles.miniBoldLabel);
+                    _currentSettings.CrossPromo.TrackingBaseUrl = EditorGUILayout
+                        .TextField("Backend URL", _currentSettings.CrossPromo.TrackingBaseUrl);
+                    _currentSettings.CrossPromo.TrackingApiKey = EditorGUILayout
+                        .TextField("API Key", _currentSettings.CrossPromo.TrackingApiKey);
+                    EditorGUI.BeginDisabledGroup(true);
+                    EditorGUILayout.TextField("App ID (auto)", UnityEditor.PlayerSettings.applicationIdentifier);
+                    EditorGUI.EndDisabledGroup();
+                    _currentSettings.CrossPromo.AppType = (Runtime.CrossPromoAppType)EditorGUILayout
+                        .EnumPopup("App Type", _currentSettings.CrossPromo.AppType);
+                    _currentSettings.CrossPromo.DefaultPromotedAppId = EditorGUILayout
+                        .TextField(
+                            new GUIContent("Default Promoted App ID",
+                                "Fallback promoted app ID for tracking when a specific promo doesn't provide its own AppPackageName (e.g. Appodeal ads)."),
+                            _currentSettings.CrossPromo.DefaultPromotedAppId);
                 });
         }
         
@@ -366,6 +390,15 @@ namespace AMZNGoDSDK.Editor
                         _currentSettings.InAppPurchase.ConsumableProducts.Add(new ConsumableProduct());
                     }
                 });
+        }
+
+        private void DrawDebugConsoleSettings()
+        {
+            _currentSettings.DebugConsole.Enabled = DrawModuleSection(
+                "In-Game Debug Console",
+                "Встроенная консоль для отладки: просмотр логов, ошибок и выполнение команд прямо в игре.",
+                _currentSettings.DebugConsole.Enabled,
+                null);
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)

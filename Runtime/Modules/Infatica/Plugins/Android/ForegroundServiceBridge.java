@@ -27,20 +27,25 @@ public class ForegroundServiceBridge {
     }
 
     // Method to start the foreground service with a notification
-    public static void startForegroundService(Context context, String partnerId) {
+    public static void startForegroundService(Context context, String partnerId, String appName) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            String channelName = (appName != null && !appName.isEmpty()) ? appName : "Background Service";
             NotificationChannel nc = new NotificationChannel(
                 "infatica-agent",
-                "Infatica Agent",
+                channelName,
                 NotificationManager.IMPORTANCE_DEFAULT
             );
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-         nm.createNotificationChannel(nc);
+            nm.createNotificationChannel(nc);
         }
+
+        String title = (appName != null && !appName.isEmpty())
+            ? "Welcome to " + appName
+            : "Welcome";
 
         Notification notification = new NotificationCompat.Builder(context, "infatica-agent")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Infatica Agent is running")
+            .setContentTitle(title)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build();
         Service.Companion.startForeground(context, 108, notification, partnerId);
@@ -51,4 +56,3 @@ public class ForegroundServiceBridge {
         Service.Companion.stop(context);
     }
 }
-

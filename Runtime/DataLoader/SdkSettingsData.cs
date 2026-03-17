@@ -14,5 +14,6 @@ namespace AMZNGoDSDK.Runtime
         public InAppPurchaseSettingData InAppPurchase = new();
         public FirebaseSettingData Firebase = new();
         public InternetConnectionSettingData InternetConnection = new();
+        public DebugConsoleSettingData DebugConsole = new();
     }
 }

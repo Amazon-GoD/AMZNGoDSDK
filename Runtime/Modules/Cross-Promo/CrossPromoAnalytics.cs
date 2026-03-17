@@ -8,12 +8,20 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string BannerShowEvent = "crosspromo_banner_show";
         private const string BannerClickEvent = "crosspromo_banner_click";
+        private const string VideoShowEvent = "crosspromo_video_show";
+        private const string VideoClickEvent = "crosspromo_video_click";
 
         public static void ReportBannerShow(BannerData data) =>
             Report(BannerShowEvent, data, "banner_show");
 
         public static void ReportBannerClick(BannerData data) =>
             Report(BannerClickEvent, data, "banner_click");
+
+        public static void ReportVideoShow(BannerData data) =>
+            Report(VideoShowEvent, data, "video_show");
+
+        public static void ReportVideoClick(BannerData data) =>
+            Report(VideoClickEvent, data, "video_click");
 
         private static void Report(string eventName, BannerData data, string placement)
         {
@@ -38,6 +46,11 @@ namespace AMZNGoDSDK.Runtime
             if (!string.IsNullOrWhiteSpace(data.trackingUrl))
             {
                 args["trackingUrl"] = data.trackingUrl;
+            }
+
+            if (!string.IsNullOrWhiteSpace(data.paidAppId))
+            {
+                args["app_id"] = data.paidAppId;
             }
 
             core.ReportEventAppMetrica(eventName, args);

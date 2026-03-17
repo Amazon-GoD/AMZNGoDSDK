@@ -158,6 +158,7 @@ namespace AMZNGoDSDK.Editor
             DrawFolderStatus("Infatica", "Assets/AMZNGoDSDK/Runtime/Modules/Infatica", settings.Infatica.Enabled);
             DrawFolderStatus("InAppPurchase", "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase", settings.InAppPurchase.Enabled);
             DrawFolderStatus("InternetConnection", "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection", settings.InternetConnection.Enabled);
+            DrawFolderStatus("InGameDebugConsole", "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole", settings.DebugConsole.Enabled);
 
             EditorGUILayout.EndVertical();
         }

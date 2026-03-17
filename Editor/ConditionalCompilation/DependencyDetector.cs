@@ -106,6 +106,16 @@ namespace AMZNGoDSDK.Editor
                     Description = "no external deps"
                 }
             },
+            {
+                ModuleDefineManager.DEBUGCONSOLE_DEFINE,
+                new ModuleSpec
+                {
+                    Name = "In-Game Debug Console",
+                    RequiredAssemblies = Array.Empty<string>(),
+                    RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole" },
+                    Description = "yasirkula In-Game Debug Console (bundled)"
+                }
+            },
         };
 
         private static HashSet<string> _dllCache;

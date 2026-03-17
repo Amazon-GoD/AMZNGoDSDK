@@ -8,6 +8,10 @@ namespace AMZNGoDSDK.Editor
     {
         public string ConfigUrl;
         public string AppodealSdkKey;
+
+        public string TrackingBaseUrl;
+        public string TrackingApiKey;
+        public CrossPromoAppType AppType;
+        public string DefaultPromotedAppId;
     }
 }
-

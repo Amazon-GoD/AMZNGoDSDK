@@ -139,15 +139,17 @@ namespace AMZNGoDSDK.Runtime
             var bannerUrls = new List<string>();
             var trackingUrls = new List<string>();
             var redirectUrls = new List<string>();
+            var paidAppIds = new List<string>();
 
             foreach (var video in config.Videos)
             {
                 bannerUrls.Add(video.BannerUrl);
                 trackingUrls.Add(video.TrackingUrl);
                 redirectUrls.Add(video.RedirectUrl);
+                paidAppIds.Add(video.AppPackageName?.Count > 0 ? video.AppPackageName[0] : null);
             }
 
-            yield return StartCoroutine(DownloadBanners(bannerUrls, trackingUrls, redirectUrls));
+            yield return StartCoroutine(DownloadBanners(bannerUrls, trackingUrls, redirectUrls, paidAppIds));
 
             if (_rotationCoroutine != null)
             {
@@ -178,11 +180,13 @@ namespace AMZNGoDSDK.Runtime
             var data = bannerDataList[index];
             adImage.sprite = data.sprite;
             CrossPromoAnalytics.ReportBannerShow(data);
+            Debug.Log($"[CrossPromoBanner] Banner shown → sending cp_impression (paidAppId={data.paidAppId}, title={data.title})");
+            CrossPromoModule.Instance?.TrackImpression(data.paidAppId);
             _lastShownIndex = index;
             _currentBannerIndex = (index + 1) % bannerDataList.Count;
         }
 
-        private IEnumerator DownloadBanners(List<string> bannerUrlList, List<string> trackingList, List<string> redirectList)
+        private IEnumerator DownloadBanners(List<string> bannerUrlList, List<string> trackingList, List<string> redirectList, List<string> paidAppIds)
         {
             if (bannerUrlList.Count == 0)
             {
@@ -192,11 +196,11 @@ namespace AMZNGoDSDK.Runtime
 
             for (int i = 0; i < bannerUrlList.Count; i++)
             {
-                yield return StartCoroutine(DownloadBannerSprite(bannerUrlList[i], redirectList[i], trackingList[i], $"banner_{i}"));
+                yield return StartCoroutine(DownloadBannerSprite(bannerUrlList[i], redirectList[i], trackingList[i], paidAppIds[i], $"banner_{i}"));
             }
         }
 
-        private IEnumerator DownloadBannerSprite(string url, string redirectUrl, string trackingUrl, string title)
+        private IEnumerator DownloadBannerSprite(string url, string redirectUrl, string trackingUrl, string paidAppId, string title)
         {
             if (string.IsNullOrWhiteSpace(url))
             {
@@ -210,7 +214,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 var texture = DownloadHandlerTexture.GetContent(request);
                 var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
-                bannerDataList.Add(new BannerData(title, sprite, redirectUrl, trackingUrl));
+                bannerDataList.Add(new BannerData(title, sprite, redirectUrl, trackingUrl, paidAppId));
             }
             else
             {
@@ -236,6 +240,8 @@ namespace AMZNGoDSDK.Runtime
 
             var data = bannerDataList[_lastShownIndex];
             CrossPromoAnalytics.ReportBannerClick(data);
+            Debug.Log($"[CrossPromoBanner] Banner clicked → sending cp_click (paidAppId={data.paidAppId}, title={data.title})");
+            CrossPromoModule.Instance?.TrackClick(data.paidAppId);
             StartCoroutine(TrackAndOpenUrl(data));
         }
 
@@ -284,13 +290,15 @@ namespace AMZNGoDSDK.Runtime
         public Sprite sprite;
         public string redirectUrl;
         public string trackingUrl;
+        public string paidAppId;
 
-        public BannerData(string title, Sprite sprite, string redirectUrl, string trackingUrl)
+        public BannerData(string title, Sprite sprite, string redirectUrl, string trackingUrl, string paidAppId)
         {
             this.title = title;
             this.sprite = sprite;
             this.redirectUrl = redirectUrl;
             this.trackingUrl = trackingUrl;
+            this.paidAppId = paidAppId;
         }
     }
 }

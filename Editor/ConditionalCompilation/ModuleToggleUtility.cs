@@ -30,8 +30,9 @@ namespace AMZNGoDSDK.Editor
             settings.InAppPurchase.Enabled = true;
             settings.Firebase.Enabled = true;
             settings.InternetConnection.Enabled = true;
+            settings.DebugConsole.Enabled = true;
 
-            SdkSettingsManager.SaveSettings(settings);
+            if (!SdkSettingsManager.SaveSettings(settings)) return;
             
             Debug.Log("[AMZN GoD SDK] All modules have been enabled");
             EditorUtility.DisplayDialog("Success", "All modules enabled successfully!", "OK");
@@ -58,8 +59,9 @@ namespace AMZNGoDSDK.Editor
             settings.InAppPurchase.Enabled = false;
             settings.Firebase.Enabled = false;
             settings.InternetConnection.Enabled = false;
+            settings.DebugConsole.Enabled = false;
 
-            SdkSettingsManager.SaveSettings(settings);
+            if (!SdkSettingsManager.SaveSettings(settings)) return;
             
             Debug.Log("[AMZN GoD SDK] All modules have been disabled");
             EditorUtility.DisplayDialog("Success", "All modules disabled successfully!", "OK");
@@ -88,8 +90,9 @@ namespace AMZNGoDSDK.Editor
             settings.Infatica.Enabled = false;
             settings.InAppPurchase.Enabled = false;
             settings.InternetConnection.Enabled = false;
+            settings.DebugConsole.Enabled = false;
 
-            SdkSettingsManager.SaveSettings(settings);
+            if (!SdkSettingsManager.SaveSettings(settings)) return;
             
             Debug.Log("[AMZN GoD SDK] Analytics modules enabled, others disabled");
             EditorUtility.DisplayDialog("Success", "Analytics modules enabled!", "OK");
@@ -117,8 +120,9 @@ namespace AMZNGoDSDK.Editor
             settings.InAppPurchase.Enabled = false;
             settings.Firebase.Enabled = false;
             settings.InternetConnection.Enabled = false;
+            settings.DebugConsole.Enabled = false;
 
-            SdkSettingsManager.SaveSettings(settings);
+            if (!SdkSettingsManager.SaveSettings(settings)) return;
             
             Debug.Log("[AMZN GoD SDK] SDK completely disabled");
             EditorUtility.DisplayDialog("Success", "SDK completely disabled!", "OK");
@@ -192,6 +196,7 @@ namespace AMZNGoDSDK.Editor
             Debug.Log($"In-App Purchase: {settings.InAppPurchase.Enabled}");
             Debug.Log($"Firebase: {settings.Firebase.Enabled}");
             Debug.Log($"Internet Connection: {settings.InternetConnection.Enabled}");
+            Debug.Log($"Debug Console: {settings.DebugConsole.Enabled}");
             Debug.Log($"\nActive Define Symbols ({activeDefines.Count}):");
             
             foreach (var define in activeDefines)
@@ -225,6 +230,7 @@ namespace AMZNGoDSDK.Editor
             CheckModule("IAP", settings.InAppPurchase.Enabled, ModuleDefineManager.IAP_DEFINE, activeDefines, issues);
             CheckModule("Firebase", settings.Firebase.Enabled, ModuleDefineManager.FIREBASE_DEFINE, activeDefines, issues);
             CheckModule("Internet Connection", settings.InternetConnection.Enabled, ModuleDefineManager.INTERNETCONNECTION_DEFINE, activeDefines, issues);
+            CheckModule("Debug Console", settings.DebugConsole.Enabled, ModuleDefineManager.DEBUGCONSOLE_DEFINE, activeDefines, issues);
 
             if (issues.Count == 0)
             {

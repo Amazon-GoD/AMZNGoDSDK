@@ -82,14 +82,12 @@ namespace AMZNGoDSDK.Runtime
                 infaticaSettings.Enabled, 
                 infaticaMode, 
                 infaticaSettings.BatteryOptimizationIgnoreAsking,
-                infaticaSettings.PartnerId);
+                infaticaSettings.PartnerId,
+                infaticaSettings.NotificationTitle);
 #endif
             
 #if AMZN_CROSSPROMO_ENABLED
-            _crossPromoModule.Construct(
-                crossPromoSettings.Enabled,
-                crossPromoSettings.ConfigUrl,
-                crossPromoSettings.AppodealSdkKey);
+            _crossPromoModule.Construct(crossPromoSettings);
 #endif
             
 #if AMZN_APPMETRICA_ENABLED
@@ -198,10 +196,31 @@ namespace AMZNGoDSDK.Runtime
             
             _crossPromoModule.ShowRewarded(callback);
         }
+
+        /// <summary>
+        /// Shows a weighted-random video cross-promo from remote config.
+        /// </summary>
+        /// <param name="onClose">Called when the overlay is closed.</param>
+        /// <param name="onCTAClick">Called when the user taps the CTA button.</param>
+        public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
+        {
+            if (!_crossPromoModule.Enabled)
+            {
+                onClose?.Invoke();
+                return;
+            }
+
+            _crossPromoModule.ShowVideoPromo(onClose, onCTAClick);
+        }
+
+        /// <summary>True if a video promo overlay is currently visible.</summary>
+        public bool IsVideoPromoVisible => _crossPromoModule.IsVideoPromoVisible;
 #else
         public bool IsAdsReady => false;
         public void ShowInterstitial() { }
         public void ShowRewarded(Action callback) { }
+        public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
+        public bool IsVideoPromoVisible => false;
 #endif
 
         #endregion

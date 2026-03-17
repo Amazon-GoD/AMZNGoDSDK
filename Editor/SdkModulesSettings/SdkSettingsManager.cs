@@ -56,7 +56,8 @@ namespace AMZNGoDSDK.Editor
                 Infatica = ConvertInfaticaSettingsToEditor(runtimeSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
-                InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection)
+                InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection),
+                DebugConsole = ConvertDebugConsoleSettingsToEditor(runtimeSettings.DebugConsole)
             };
 
             return editorSettings;
@@ -91,7 +92,11 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 ConfigUrl = runtimeSettings.ConfigUrl,
-                AppodealSdkKey = runtimeSettings.AppodealSdkKey
+                AppodealSdkKey = runtimeSettings.AppodealSdkKey,
+                TrackingBaseUrl = runtimeSettings.TrackingBaseUrl,
+                TrackingApiKey = runtimeSettings.TrackingApiKey,
+                AppType = runtimeSettings.AppType,
+                DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId
             };
         }
 
@@ -108,6 +113,8 @@ namespace AMZNGoDSDK.Editor
             return new InfaticaSettingData
             {
                 Enabled = runtimeSettings.Enabled,
+                PartnerId = runtimeSettings.PartnerId,
+                NotificationTitle = runtimeSettings.NotificationTitle,
                 Mode = mode,
                 SdkVersion = sdkVersion,
                 BatteryOptimizationIgnoreAsking = runtimeSettings.BatteryOptimizationIgnoreAsking
@@ -223,8 +230,14 @@ namespace AMZNGoDSDK.Editor
             return false;
         }
 
-        public static void SaveSettings(SdkSettingsData settings)
+        public static bool SaveSettings(SdkSettingsData settings)
         {
+            if (!NativeDependencyValidator.ValidateAndPrompt(settings))
+            {
+                Debug.Log("[SdkSettingsManager] Save cancelled by user due to native dependency conflicts.");
+                return false;
+            }
+
             // Convert Editor settings to Runtime settings
             var runtimeSettings = ConvertToRuntimeSettings(settings);
 
@@ -251,6 +264,7 @@ namespace AMZNGoDSDK.Editor
             ModuleFolderManager.OnSettingsSaved(settings);
             
             Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS COMPLETED =====");
+            return true;
         }
 
         private static Runtime.SdkSettingsData ConvertToRuntimeSettings(SdkSettingsData editorSettings)
@@ -264,7 +278,8 @@ namespace AMZNGoDSDK.Editor
                 Infatica = ConvertInfaticaSettings(editorSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
-                InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection)
+                InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection),
+                DebugConsole = ConvertDebugConsoleSettings(editorSettings.DebugConsole)
             };
 
             return runtimeSettings;
@@ -299,7 +314,11 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 ConfigUrl = editorSettings.ConfigUrl,
-                AppodealSdkKey = editorSettings.AppodealSdkKey
+                AppodealSdkKey = editorSettings.AppodealSdkKey,
+                TrackingBaseUrl = editorSettings.TrackingBaseUrl,
+                TrackingApiKey = editorSettings.TrackingApiKey,
+                AppType = editorSettings.AppType,
+                DefaultPromotedAppId = editorSettings.DefaultPromotedAppId
             };
         }
 
@@ -316,6 +335,8 @@ namespace AMZNGoDSDK.Editor
             return new Runtime.InfaticaSettingData
             {
                 Enabled = editorSettings.Enabled,
+                PartnerId = editorSettings.PartnerId,
+                NotificationTitle = editorSettings.NotificationTitle,
                 Mode = mode,
                 SdkVersion = sdkVersion,
                 BatteryOptimizationIgnoreAsking = editorSettings.BatteryOptimizationIgnoreAsking
@@ -398,6 +419,17 @@ namespace AMZNGoDSDK.Editor
                 PauseGameWhenOffline = editorSettings.PauseGameWhenOffline,
                 ShowBanner = editorSettings.ShowBanner,
             };
+        }
+
+        private static DebugConsoleSettingData ConvertDebugConsoleSettingsToEditor(Runtime.DebugConsoleSettingData runtimeSettings)
+        {
+            runtimeSettings ??= new Runtime.DebugConsoleSettingData();
+            return new DebugConsoleSettingData { Enabled = runtimeSettings.Enabled };
+        }
+
+        private static Runtime.DebugConsoleSettingData ConvertDebugConsoleSettings(DebugConsoleSettingData editorSettings)
+        {
+            return new Runtime.DebugConsoleSettingData { Enabled = editorSettings.Enabled };
         }
     }
 }
