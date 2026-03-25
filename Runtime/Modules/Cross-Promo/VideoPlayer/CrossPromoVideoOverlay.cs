@@ -110,8 +110,87 @@ namespace AMZNGoDSDK.Runtime
         #region Public API
 
         /// <summary>
+        /// Preloads (buffers) a video for the given config without showing the overlay.
+        /// Call <see cref="Show"/> with the same config afterwards for instant playback.
+        /// </summary>
+        /// <summary>
+        /// Replaces the overlay's video player with a preloaded one.
+        /// The previous player is stopped and its target cleared.
+        /// </summary>
+        public void SwapVideoPlayer(CrossPromoVideoPlayer preloadedPlayer)
+        {
+            if (preloadedPlayer == null) return;
+
+            var previous = _videoPlayer;
+            if (previous != null && previous != preloadedPlayer)
+            {
+                UnsubscribeVideoEvents();
+                previous.Stop();
+
+                // Never destroy the overlay root or the RawImage host: the player often lives on
+                // the same GameObject as this overlay / video display (e.g. "CrossAdPanel").
+                var prevGo = previous.gameObject;
+                bool playerOnOverlayRoot = prevGo == gameObject;
+                bool playerOnVideoDisplay = _videoDisplay != null && prevGo == _videoDisplay.gameObject;
+
+                if (playerOnOverlayRoot || playerOnVideoDisplay)
+                    Destroy(previous);
+                else
+                    Destroy(prevGo);
+            }
+
+            _videoPlayer = preloadedPlayer;
+            _videoPlayer.transform.SetParent(transform, false);
+
+            if (_videoDisplay != null)
+                _videoPlayer.SetTargetRawImage(_videoDisplay);
+
+            Debug.Log("[CrossPromoVideoOverlay] Swapped to preloaded player.");
+        }
+
+        public void Preload(PromoConfiguration config)
+        {
+            if (config == null) return;
+
+            string videoUrl = ResolveVideoUrl(config);
+            if (string.IsNullOrWhiteSpace(videoUrl)) return;
+
+            EnsureVideoPlayer();
+
+            bool wasActive = gameObject.activeSelf;
+            if (!wasActive)
+            {
+                gameObject.SetActive(true);
+                if (_canvasGroup != null)
+                {
+                    _canvasGroup.alpha = 0f;
+                    _canvasGroup.interactable = false;
+                    _canvasGroup.blocksRaycasts = false;
+                }
+            }
+
+            _videoPlayer.Loop = false;
+            _videoPlayer.Preload(videoUrl);
+
+            if (!wasActive)
+                StartCoroutine(HideAfterPreloadReady());
+
+            Debug.Log($"[CrossPromoVideoOverlay] Preloading video: {videoUrl}");
+        }
+
+        private IEnumerator HideAfterPreloadReady()
+        {
+            yield return null;
+            while (_videoPlayer != null && _videoPlayer.State == CrossPromoVideoPlayer.PlaybackState.Loading)
+                yield return null;
+
+            if (!_isVisible)
+                gameObject.SetActive(false);
+        }
+
+        /// <summary>
         /// Shows the overlay with the given promo configuration.
-        /// Downloads (if needed) and plays the video, applies CTA/close delays.
+        /// If the video was preloaded, playback starts instantly.
         /// </summary>
         public void Show(PromoConfiguration config, Action onClose = null, Action onCTA = null)
         {
@@ -137,17 +216,11 @@ namespace AMZNGoDSDK.Runtime
             StopAllOverlayCoroutines();
             EnsureVideoPlayer();
 
-            _videoPlayer.Stop();
-
-            if (_videoDisplay != null)
-                _videoDisplay.texture = null;
-
             _isMuted = false;
             ApplyConfigToUI(config);
             SubscribeVideoEvents();
 
             SetVisible(true);
-            ShowLoading(true);
 
             if (_closeButton != null) _closeButton.gameObject.SetActive(false);
             if (_ctaButton != null) _ctaButton.gameObject.SetActive(false);
@@ -168,9 +241,21 @@ namespace AMZNGoDSDK.Runtime
             if (closeDelay > 0)
                 _countdownCoroutine = StartCoroutine(CloseCountdownCoroutine(closeDelay));
 
-            _videoPlayer.AutoPlay = true;
-            _videoPlayer.Loop = false;
-            _videoPlayer.Load(videoUrl);
+            bool usedPreload = _videoPlayer.PlayPreloaded(videoUrl);
+            if (usedPreload)
+            {
+                ShowLoading(false);
+            }
+            else
+            {
+                if (_videoDisplay != null)
+                    _videoDisplay.texture = null;
+
+                ShowLoading(true);
+                _videoPlayer.AutoPlay = true;
+                _videoPlayer.Loop = false;
+                _videoPlayer.Load(videoUrl);
+            }
 
             IncrementShowCount(config);
             ReportImpression(config);
@@ -315,6 +400,8 @@ namespace AMZNGoDSDK.Runtime
             else
             {
                 if (_closeButton != null) _closeButton.gameObject.SetActive(true);
+                if (_closeCountdownText != null)
+                    _closeCountdownText.gameObject.SetActive(false);
             }
 
             float remaining = maxDelay - minDelay;
@@ -324,6 +411,8 @@ namespace AMZNGoDSDK.Runtime
             if (ctaFirst)
             {
                 if (_closeButton != null) _closeButton.gameObject.SetActive(true);
+                if (_closeCountdownText != null)
+                    _closeCountdownText.gameObject.SetActive(false);
             }
             else
             {

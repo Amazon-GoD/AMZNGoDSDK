@@ -9,9 +9,12 @@ using UnityEngine.Video;
 namespace AMZNGoDSDK.Runtime
 {
     /// <summary>
-    /// Cross-platform video player built on Unity's <see cref="VideoPlayer"/>.
-    /// Provides a clean state machine, automatic retry, multiple render targets,
-    /// application lifecycle handling, and a rich C# event API.
+    /// Cross-platform video player with two backends:
+    /// <list type="bullet">
+    /// <item><see cref="VideoPlayerBackend.UnityVideoPlayer"/> — works on all platforms.</item>
+    /// <item><see cref="VideoPlayerBackend.Media3"/> — Android-only via AndroidX Media3 ExoPlayer.
+    /// On non-Android platforms fires <see cref="OnError"/> immediately.</item>
+    /// </list>
     /// </summary>
     public class CrossPromoVideoPlayer : MonoBehaviour
     {
@@ -28,22 +31,11 @@ namespace AMZNGoDSDK.Runtime
 
         #region Events
 
-        /// <summary>Fired on every state transition with (previousState, newState).</summary>
         public event Action<PlaybackState, PlaybackState> OnStateChanged;
-
-        /// <summary>Video is prepared and ready to play.</summary>
         public event Action OnReady;
-
-        /// <summary>First frame rendered after Play().</summary>
         public event Action OnStarted;
-
-        /// <summary>Video reached the end (only when <see cref="Loop"/> is false).</summary>
         public event Action OnCompleted;
-
-        /// <summary>Loop point reached (fires even when looping).</summary>
         public event Action OnLoopPointReached;
-
-        /// <summary>Unrecoverable error after all retries exhausted.</summary>
         public event Action<string> OnError;
 
         #endregion
@@ -68,14 +60,34 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Private State
+        #region Private State — Shared
 
-        private VideoPlayer _player;
+        private VideoPlayerBackend _backend = VideoPlayerBackend.UnityVideoPlayer;
         private PlaybackState _state = PlaybackState.Idle;
         private int _retryCount;
         private bool _wasPausedByApp;
-        private bool _renderTextureOwned;
         private Coroutine _retryCoroutine;
+        private string _preloadedUrl;
+        private bool _isPreloaded;
+
+        #endregion
+
+        #region Private State — Unity VideoPlayer
+
+        private VideoPlayer _player;
+        private bool _renderTextureOwned;
+
+        #endregion
+
+        #region Private State — Media3 (Android)
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private AndroidJavaObject _media3Plugin;
+        private Texture2D _media3Texture;
+        private bool _media3Ready;
+        private float _media3SavedVolume = 1f;
+        private bool _media3Muted;
+#endif
 
         #endregion
 
@@ -86,26 +98,77 @@ namespace AMZNGoDSDK.Runtime
         public bool IsPaused => _state == PlaybackState.Paused;
         public bool IsLoading => _state == PlaybackState.Loading;
 
-        /// <summary>Total video duration in seconds. Zero if not yet prepared.</summary>
-        public double Duration => _player != null && _player.isPrepared ? _player.length : 0;
+        public double Duration
+        {
+            get
+            {
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    if (_media3Plugin != null && _media3Ready)
+                        return _media3Plugin.Call<long>("getDuration") / 1000.0;
+#endif
+                    return 0;
+                }
 
-        /// <summary>Current playback position in seconds.</summary>
-        public double CurrentTime => _player != null ? _player.time : 0;
+                return _player != null && _player.isPrepared ? _player.length : 0;
+            }
+        }
 
-        /// <summary>Playback progress normalized 0..1.</summary>
+        public double CurrentTime
+        {
+            get
+            {
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    if (_media3Plugin != null && _media3Ready)
+                        return _media3Plugin.Call<long>("getCurrentPosition") / 1000.0;
+#endif
+                    return 0;
+                }
+
+                return _player != null ? _player.time : 0;
+            }
+        }
+
         public float Progress => Duration > 0 ? (float)(CurrentTime / Duration) : 0f;
 
-        /// <summary>Total frame count. Zero if not yet prepared.</summary>
         public ulong FrameCount => _player != null ? _player.frameCount : 0;
 
-        /// <summary>Current frame index.</summary>
         public long CurrentFrame => _player != null ? _player.frame : 0;
 
-        /// <summary>Video width in pixels. Zero if not prepared.</summary>
-        public int Width => _player != null && _player.isPrepared ? (int)_player.width : 0;
+        public int Width
+        {
+            get
+            {
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    return _media3Texture != null ? _media3Texture.width : 0;
+#else
+                    return 0;
+#endif
+                }
+                return _player != null && _player.isPrepared ? (int)_player.width : 0;
+            }
+        }
 
-        /// <summary>Video height in pixels. Zero if not prepared.</summary>
-        public int Height => _player != null && _player.isPrepared ? (int)_player.height : 0;
+        public int Height
+        {
+            get
+            {
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    return _media3Texture != null ? _media3Texture.height : 0;
+#else
+                    return 0;
+#endif
+                }
+                return _player != null && _player.isPrepared ? (int)_player.height : 0;
+            }
+        }
 
         public float Volume
         {
@@ -113,8 +176,17 @@ namespace AMZNGoDSDK.Runtime
             set
             {
                 _volume = Mathf.Clamp01(value);
-                if (_player != null)
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    if (_media3Plugin != null)
+                        _media3Plugin.Call("setVolume", _volume);
+#endif
+                }
+                else if (_player != null)
+                {
                     _player.SetDirectAudioVolume(0, _volume);
+                }
             }
         }
 
@@ -124,8 +196,17 @@ namespace AMZNGoDSDK.Runtime
             set
             {
                 _loop = value;
-                if (_player != null)
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    if (_media3Plugin != null)
+                        _media3Plugin.Call("setLooping", _loop);
+#endif
+                }
+                else if (_player != null)
+                {
                     _player.isLooping = value;
+                }
             }
         }
 
@@ -135,14 +216,35 @@ namespace AMZNGoDSDK.Runtime
             set => _autoPlay = value;
         }
 
-        /// <summary>The RenderTexture the video is rendered into (may be auto-created).</summary>
         public RenderTexture TargetTexture => _targetTexture;
 
-        /// <summary>The texture currently produced by the VideoPlayer (null until first frame).</summary>
-        public Texture CurrentTexture => _player?.texture;
+        public Texture CurrentTexture
+        {
+            get
+            {
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    return _media3Texture;
+#else
+                    return null;
+#endif
+                }
+                return _player?.texture;
+            }
+        }
 
-        /// <summary>Underlying Unity VideoPlayer for advanced use.</summary>
         public VideoPlayer UnityPlayer => _player;
+        public VideoPlayerBackend CurrentBackend => _backend;
+
+        #endregion
+
+        #region Public API — Backend Selection
+
+        public void SetBackend(VideoPlayerBackend backend)
+        {
+            _backend = backend;
+        }
 
         #endregion
 
@@ -150,13 +252,24 @@ namespace AMZNGoDSDK.Runtime
 
         private void Awake()
         {
-            EnsureVideoPlayer();
+            if (_backend == VideoPlayerBackend.UnityVideoPlayer)
+                EnsureUnityVideoPlayer();
         }
 
         private void Start()
         {
             if (_autoPlay && !string.IsNullOrWhiteSpace(_videoUrl))
                 Load(_videoUrl);
+        }
+
+        private void Update()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_backend == VideoPlayerBackend.Media3 && _media3Ready && _media3Plugin != null)
+            {
+                _media3Plugin.Call("updateTexture");
+            }
+#endif
         }
 
         private void OnApplicationPause(bool pauseStatus)
@@ -182,22 +295,26 @@ namespace AMZNGoDSDK.Runtime
         private void OnDestroy()
         {
             CancelRetry();
-            UnsubscribePlayerEvents();
 
-            if (_player != null)
-                _player.Stop();
-
-            ReleaseOwnedTexture();
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Cleanup();
+#endif
+            }
+            else
+            {
+                UnsubscribePlayerEvents();
+                if (_player != null)
+                    _player.Stop();
+                ReleaseOwnedTexture();
+            }
         }
 
         #endregion
 
         #region Public API — Loading
 
-        /// <summary>
-        /// Loads a video from URL or StreamingAssets path and prepares it.
-        /// If <see cref="AutoPlay"/> is true, playback starts automatically when ready.
-        /// </summary>
         public void Load(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -206,19 +323,28 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (_player == null)
-                EnsureVideoPlayer();
-
             CancelRetry();
             _videoUrl = url;
             _retryCount = 0;
-            PrepareVideo();
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Load(url);
+#else
+                Debug.LogWarning("[CrossPromoVideoPlayer] Media3 backend is only supported on Android. Video will not play.");
+                SetState(PlaybackState.Error);
+                OnError?.Invoke("Media3 backend is only supported on Android.");
+#endif
+            }
+            else
+            {
+                if (_player == null)
+                    EnsureUnityVideoPlayer();
+                PrepareVideo();
+            }
         }
 
-        /// <summary>
-        /// Loads a video from a local file in StreamingAssets.
-        /// Convenience wrapper that resolves the platform-correct path.
-        /// </summary>
         public void LoadFromStreamingAssets(string fileName)
         {
             string path = System.IO.Path.Combine(Application.streamingAssetsPath, fileName);
@@ -227,10 +353,94 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
+        #region Public API — Preloading
+
+        public bool IsPreloaded => _isPreloaded;
+        public string PreloadedUrl => _preloadedUrl;
+
+        /// <summary>
+        /// Preloads (buffers) a video URL without starting playback.
+        /// When ready, <see cref="OnReady"/> fires and <see cref="IsPreloaded"/> becomes true.
+        /// Call <see cref="PlayPreloaded"/> to start playback instantly.
+        /// </summary>
+        public void Preload(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+
+            _isPreloaded = false;
+            _preloadedUrl = url;
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Preload(url);
+#endif
+            }
+            else
+            {
+                _autoPlay = false;
+                if (_player == null) EnsureUnityVideoPlayer();
+                _videoUrl = url;
+                PrepareVideo();
+            }
+        }
+
+        /// <summary>
+        /// Starts playback of the preloaded video. If the URL doesn't match or nothing
+        /// was preloaded, falls through to a normal <see cref="Load"/>.
+        /// Returns true if the preloaded video was used.
+        /// </summary>
+        public bool PlayPreloaded(string url)
+        {
+            if (_isPreloaded && _preloadedUrl == url && _state == PlaybackState.Ready)
+            {
+                Debug.Log("[CrossPromoVideoPlayer] Playing preloaded video.");
+                _isPreloaded = false;
+                _preloadedUrl = null;
+
+                ApplyTextureToTargets();
+
+                if (_backend == VideoPlayerBackend.Media3)
+                {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                    Media3Resume();
+                    SetState(PlaybackState.Playing);
+                    OnStarted?.Invoke();
+#endif
+                }
+                else
+                {
+                    _player?.Play();
+                    SetState(PlaybackState.Playing);
+                }
+
+                return true;
+            }
+
+            Debug.Log("[CrossPromoVideoPlayer] No matching preload; falling back to normal Load.");
+            _isPreloaded = false;
+            _preloadedUrl = null;
+            _autoPlay = true;
+            Load(url);
+            return false;
+        }
+
+        #endregion
+
         #region Public API — Playback Control
 
         public void Play()
         {
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Resume();
+                SetState(PlaybackState.Playing);
+#endif
+                return;
+            }
+
             if (_player == null) return;
 
             switch (_state)
@@ -274,50 +484,85 @@ namespace AMZNGoDSDK.Runtime
 
         public void Stop()
         {
-            if (_player == null) return;
-
             CancelRetry();
-            _player.Stop();
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Stop();
+#endif
+            }
+            else
+            {
+                if (_player == null) return;
+                _player.Stop();
+            }
+
             SetState(PlaybackState.Idle);
         }
 
-        /// <summary>Restarts from the beginning.</summary>
         public void Restart()
         {
-            if (_player == null || !_player.isPrepared) return;
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (_media3Plugin != null && _media3Ready)
+                {
+                    _media3Plugin.Call("seekTo", 0L);
+                    Media3Resume();
+                    SetState(PlaybackState.Playing);
+                }
+#endif
+                return;
+            }
 
+            if (_player == null || !_player.isPrepared) return;
             _player.time = 0;
             _player.Play();
             SetState(PlaybackState.Playing);
         }
 
-        /// <summary>Reloads the current URL (resets retry counter).</summary>
         public void Retry()
         {
             if (string.IsNullOrWhiteSpace(_videoUrl)) return;
-
             _retryCount = 0;
-            PrepareVideo();
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Load(_videoUrl);
+#endif
+            }
+            else
+            {
+                PrepareVideo();
+            }
         }
 
         #endregion
 
         #region Public API — Seeking
 
-        /// <summary>Seek to an absolute time in seconds.</summary>
         public void SeekTo(double seconds)
         {
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (_media3Plugin != null && _media3Ready)
+                    _media3Plugin.Call("seekTo", (long)(seconds * 1000));
+#endif
+                return;
+            }
+
             if (_player == null || !_player.isPrepared) return;
             _player.time = Math.Max(0, Math.Min(seconds, _player.length));
         }
 
-        /// <summary>Seek to a normalized position (0 = start, 1 = end).</summary>
         public void SeekNormalized(float t)
         {
             SeekTo(Mathf.Clamp01(t) * Duration);
         }
 
-        /// <summary>Seek forward or backward by the given number of seconds.</summary>
         public void SeekRelative(double offsetSeconds)
         {
             SeekTo(CurrentTime + offsetSeconds);
@@ -329,12 +574,41 @@ namespace AMZNGoDSDK.Runtime
 
         public void SetMute(bool mute)
         {
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                _media3Muted = mute;
+                if (_media3Plugin != null)
+                {
+                    if (mute)
+                    {
+                        _media3SavedVolume = _volume;
+                        _media3Plugin.Call("setVolume", 0f);
+                    }
+                    else
+                    {
+                        _media3Plugin.Call("setVolume", _media3SavedVolume);
+                    }
+                }
+#endif
+                return;
+            }
+
             if (_player != null)
                 _player.SetDirectAudioMute(0, mute);
         }
 
         public bool IsMuted()
         {
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                return _media3Muted;
+#else
+                return false;
+#endif
+            }
+
             return _player != null && _player.GetDirectAudioMute(0);
         }
 
@@ -347,14 +621,12 @@ namespace AMZNGoDSDK.Runtime
 
         #region Public API — Render Targets
 
-        /// <summary>Assigns MeshRenderers whose main texture will receive the video.</summary>
         public void SetTargetMeshRenderers(List<MeshRenderer> renderers)
         {
             _targetMeshRenderers = renderers ?? new List<MeshRenderer>();
             ApplyTextureToTargets();
         }
 
-        /// <summary>Assigns a RawImage that will display the video.</summary>
         public void SetTargetRawImage(RawImage rawImage)
         {
             _targetRawImage = rawImage;
@@ -363,9 +635,9 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Internal — VideoPlayer Setup
+        #region Internal — Unity VideoPlayer Setup
 
-        private void EnsureVideoPlayer()
+        private void EnsureUnityVideoPlayer()
         {
             _player = GetComponent<VideoPlayer>();
             if (_player == null)
@@ -403,7 +675,7 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Internal — Prepare & Retry
+        #region Internal — Unity VideoPlayer Prepare & Retry
 
         private void PrepareVideo()
         {
@@ -429,12 +701,22 @@ namespace AMZNGoDSDK.Runtime
         {
             yield return new WaitForSecondsRealtime(_retryDelay);
             _retryCoroutine = null;
-            PrepareVideo();
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Load(_videoUrl);
+#endif
+            }
+            else
+            {
+                PrepareVideo();
+            }
         }
 
         #endregion
 
-        #region Internal — Event Handlers
+        #region Internal — Unity VideoPlayer Event Handlers
 
         private void HandlePrepareCompleted(VideoPlayer source)
         {
@@ -444,7 +726,14 @@ namespace AMZNGoDSDK.Runtime
             OnReady?.Invoke();
 
             if (_autoPlay)
+            {
                 Play();
+            }
+            else if (!string.IsNullOrEmpty(_preloadedUrl))
+            {
+                _isPreloaded = true;
+                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl}");
+            }
         }
 
         private void HandleStarted(VideoPlayer source)
@@ -484,7 +773,7 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Internal — Rendering
+        #region Internal — Rendering (Unity VideoPlayer)
 
         private void EnsureRenderTexture()
         {
@@ -527,11 +816,32 @@ namespace AMZNGoDSDK.Runtime
 
         private void ApplyTextureToTargets()
         {
-            Texture texture = _player.targetTexture;
+            Texture texture;
+
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                texture = _media3Texture;
+#else
+                texture = null;
+#endif
+            }
+            else
+            {
+                texture = _player?.targetTexture;
+            }
+
             if (texture == null) return;
 
             if (_targetRawImage != null)
+            {
                 _targetRawImage.texture = texture;
+                // Flip only video UVs; keep UI hierarchy transform unchanged.
+                _targetRawImage.uvRect = _backend == VideoPlayerBackend.Media3
+                    ? new Rect(0f, 1f, 1f, -1f)
+                    : new Rect(0f, 0f, 1f, 1f);
+                ApplyRawImageAspect(texture);
+            }
 
             for (int i = 0; i < _targetMeshRenderers.Count; i++)
             {
@@ -540,21 +850,54 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
+        private void ApplyRawImageAspect(Texture texture)
+        {
+            if (_targetRawImage == null || texture == null || texture.width <= 0 || texture.height <= 0)
+                return;
+
+            var fitter = _targetRawImage.GetComponent<AspectRatioFitter>();
+            if (fitter == null)
+                fitter = _targetRawImage.gameObject.AddComponent<AspectRatioFitter>();
+
+            fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            fitter.aspectRatio = (float)texture.width / texture.height;
+        }
+
         #endregion
 
         #region Internal — State Machine
 
         private void PauseInternal()
         {
-            if (_player == null) return;
-            _player.Pause();
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Pause();
+#endif
+            }
+            else
+            {
+                if (_player == null) return;
+                _player.Pause();
+            }
+
             SetState(PlaybackState.Paused);
         }
 
         private void ResumeInternal()
         {
-            if (_player == null) return;
-            _player.Play();
+            if (_backend == VideoPlayerBackend.Media3)
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                Media3Resume();
+#endif
+            }
+            else
+            {
+                if (_player == null) return;
+                _player.Play();
+            }
+
             SetState(PlaybackState.Playing);
         }
 
@@ -569,9 +912,158 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
+        #region Media3 — Android Implementation
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+
+        private void Media3Load(string url)
+        {
+            SetState(PlaybackState.Loading);
+            Media3Cleanup();
+
+            _media3Ready = false;
+            _media3Plugin = new AndroidJavaObject("com.amzngod.media3.Media3VideoPlugin");
+            _media3Plugin.Call("init", gameObject.name);
+            _media3Plugin.Call("setLooping", _loop);
+            _media3Plugin.Call("load", url);
+        }
+
+        private void Media3Preload(string url)
+        {
+            SetState(PlaybackState.Loading);
+            Media3Cleanup();
+
+            _media3Ready = false;
+            _media3Plugin = new AndroidJavaObject("com.amzngod.media3.Media3VideoPlugin");
+            _media3Plugin.Call("init", gameObject.name);
+            _media3Plugin.Call("setLooping", _loop);
+            _media3Plugin.Call("preload", url);
+        }
+
+        private void Media3Resume()
+        {
+            if (_media3Plugin != null)
+                _media3Plugin.Call("play");
+        }
+
+        private void Media3Pause()
+        {
+            if (_media3Plugin != null)
+                _media3Plugin.Call("pause");
+        }
+
+        private void Media3Stop()
+        {
+            if (_media3Plugin != null)
+            {
+                try { _media3Plugin.Call("release"); } catch (Exception) { }
+            }
+            _media3Ready = false;
+        }
+
+        private void Media3Cleanup()
+        {
+            if (_media3Plugin != null)
+            {
+                try { _media3Plugin.Call("release"); } catch (Exception) { }
+            }
+
+            if (_media3Texture != null)
+            {
+                Destroy(_media3Texture);
+                _media3Texture = null;
+            }
+
+            _media3Plugin = null;
+            _media3Ready = false;
+        }
+
+#endif
+
+        /// <summary>Called from Java via UnitySendMessage with format "textureId|width|height".</summary>
+        private void OnMedia3Prepared(string mediaInfo)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_media3Texture != null)
+            {
+                Destroy(_media3Texture);
+                _media3Texture = null;
+            }
+
+            if (string.IsNullOrEmpty(mediaInfo))
+                return;
+
+            string[] parts = mediaInfo.Split('|');
+            if (parts.Length < 3)
+            {
+                Debug.LogError($"[CrossPromoVideoPlayer] OnMedia3Prepared: invalid data '{mediaInfo}'");
+                return;
+            }
+
+            int textureId = int.Parse(parts[0]);
+            int width = int.Parse(parts[1]);
+            int height = int.Parse(parts[2]);
+
+            Debug.Log($"{width}, {height}");
+
+            IntPtr nativePtr = (IntPtr)textureId;
+            _media3Texture = Texture2D.CreateExternalTexture(width, height, TextureFormat.ARGB32, false, true, nativePtr);
+
+            ApplyTextureToTargets();
+
+            _media3Ready = true;
+            SetState(PlaybackState.Ready);
+            OnReady?.Invoke();
+
+            if (_autoPlay)
+            {
+                Media3Resume();
+                SetState(PlaybackState.Playing);
+                OnStarted?.Invoke();
+            }
+            else if (!string.IsNullOrEmpty(_preloadedUrl))
+            {
+                _isPreloaded = true;
+                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl}");
+            }
+#endif
+        }
+
+        /// <summary>Called from Java via UnitySendMessage when playback ends.</summary>
+        private void OnMedia3Completed(string unused)
+        {
+            OnLoopPointReached?.Invoke();
+
+            if (!_loop)
+            {
+                SetState(PlaybackState.Completed);
+                OnCompleted?.Invoke();
+            }
+        }
+
+        /// <summary>Called from Java via UnitySendMessage on playback error.</summary>
+        private void OnMedia3Error(string message)
+        {
+            Debug.LogError($"[CrossPromoVideoPlayer] Media3 error: {message}");
+
+            if (_retryCount < _maxRetries)
+            {
+                _retryCount++;
+                Debug.Log($"[CrossPromoVideoPlayer] Retrying ({_retryCount}/{_maxRetries}) in {_retryDelay}s...");
+                CancelRetry();
+                _retryCoroutine = StartCoroutine(RetryAfterDelay());
+            }
+            else
+            {
+                SetState(PlaybackState.Error);
+                OnError?.Invoke(message);
+            }
+        }
+
+        #endregion
+
         #region Static Helpers
 
-        /// <summary>Formats seconds into MM:SS or HH:MM:SS.</summary>
         public static string FormatTime(double seconds)
         {
             if (seconds < 0) seconds = 0;

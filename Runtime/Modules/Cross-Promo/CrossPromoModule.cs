@@ -26,6 +26,9 @@ namespace AMZNGoDSDK.Runtime
         private PromosConfigurationInfo _crossPromoConfig;
         private Action _currentBannerOnClose;
         private Func<bool> _currentIsNoAds;
+        private VideoPlayerBackend _videoBackend;
+        private PromoConfiguration _preloadedConfig;
+        private CrossPromoVideoPlayer _preloadPlayer;
 
         public bool IsAdsReady => _appodealAdapter?.IsReady() ?? false;
 
@@ -51,9 +54,11 @@ namespace AMZNGoDSDK.Runtime
 
         public void Construct(CrossPromoSettingData settings)
         {
+            Debug.Log($"[CrossPromoModule] Construct() called. Enabled={settings.Enabled}, ConfigUrl='{settings.ConfigUrl}', VideoBackend={settings.VideoBackend}");
             Enabled = settings.Enabled;
             _configUrl = settings.ConfigUrl;
             _appodealSDKKey = settings.AppodealSdkKey;
+            _videoBackend = settings.VideoBackend;
 
             if (Enabled && !string.IsNullOrEmpty(settings.TrackingBaseUrl))
             {
@@ -78,6 +83,7 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Initialize()
         {
+            Debug.Log($"[CrossPromoModule] Initialize() called. Enabled={Enabled}, configUrl='{_configUrl}', videoBackend={_videoBackend}");
             _trackingService?.Initialize();
             SubscribeToAppodealEvents();
             StartCoroutine(InitCrossPromoModulesCorAsync());
@@ -85,31 +91,53 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator InitCrossPromoModulesCorAsync()
         {
+            Debug.Log("[CrossPromoModule] InitCrossPromoModulesCorAsync started");
             yield return LoadJson();
+            Debug.Log($"[CrossPromoModule] LoadJson finished. _crossPromoConfig is {(_crossPromoConfig == null ? "NULL" : "set")}, Videos count = {_crossPromoConfig?.Videos?.Count ?? -1}");
             OnConfigLoaded?.Invoke(_crossPromoConfig);
+
+            PreloadNextVideo();
         }
 
         private IEnumerator LoadJson()
         {
+            Debug.Log($"[CrossPromoModule] LoadJson() called. _configUrl='{_configUrl}'");
+
             if (string.IsNullOrWhiteSpace(_configUrl))
             {
+                Debug.LogWarning("[CrossPromoModule] LoadJson: _configUrl is EMPTY — skipping config fetch!");
                 yield break;
             }
 
+            Debug.Log($"[CrossPromoModule] Starting FetchRemoteConfigAsync for URL: {_configUrl}");
             var operation = _configurationManager.FetchRemoteConfigAsync(_configUrl);
 
+            float waitStart = Time.realtimeSinceStartup;
             while (!operation.IsCompleted)
             {
                 yield return null;
             }
+            float elapsed = Time.realtimeSinceStartup - waitStart;
+
+            Debug.Log($"[CrossPromoModule] FetchRemoteConfigAsync completed in {elapsed:F2}s. Status={operation.Status}, IsCompletedSuccessfully={operation.IsCompletedSuccessfully}, IsFaulted={operation.IsFaulted}, IsCanceled={operation.IsCanceled}");
 
             if (operation.IsCompletedSuccessfully)
             {
                 _crossPromoConfig = operation.Result;
+                Debug.Log($"[CrossPromoModule] Config loaded OK. Videos={_crossPromoConfig?.Videos?.Count ?? 0}");
+
+                if (_crossPromoConfig?.Videos != null)
+                {
+                    for (int i = 0; i < _crossPromoConfig.Videos.Count; i++)
+                    {
+                        var v = _crossPromoConfig.Videos[i];
+                        Debug.Log($"[CrossPromoModule]   Video[{i}]: Title='{v.Title}', URL='{v.VideoUrl}', Weight={v.Weight}, MaxShow={v.MaxShowCount}, Packages=[{string.Join(",", v.AppPackageName ?? new())}]");
+                    }
+                }
             }
             else
             {
-                Debug.LogWarning($"[CrossPromoModule] Remote config load failed: {operation.Exception?.Message}");
+                Debug.LogError($"[CrossPromoModule] Remote config load FAILED. Exception: {operation.Exception}");
             }
         }
 
@@ -209,22 +237,29 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
         {
+            Debug.Log($"[CrossPromoModule] ShowVideoPromo() called. Enabled={Enabled}, _crossPromoConfig is {(_crossPromoConfig == null ? "NULL" : "set")}, Videos={_crossPromoConfig?.Videos?.Count ?? -1}");
+
             if (!Enabled)
             {
+                Debug.LogWarning("[CrossPromoModule] ShowVideoPromo: module is DISABLED");
                 onClose?.Invoke();
                 return;
             }
 
+            Debug.Log($"[CrossPromoModule] Before CheckVideosShowLimit: Videos count = {_crossPromoConfig?.Videos?.Count ?? -1}");
             _crossPromoConfig?.CheckVideosShowLimit();
+            Debug.Log($"[CrossPromoModule] After CheckVideosShowLimit: Videos count = {_crossPromoConfig?.Videos?.Count ?? -1}");
 
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
             {
-                Debug.LogWarning("[CrossPromoModule] No video promos available in config.");
+                Debug.LogWarning($"[CrossPromoModule] No video promos available in config. _crossPromoConfig={(_crossPromoConfig == null ? "NULL" : "exists")}, Videos={(_crossPromoConfig?.Videos == null ? "NULL" : $"count={_crossPromoConfig.Videos.Count}")}");
                 onClose?.Invoke();
                 return;
             }
 
-            var config = SelectWeightedRandom(_crossPromoConfig.Videos);
+            var config = _preloadedConfig ?? SelectWeightedRandom(_crossPromoConfig.Videos);
+            _preloadedConfig = null;
+
             if (config == null || string.IsNullOrWhiteSpace(config.VideoUrl) && string.IsNullOrWhiteSpace(config.FileName))
             {
                 Debug.LogWarning("[CrossPromoModule] Selected video promo has no URL or file name.");
@@ -239,7 +274,27 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            _videoOverlay.Show(config, onClose, onCTAClick);
+            bool usedPreload = false;
+            if (_preloadPlayer != null && _preloadPlayer.IsPreloaded)
+            {
+                string preloadUrl = ResolvePromoUrl(config);
+                if (_preloadPlayer.PreloadedUrl == preloadUrl)
+                {
+                    _videoOverlay.SwapVideoPlayer(_preloadPlayer);
+                    _preloadPlayer = null;
+                    usedPreload = true;
+                }
+            }
+
+            if (!usedPreload && _videoOverlay.VideoPlayer != null)
+                _videoOverlay.VideoPlayer.SetBackend(_videoBackend);
+
+            _videoOverlay.Show(config, () =>
+            {
+                onClose?.Invoke();
+            }, onCTAClick);
+
+            PreloadNextVideo();
         }
 
         /// <summary>Shows a specific video promo by <see cref="PromoConfiguration"/>.</summary>
@@ -252,11 +307,68 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            if (_videoOverlay.VideoPlayer != null)
+                _videoOverlay.VideoPlayer.SetBackend(_videoBackend);
+
             _videoOverlay.Show(config, onClose, onCTAClick);
         }
 
         /// <summary>Returns true if a video overlay is currently being shown.</summary>
         public bool IsVideoPromoVisible => _videoOverlay != null && _videoOverlay.IsVisible;
+
+        private CrossPromoVideoPlayer EnsurePreloadPlayer()
+        {
+            if (_preloadPlayer != null) return _preloadPlayer;
+
+            var go = new GameObject("CrossPromoPreloader");
+            go.transform.SetParent(transform);
+            _preloadPlayer = go.AddComponent<CrossPromoVideoPlayer>();
+            _preloadPlayer.SetBackend(_videoBackend);
+            return _preloadPlayer;
+        }
+
+        private void PreloadNextVideo()
+        {
+            if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
+                return;
+
+            _crossPromoConfig.CheckVideosShowLimit();
+            if (_crossPromoConfig.Videos.Count == 0)
+                return;
+
+            var next = SelectWeightedRandom(_crossPromoConfig.Videos);
+            if (next == null || string.IsNullOrWhiteSpace(next.VideoUrl) && string.IsNullOrWhiteSpace(next.FileName))
+                return;
+
+            _preloadedConfig = next;
+
+            string url = ResolvePromoUrl(next);
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+
+            var player = EnsurePreloadPlayer();
+            player.SetBackend(_videoBackend);
+            player.Loop = false;
+            player.Preload(url);
+            Debug.Log($"[CrossPromoModule] Preloading next video on dedicated player: {next.Title}");
+        }
+
+        private static string ResolvePromoUrl(PromoConfiguration config)
+        {
+            if (!string.IsNullOrWhiteSpace(config.VideoUrl))
+                return config.VideoUrl;
+
+            if (!string.IsNullOrWhiteSpace(config.FileName))
+            {
+                string ext = config.FileExtension.ToString();
+                string fileName = config.FileName.EndsWith($".{ext}", System.StringComparison.OrdinalIgnoreCase)
+                    ? config.FileName
+                    : $"{config.FileName}.{ext}";
+                return System.IO.Path.Combine(Application.streamingAssetsPath, fileName);
+            }
+
+            return null;
+        }
 
         private static PromoConfiguration SelectWeightedRandom(List<PromoConfiguration> videos)
         {

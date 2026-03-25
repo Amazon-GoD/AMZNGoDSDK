@@ -9,15 +9,17 @@ namespace AMZNGoDSDK.Runtime
         private AndroidJavaObject unityActivity;
         private string _partnerId;
         private string _appName;
+        private bool _useJobs;
 
         #endregion
 
         #region Initialization
 
-        public void Initialize(string partnerId = "", string notificationTitle = "")
+        public void Initialize(string partnerId = "", string notificationTitle = "", bool useJobs = false)
         {
             _partnerId = partnerId;
             _appName = string.IsNullOrWhiteSpace(notificationTitle) ? Application.productName : notificationTitle;
+            _useJobs = useJobs;
 
             if (Application.platform == RuntimePlatform.Android)
             {
@@ -81,6 +83,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void ScheduleSurvivalJob()
         {
+            if (!_useJobs)
+            {
+                Debug.Log("[Infatica] ScheduleSurvivalJob skipped (WithoutJobs mode)");
+                return;
+            }
+
             if (Application.platform == RuntimePlatform.Android)
             {
                 using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))
@@ -98,6 +106,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void CancelSurvivalJob()
         {
+            if (!_useJobs)
+            {
+                Debug.Log("[Infatica] CancelSurvivalJob skipped (WithoutJobs mode)");
+                return;
+            }
+
             if (Application.platform == RuntimePlatform.Android)
             {
                 using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))

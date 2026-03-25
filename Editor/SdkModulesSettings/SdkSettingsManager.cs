@@ -96,7 +96,8 @@ namespace AMZNGoDSDK.Editor
                 TrackingBaseUrl = runtimeSettings.TrackingBaseUrl,
                 TrackingApiKey = runtimeSettings.TrackingApiKey,
                 AppType = runtimeSettings.AppType,
-                DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId
+                DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId,
+                VideoBackend = runtimeSettings.VideoBackend
             };
         }
 
@@ -318,7 +319,8 @@ namespace AMZNGoDSDK.Editor
                 TrackingBaseUrl = editorSettings.TrackingBaseUrl,
                 TrackingApiKey = editorSettings.TrackingApiKey,
                 AppType = editorSettings.AppType,
-                DefaultPromotedAppId = editorSettings.DefaultPromotedAppId
+                DefaultPromotedAppId = editorSettings.DefaultPromotedAppId,
+                VideoBackend = editorSettings.VideoBackend
             };
         }
 

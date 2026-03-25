@@ -209,6 +209,14 @@ namespace AMZNGoDSDK.Editor
                             new GUIContent("Default Promoted App ID",
                                 "Fallback promoted app ID for tracking when a specific promo doesn't provide its own AppPackageName (e.g. Appodeal ads)."),
                             _currentSettings.CrossPromo.DefaultPromotedAppId);
+
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Video Player", EditorStyles.miniBoldLabel);
+                    _currentSettings.CrossPromo.VideoBackend = (Runtime.VideoPlayerBackend)EditorGUILayout
+                        .EnumPopup(
+                            new GUIContent("Video Backend",
+                                "UnityVideoPlayer — стандартный плеер, работает на всех платформах.\nMedia3 — Android-only, AndroidX Media3 ExoPlayer (требует отключения Multithreaded Rendering, на других платформах видео не будет показываться)."),
+                            _currentSettings.CrossPromo.VideoBackend);
                 });
         }
         

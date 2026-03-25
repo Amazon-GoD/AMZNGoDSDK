@@ -18,6 +18,7 @@ namespace AMZNGoDSDK.Runtime
         private bool _batteryOptimizationIgnoreAsking = false;
         private string _partnerId = "";
         private string _notificationTitle = "";
+        private bool _useJobs;
         private Mode _mode;
 
         private ConcernWindow ActiveConcernWindow => _mode == Mode.Review 
@@ -31,19 +32,20 @@ namespace AMZNGoDSDK.Runtime
 
         public Action OnAgree;
 
-        public void Construct(bool enable, Mode mode, bool batteryOptimizationIgnoreAsking, string partnerId, string notificationTitle = "")
+        public void Construct(bool enable, Mode mode, bool batteryOptimizationIgnoreAsking, string partnerId, string notificationTitle = "", bool useJobs = false)
         {
             Enabled = enable;
             _mode = mode;
             _batteryOptimizationIgnoreAsking = batteryOptimizationIgnoreAsking;
             _partnerId = partnerId;
             _notificationTitle = notificationTitle;
+            _useJobs = useJobs;
         }
 
         public override void Initialize()
         {
             _foregroundServiceManager = new ForegroundServiceManager();
-            _foregroundServiceManager.Initialize(_partnerId, _notificationTitle);
+            _foregroundServiceManager.Initialize(_partnerId, _notificationTitle, _useJobs);
             
             _reviewConcernWindow.OnAgree += Agree;
             _reviewConcernWindow.OnDisagree += Disagree;

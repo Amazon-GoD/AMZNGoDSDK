@@ -8,6 +8,12 @@ namespace AMZNGoDSDK.Runtime
         Paid = 1
     }
 
+    public enum VideoPlayerBackend
+    {
+        UnityVideoPlayer = 0,
+        Media3 = 1
+    }
+
     [Serializable]
     public class CrossPromoSettingData : ModuleSettingData
     {
@@ -20,5 +26,7 @@ namespace AMZNGoDSDK.Runtime
 
         [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName (e.g. Appodeal ads).")]
         public string DefaultPromotedAppId;
+
+        public VideoPlayerBackend VideoBackend;
     }
 }

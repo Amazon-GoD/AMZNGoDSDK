@@ -83,7 +83,8 @@ namespace AMZNGoDSDK.Runtime
                 infaticaMode, 
                 infaticaSettings.BatteryOptimizationIgnoreAsking,
                 infaticaSettings.PartnerId,
-                infaticaSettings.NotificationTitle);
+                infaticaSettings.NotificationTitle,
+                infaticaSettings.SdkVersion == InfaticaSettingData.InfaticaSdkVersion.WithJobs);
 #endif
             
 #if AMZN_CROSSPROMO_ENABLED

@@ -97,9 +97,11 @@ namespace AMZNGoDSDK.Runtime
 
         public async Task<PromosConfigurationInfo> FetchRemoteConfigAsync(string configUrl)
         {
+            Debug.Log($"[CrossPromoConfig] FetchRemoteConfigAsync called. URL='{configUrl}'");
             var configuration = new PromosConfigurationInfo();
             if (string.IsNullOrWhiteSpace(configUrl))
             {
+                Debug.LogWarning("[CrossPromoConfig] FetchRemoteConfigAsync: URL is EMPTY — returning empty config");
                 return configuration;
             }
 
@@ -110,6 +112,7 @@ namespace AMZNGoDSDK.Runtime
             while (attempt < maxRetries)
             {
                 attempt++;
+                Debug.Log($"[CrossPromoConfig] Fetch attempt {attempt}/{maxRetries} for {configUrl}");
                 try
                 {
                     using var request = UnityWebRequest.Get(configUrl);
@@ -119,14 +122,16 @@ namespace AMZNGoDSDK.Runtime
                         await Task.Yield();
                     }
 
+                    Debug.Log($"[CrossPromoConfig] Attempt {attempt}: result={request.result}, responseCode={request.responseCode}, error='{request.error}', downloadedBytes={request.downloadedBytes}");
+
                     if (request.result == UnityWebRequest.Result.ConnectionError ||
                         request.result == UnityWebRequest.Result.ProtocolError)
                     {
-                        Debug.LogWarning($"Attempt {attempt} failed: {request.error}");
+                        Debug.LogWarning($"[CrossPromoConfig] Attempt {attempt} failed: {request.error} (code={request.responseCode})");
 
                         if (attempt >= maxRetries)
                         {
-                            Debug.LogError($"All attempts failed. Last error: {request.error}");
+                            Debug.LogError($"[CrossPromoConfig] All {maxRetries} attempts failed. Last error: {request.error}");
                             return configuration;
                         }
 
@@ -134,17 +139,19 @@ namespace AMZNGoDSDK.Runtime
                         continue;
                     }
 
+                    Debug.Log($"[CrossPromoConfig] Attempt {attempt} succeeded. Parsing response...");
                     configuration = ParseConfig(request.downloadHandler.text);
                     NormalizeWeights(configuration);
                     RemoveInstalledApps(configuration);
+                    Debug.Log($"[CrossPromoConfig] Final config: Videos={configuration.Videos?.Count ?? 0}");
                     return configuration;
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"Attempt {attempt} failed with exception: {ex.Message}");
+                    Debug.LogWarning($"[CrossPromoConfig] Attempt {attempt} exception: {ex}");
                     if (attempt >= maxRetries)
                     {
-                        Debug.LogError($"All attempts failed. Last exception: {ex}");
+                        Debug.LogError($"[CrossPromoConfig] All {maxRetries} attempts failed. Last exception: {ex}");
                         return configuration;
                     }
 
@@ -152,19 +159,24 @@ namespace AMZNGoDSDK.Runtime
                 }
             }
 
+            Debug.LogError("[CrossPromoConfig] FetchRemoteConfigAsync exited loop without result");
             return configuration;
         }
 
         private static PromosConfigurationInfo ParseConfig(string json)
         {
+            Debug.Log($"[CrossPromoConfig] ParseConfig called. json is {(string.IsNullOrWhiteSpace(json) ? "EMPTY/NULL" : $"length={json.Length}")}");
+
             if (string.IsNullOrWhiteSpace(json))
             {
+                Debug.LogWarning("[CrossPromoConfig] ParseConfig: JSON is empty, returning empty config");
                 return new PromosConfigurationInfo();
             }
 
-            Debug.Log($"Remote config fetched: {json}");
+            Debug.Log($"[CrossPromoConfig] Raw JSON: {json}");
             var configuration = JsonUtility.FromJson<PromosConfigurationInfo>(json) ?? new PromosConfigurationInfo();
             configuration.Videos = configuration.Videos ?? new List<PromoConfiguration>();
+            Debug.Log($"[CrossPromoConfig] Parsed: Weight={configuration.Weight}, Videos.Count={configuration.Videos.Count}");
             return configuration;
         }
 
@@ -194,8 +206,11 @@ namespace AMZNGoDSDK.Runtime
 
         private static void RemoveInstalledApps(PromosConfigurationInfo configuration)
         {
+            Debug.Log($"[CrossPromoConfig] RemoveInstalledApps called. Videos={configuration?.Videos?.Count ?? -1}");
+
             if (configuration?.Videos == null || configuration.Videos.Count == 0)
             {
+                Debug.Log("[CrossPromoConfig] RemoveInstalledApps: no videos to check");
                 return;
             }
 
@@ -204,7 +219,9 @@ namespace AMZNGoDSDK.Runtime
             {
                 foreach (var packageName in video.AppPackageName)
                 {
-                    if (AppChecker.CheckIfAppInstalled(packageName))
+                    bool installed = AppChecker.CheckIfAppInstalled(packageName);
+                    Debug.Log($"[CrossPromoConfig] CheckIfAppInstalled('{packageName}') = {installed}  (video: '{video.Title}')");
+                    if (installed)
                     {
                         videosToRemove.Add(video);
                         break;
@@ -212,12 +229,16 @@ namespace AMZNGoDSDK.Runtime
                 }
             }
 
+            Debug.Log($"[CrossPromoConfig] Videos to remove (installed apps): {videosToRemove.Count}");
+
 #if !UNITY_EDITOR && UNITY_ANDROID
             foreach (var video in videosToRemove)
             {
+                Debug.Log($"[CrossPromoConfig] Removing video '{video.Title}' (app installed)");
                 configuration.Videos.Remove(video);
             }
 #endif
+            Debug.Log($"[CrossPromoConfig] After RemoveInstalledApps: Videos={configuration.Videos.Count}");
         }
     }
 }

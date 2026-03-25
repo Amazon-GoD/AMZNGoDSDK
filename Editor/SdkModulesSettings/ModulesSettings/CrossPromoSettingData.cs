@@ -13,5 +13,6 @@ namespace AMZNGoDSDK.Editor
         public string TrackingApiKey;
         public CrossPromoAppType AppType;
         public string DefaultPromotedAppId;
+        public VideoPlayerBackend VideoBackend;
     }
 }
