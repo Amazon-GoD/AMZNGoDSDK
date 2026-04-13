@@ -85,6 +85,13 @@ namespace AMZNGoDSDK.Runtime
             public string BannerUrl;
             public string TrackingUrl;
             public string RedirectUrl;
+            [Tooltip("Adjust click tracker; GET on CTA / end-card (and banner) click. Query params campaign, adgroup, creative are appended from fields below.")]
+            public string adjust_click_url;
+            [Tooltip("Adjust impression tracker; GET when video or banner is shown.")]
+            public string adjust_impression_url;
+            public string campaign;
+            public string adgroup;
+            public string creative;
             public int OverlayShowDelayInSeconds;
             public int CloseShowDelayInSeconds;
             public VideoExtension FileExtension;
@@ -173,8 +180,17 @@ namespace AMZNGoDSDK.Runtime
                 return new PromosConfigurationInfo();
             }
 
-            Debug.Log($"[CrossPromoConfig] Raw JSON: {json}");
-            var configuration = JsonUtility.FromJson<PromosConfigurationInfo>(json) ?? new PromosConfigurationInfo();
+            PromosConfigurationInfo configuration;
+            try
+            {
+                configuration = JsonUtility.FromJson<PromosConfigurationInfo>(json) ?? new PromosConfigurationInfo();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[CrossPromoConfig] ParseConfig: malformed JSON — {ex.Message}");
+                return new PromosConfigurationInfo();
+            }
+
             configuration.Videos = configuration.Videos ?? new List<PromoConfiguration>();
             Debug.Log($"[CrossPromoConfig] Parsed: Weight={configuration.Weight}, Videos.Count={configuration.Videos.Count}");
             return configuration;

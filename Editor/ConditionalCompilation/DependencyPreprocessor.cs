@@ -61,11 +61,10 @@ namespace AMZNGoDSDK.Editor
                 });
             }
 
-            // CrossPromo (Appodeal)
+            // CrossPromo
             if (!settings.CrossPromo.Enabled)
             {
-                // Appodeal dependencies управляются через его собственную систему
-                Debug.Log("[AMZN GoD SDK] CrossPromo disabled - Appodeal dependencies should be managed separately");
+                Debug.Log("[AMZN GoD SDK] CrossPromo disabled");
             }
 
             Debug.Log($"[AMZN GoD SDK] Disabled {_disabledFiles.Count} dependency files for inactive modules");

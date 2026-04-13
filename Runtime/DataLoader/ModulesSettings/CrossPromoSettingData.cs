@@ -18,13 +18,12 @@ namespace AMZNGoDSDK.Runtime
     public class CrossPromoSettingData : ModuleSettingData
     {
         public string ConfigUrl;
-        public string AppodealSdkKey;
 
         public string TrackingBaseUrl;
         public string TrackingApiKey;
         public CrossPromoAppType AppType;
 
-        [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName (e.g. Appodeal ads).")]
+        [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName.")]
         public string DefaultPromotedAppId;
 
         public VideoPlayerBackend VideoBackend;

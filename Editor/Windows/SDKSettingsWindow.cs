@@ -160,11 +160,6 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Infatica.Enabled,
                 () =>
                 {
-                    _currentSettings.Infatica.SdkVersion = (InfaticaSettingData.InfaticaSdkVersion)EditorGUILayout
-                        .EnumPopup("SDK Version", _currentSettings.Infatica.SdkVersion);
-
-                    GUILayout.Space(4);
-
                     _currentSettings.Infatica.PartnerId = EditorGUILayout
                         .TextField("Partner ID", _currentSettings.Infatica.PartnerId);
                     _currentSettings.Infatica.NotificationTitle = EditorGUILayout
@@ -182,16 +177,12 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.CrossPromo.Enabled = DrawModuleSection(
                 "Cross Promo",
-                "Показ рекламы Appodeal с гибкой конфигурацией и динамическими баннерами.",
+                "Видео кросс-промо с гибкой конфигурацией и трекингом.",
                 _currentSettings.CrossPromo.Enabled,
                 () =>
                 {
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                         .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
-                    GUILayout.Space(6);
-                    EditorGUILayout.LabelField("Appodeal SDK", EditorStyles.miniBoldLabel);
-                    _currentSettings.CrossPromo.AppodealSdkKey = EditorGUILayout
-                        .TextField("Appodeal SDK Key", _currentSettings.CrossPromo.AppodealSdkKey);
 
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Cross-Promo Tracking", EditorStyles.miniBoldLabel);
@@ -207,7 +198,7 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.CrossPromo.DefaultPromotedAppId = EditorGUILayout
                         .TextField(
                             new GUIContent("Default Promoted App ID",
-                                "Fallback promoted app ID for tracking when a specific promo doesn't provide its own AppPackageName (e.g. Appodeal ads)."),
+                                "Fallback promoted app ID for tracking when a specific promo doesn't provide its own AppPackageName."),
                             _currentSettings.CrossPromo.DefaultPromotedAppId);
 
                     GUILayout.Space(10);

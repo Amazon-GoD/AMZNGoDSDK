@@ -20,11 +20,6 @@
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.appodeal.mediation",
-            "expression": "",
-            "define": "AMZN_HAS_APPODEAL"
-        },
-        {
             "name": "com.unity.purchasing",
             "expression": "",
             "define": "AMZN_HAS_UNITY_PURCHASING"

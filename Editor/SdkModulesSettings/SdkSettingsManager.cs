@@ -92,7 +92,6 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 ConfigUrl = runtimeSettings.ConfigUrl,
-                AppodealSdkKey = runtimeSettings.AppodealSdkKey,
                 TrackingBaseUrl = runtimeSettings.TrackingBaseUrl,
                 TrackingApiKey = runtimeSettings.TrackingApiKey,
                 AppType = runtimeSettings.AppType,
@@ -315,7 +314,6 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 ConfigUrl = editorSettings.ConfigUrl,
-                AppodealSdkKey = editorSettings.AppodealSdkKey,
                 TrackingBaseUrl = editorSettings.TrackingBaseUrl,
                 TrackingApiKey = editorSettings.TrackingApiKey,
                 AppType = editorSettings.AppType,

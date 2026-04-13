@@ -9,10 +9,25 @@ namespace AMZNGoDSDK.Runtime
     public static class DeviceIdProvider
     {
         private const string CacheKey = "cp_device_id_hash";
+        private const string CacheKeyRaw = "cp_device_id_raw";
+        private const string CacheKeyParam = "cp_device_id_param";
         private const string Tag = "[CrossPromoTracking:DeviceId]";
 
         private static string _pendingRawId;
+        private static string _pendingParamName;
         private static bool _requested;
+
+        /// <summary>Raw (unhashed) device ID for Adjust tracker URLs.</summary>
+        public static string RawDeviceId =>
+            !string.IsNullOrEmpty(PlayerPrefs.GetString(CacheKeyRaw, ""))
+                ? PlayerPrefs.GetString(CacheKeyRaw)
+                : _pendingRawId;
+
+        /// <summary>Adjust URL parameter name: "fire_adid", "adid", or "android_id".</summary>
+        public static string DeviceIdParamName =>
+            !string.IsNullOrEmpty(PlayerPrefs.GetString(CacheKeyParam, ""))
+                ? PlayerPrefs.GetString(CacheKeyParam)
+                : _pendingParamName;
 
         public static string GetCachedDeviceIdHash()
         {
@@ -30,13 +45,15 @@ namespace AMZNGoDSDK.Runtime
 
             if (!string.IsNullOrEmpty(_pendingRawId))
             {
-                Debug.Log($"{Tag} Raw ID received from Adjust callback: {_pendingRawId}");
+                Debug.Log($"{Tag} Raw ID received: {_pendingRawId} (param={_pendingParamName})");
                 var hash = HashDeviceId(_pendingRawId);
                 if (!string.IsNullOrEmpty(hash))
                 {
                     PlayerPrefs.SetString(CacheKey, hash);
+                    PlayerPrefs.SetString(CacheKeyRaw, _pendingRawId);
+                    PlayerPrefs.SetString(CacheKeyParam, _pendingParamName ?? "android_id");
                     PlayerPrefs.Save();
-                    Debug.Log($"{Tag} Hashed and cached device_id_hash: {hash}");
+                    Debug.Log($"{Tag} Cached device_id_hash={hash}, param={_pendingParamName}");
                     return hash;
                 }
             }
@@ -76,6 +93,7 @@ namespace AMZNGoDSDK.Runtime
                     {
                         Debug.Log($"{Tag} Adjust.GetAmazonAdId callback received: {amazonAdId}");
                         _pendingRawId = amazonAdId;
+                        _pendingParamName = "fire_adid";
                         return;
                     }
 
@@ -86,10 +104,13 @@ namespace AMZNGoDSDK.Runtime
                         {
                             Debug.Log($"{Tag} Adjust.GetAdid callback received: {adid}");
                             _pendingRawId = adid;
+                            _pendingParamName = "adid";
                         }
                         else
                         {
-                            Debug.LogWarning($"{Tag} Both AmazonAdId and Adid are null");
+                            Debug.LogWarning($"{Tag} Both AmazonAdId and Adid are null, using SystemInfo fallback");
+                            _pendingRawId = SystemInfo.deviceUniqueIdentifier;
+                            _pendingParamName = "android_id";
                         }
                     });
                 });
@@ -100,7 +121,13 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"{Tag} Failed to request device ID from Adjust: {e.Message}");
             }
 #else
-            Debug.LogWarning($"{Tag} AMZN_ADJUST_ENABLED is not defined, cannot get device ID");
+            if (_requested)
+                return;
+
+            _requested = true;
+            _pendingRawId = SystemInfo.deviceUniqueIdentifier;
+            _pendingParamName = "android_id";
+            Debug.Log($"{Tag} Adjust not available, using SystemInfo.deviceUniqueIdentifier as fallback");
 #endif
         }
     }

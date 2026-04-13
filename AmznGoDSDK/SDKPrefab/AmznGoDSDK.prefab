@@ -1167,7 +1167,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _configurationManager: {fileID: 8472638220944599029}
-  _appodealAdapter: {fileID: 8853871585331395261}
   _videoOverlay: {fileID: 8329242380862730572}
 --- !u!1 &4199741556978639485
 GameObject:
@@ -1980,7 +1979,6 @@ GameObject:
   - component: {fileID: 1812692911800555878}
   - component: {fileID: 8472638220944599029}
   - component: {fileID: 1522291941760331810}
-  - component: {fileID: 8853871585331395261}
   m_Layer: 5
   m_Name: Cross Promo Manager
   m_TagString: Untagged
@@ -2134,18 +2132,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   adImage: {fileID: 2448590755781441417}
   bannerGO: {fileID: 2211141876866176832}
---- !u!114 &8853871585331395261
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6697683000501414854}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 777fa7e05d5b0f1419d3150f405b4546, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &6702665238487749771
 GameObject:
   m_ObjectHideFlags: 0

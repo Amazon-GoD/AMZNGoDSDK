@@ -103,10 +103,6 @@ namespace AMZNGoDSDK.Editor
             EditorGUILayout.LabelField("Common Errors", EditorStyles.boldLabel);
 
             DrawError(
-                "AppodealStack not found",
-                "Disable Cross-Promo module in Settings");
-
-            DrawError(
                 "AdjustSdk not found",
                 "Disable Adjust module in Settings");
 

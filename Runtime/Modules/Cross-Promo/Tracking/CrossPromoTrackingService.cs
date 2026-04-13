@@ -34,6 +34,11 @@ namespace AMZNGoDSDK.Runtime
             _appType = appType == CrossPromoAppType.Free ? "free" : "paid";
             _defaultPromotedAppId = defaultPromotedAppId;
 
+            if (string.IsNullOrWhiteSpace(_baseUrl))
+                Debug.LogWarning($"{Tag} Construct: baseUrl is empty — tracking will be disabled");
+            if (string.IsNullOrWhiteSpace(_apiKey))
+                Debug.LogWarning($"{Tag} Construct: apiKey is empty — tracking will be disabled");
+
             Debug.Log($"{Tag} Constructed — baseUrl={_baseUrl}, appId={AppId}, appType={_appType}, defaultPromotedAppId={_defaultPromotedAppId}");
         }
 
@@ -108,7 +113,8 @@ namespace AMZNGoDSDK.Runtime
             }
             else
             {
-                Debug.LogWarning($"{Tag} {eventName} failed to send, will retry on next launch");
+                Debug.LogWarning($"{Tag} {eventName} failed to send, queuing for retry");
+                CrossPromoTrackingQueue.Enqueue(json);
             }
         }
 
@@ -256,7 +262,7 @@ namespace AMZNGoDSDK.Runtime
                 events.RemoveRange(0, successCount);
 
             Debug.Log($"{Tag} FlushQueue complete: {successCount} sent, {events.Count} remaining");
-            CrossPromoTrackingQueue.SaveQueue(events);
+            CrossPromoTrackingQueue.Requeue(events);
             _flushing = false;
         }
 
@@ -279,10 +285,10 @@ namespace AMZNGoDSDK.Runtime
             string eventName, string appId, string appType, string deviceIdHash, long ts)
         {
             return "{" +
-                   $"\"event_name\":\"{eventName}\"," +
-                   $"\"app_id\":\"{appId}\"," +
-                   $"\"app_type\":\"{appType}\"," +
-                   $"\"device_id_hash\":\"{deviceIdHash}\"," +
+                   $"\"event_name\":\"{EscapeJson(eventName)}\"," +
+                   $"\"app_id\":\"{EscapeJson(appId)}\"," +
+                   $"\"app_type\":\"{EscapeJson(appType)}\"," +
+                   $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -291,12 +297,36 @@ namespace AMZNGoDSDK.Runtime
             string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts)
         {
             return "{" +
-                   $"\"event_name\":\"{eventName}\"," +
-                   $"\"paid_app_id\":\"{paidAppId}\"," +
-                   $"\"donor_app_id\":\"{donorAppId}\"," +
-                   $"\"device_id_hash\":\"{deviceIdHash}\"," +
+                   $"\"event_name\":\"{EscapeJson(eventName)}\"," +
+                   $"\"paid_app_id\":\"{EscapeJson(paidAppId)}\"," +
+                   $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
+                   $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
                    $"\"ts\":{ts}" +
                    "}";
+        }
+
+        private static string EscapeJson(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            var sb = new StringBuilder(s.Length + 2);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"':  sb.Append("\\\""); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20) sb.AppendFormat("\\u{0:X4}", (int)c);
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
         }
     }
 }

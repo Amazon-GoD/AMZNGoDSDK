@@ -59,10 +59,10 @@ namespace AMZNGoDSDK.Editor
                 ModuleDefineManager.CROSSPROMO_DEFINE,
                 new ModuleSpec
                 {
-                    Name = "Cross-Promo (Appodeal)",
-                    RequiredAssemblies = new[] { "AppodealStack.Monetization.Api" },
+                    Name = "Cross-Promo",
+                    RequiredAssemblies = Array.Empty<string>(),
                     RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/Cross-Promo" },
-                    Description = "AppodealStack.Monetization.Api (UPM: com.appodeal.mediation)"
+                    Description = "Video cross-promo (bundled)"
                 }
             },
             {

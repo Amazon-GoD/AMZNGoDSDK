@@ -393,17 +393,16 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public bool PlayPreloaded(string url)
         {
-            if (_isPreloaded && _preloadedUrl == url && _state == PlaybackState.Ready)
+            if (_preloadedUrl == url && _state == PlaybackState.Ready && _isPreloaded)
             {
                 Debug.Log("[CrossPromoVideoPlayer] Playing preloaded video.");
                 _isPreloaded = false;
                 _preloadedUrl = null;
 
-                ApplyTextureToTargets();
-
                 if (_backend == VideoPlayerBackend.Media3)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
+                    ApplyTextureToTargets();
                     Media3Resume();
                     SetState(PlaybackState.Playing);
                     OnStarted?.Invoke();
@@ -411,10 +410,35 @@ namespace AMZNGoDSDK.Runtime
                 }
                 else
                 {
-                    _player?.Play();
-                    SetState(PlaybackState.Playing);
+                    // Safety: if the host GameObject was deactivated after preload, Unity
+                    // resets the VideoPlayer and isPrepared becomes false. Fall back to a
+                    // fresh Load so we never call Play() on an unprepared player.
+                    if (_player == null || !_player.isPrepared)
+                    {
+                        Debug.LogWarning("[CrossPromoVideoPlayer] Preloaded VideoPlayer is no longer prepared " +
+                                         "(host was likely deactivated). Falling back to Load.");
+                        _isPreloaded = false;
+                        _preloadedUrl = null;
+                        _autoPlay = true;
+                        Load(url);
+                        return false;
+                    }
+
+                    // Don't apply texture or set Playing here — WaitForFirstFrameCoroutine
+                    // (triggered by VideoPlayer.started) will do both after the first
+                    // decoded frame lands in the RenderTexture, eliminating the black flash.
+                    _player.Play();
                 }
 
+                return true;
+            }
+
+            if (_preloadedUrl == url && _state == PlaybackState.Loading)
+            {
+                Debug.Log("[CrossPromoVideoPlayer] Preload still in progress — enabling autoplay on ready.");
+                _isPreloaded = false;
+                _preloadedUrl = null;
+                _autoPlay = true;
                 return true;
             }
 
@@ -630,7 +654,12 @@ namespace AMZNGoDSDK.Runtime
         public void SetTargetRawImage(RawImage rawImage)
         {
             _targetRawImage = rawImage;
-            ApplyTextureToTargets();
+
+            // Don't apply a black RenderTexture to the UI when the player is
+            // preloaded but hasn't started playing yet. WaitForFirstFrameCoroutine
+            // will call ApplyTextureToTargets once the first decoded frame is ready.
+            if (_state != PlaybackState.Ready || !_isPreloaded)
+                ApplyTextureToTargets();
         }
 
         #endregion
@@ -722,7 +751,15 @@ namespace AMZNGoDSDK.Runtime
         {
             SetState(PlaybackState.Ready);
             EnsureRenderTexture();
-            ApplyTextureToTargets();
+
+            // In preload mode the texture is intentionally NOT applied here.
+            // The RT exists but is still black — applying it now would flash black
+            // on the RawImage before the first decoded frame arrives.
+            // ApplyTextureToTargets() is deferred to WaitForFirstFrameCoroutine.
+            bool isPreloadMode = !_autoPlay && !string.IsNullOrEmpty(_preloadedUrl);
+            if (!isPreloadMode)
+                ApplyTextureToTargets();
+
             OnReady?.Invoke();
 
             if (_autoPlay)
@@ -738,6 +775,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void HandleStarted(VideoPlayer source)
         {
+            ApplyTextureToTargets();
             SetState(PlaybackState.Playing);
             OnStarted?.Invoke();
         }

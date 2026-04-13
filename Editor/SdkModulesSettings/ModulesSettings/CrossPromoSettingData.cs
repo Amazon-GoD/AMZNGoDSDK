@@ -7,7 +7,6 @@ namespace AMZNGoDSDK.Editor
     public class CrossPromoSettingData : ModuleSettingData
     {
         public string ConfigUrl;
-        public string AppodealSdkKey;
 
         public string TrackingBaseUrl;
         public string TrackingApiKey;

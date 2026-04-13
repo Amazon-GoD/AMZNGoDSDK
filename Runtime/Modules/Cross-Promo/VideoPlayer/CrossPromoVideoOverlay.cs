@@ -110,21 +110,33 @@ namespace AMZNGoDSDK.Runtime
         #region Public API
 
         /// <summary>
-        /// Preloads (buffers) a video for the given config without showing the overlay.
-        /// Call <see cref="Show"/> with the same config afterwards for instant playback.
-        /// </summary>
-        /// <summary>
         /// Replaces the overlay's video player with a preloaded one.
-        /// The previous player is stopped and its target cleared.
+        /// The previous player (if any and different) is stopped and destroyed.
         /// </summary>
         public void SwapVideoPlayer(CrossPromoVideoPlayer preloadedPlayer)
         {
-            if (preloadedPlayer == null) return;
+            if (preloadedPlayer == null)
+            {
+                Debug.LogWarning("[CrossPromoVideoOverlay] SwapVideoPlayer called with null, ignoring.");
+                return;
+            }
+            if (preloadedPlayer == _videoPlayer)
+                return;
 
             var previous = _videoPlayer;
-            if (previous != null && previous != preloadedPlayer)
+
+            // Unsubscribe from the previous player BEFORE swapping — UnsubscribeVideoEvents
+            // uses _videoPlayer as the target.
+            UnsubscribeVideoEvents();
+
+            // Assign the new player first so the overlay is never in a null state.
+            _videoPlayer = preloadedPlayer;
+            _videoPlayer.transform.SetParent(transform, false);
+            if (_videoDisplay != null)
+                _videoPlayer.SetTargetRawImage(_videoDisplay);
+
+            if (previous != null)
             {
-                UnsubscribeVideoEvents();
                 previous.Stop();
 
                 // Never destroy the overlay root or the RawImage host: the player often lives on
@@ -139,53 +151,7 @@ namespace AMZNGoDSDK.Runtime
                     Destroy(prevGo);
             }
 
-            _videoPlayer = preloadedPlayer;
-            _videoPlayer.transform.SetParent(transform, false);
-
-            if (_videoDisplay != null)
-                _videoPlayer.SetTargetRawImage(_videoDisplay);
-
             Debug.Log("[CrossPromoVideoOverlay] Swapped to preloaded player.");
-        }
-
-        public void Preload(PromoConfiguration config)
-        {
-            if (config == null) return;
-
-            string videoUrl = ResolveVideoUrl(config);
-            if (string.IsNullOrWhiteSpace(videoUrl)) return;
-
-            EnsureVideoPlayer();
-
-            bool wasActive = gameObject.activeSelf;
-            if (!wasActive)
-            {
-                gameObject.SetActive(true);
-                if (_canvasGroup != null)
-                {
-                    _canvasGroup.alpha = 0f;
-                    _canvasGroup.interactable = false;
-                    _canvasGroup.blocksRaycasts = false;
-                }
-            }
-
-            _videoPlayer.Loop = false;
-            _videoPlayer.Preload(videoUrl);
-
-            if (!wasActive)
-                StartCoroutine(HideAfterPreloadReady());
-
-            Debug.Log($"[CrossPromoVideoOverlay] Preloading video: {videoUrl}");
-        }
-
-        private IEnumerator HideAfterPreloadReady()
-        {
-            yield return null;
-            while (_videoPlayer != null && _videoPlayer.State == CrossPromoVideoPlayer.PlaybackState.Loading)
-                yield return null;
-
-            if (!_isVisible)
-                gameObject.SetActive(false);
         }
 
         /// <summary>
@@ -223,7 +189,7 @@ namespace AMZNGoDSDK.Runtime
             SetVisible(true);
 
             if (_closeButton != null) _closeButton.gameObject.SetActive(false);
-            if (_ctaButton != null) _ctaButton.gameObject.SetActive(false);
+            if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
 
             if (_progressSlider != null)
             {
@@ -244,7 +210,11 @@ namespace AMZNGoDSDK.Runtime
             bool usedPreload = _videoPlayer.PlayPreloaded(videoUrl);
             if (usedPreload)
             {
-                ShowLoading(false);
+                // Keep loading indicator visible until the Playing state fires.
+                // The preloaded player is in Ready state — IsLoading is false — but
+                // the RenderTexture is still black until WaitForFirstFrameCoroutine
+                // finishes and transitions to Playing.
+                ShowLoading(_videoPlayer.State != CrossPromoVideoPlayer.PlaybackState.Playing);
             }
             else
             {
@@ -259,6 +229,10 @@ namespace AMZNGoDSDK.Runtime
 
             IncrementShowCount(config);
             ReportImpression(config);
+
+            var adjustImpression = CrossPromoAdjustTracking.BuildImpressionUrl(config);
+            if (!string.IsNullOrWhiteSpace(adjustImpression))
+                StartCoroutine(CrossPromoAdjustTracking.SendGet(adjustImpression));
 
             _showCoroutine = StartCoroutine(DelayedUICoroutine(config));
             _updateCoroutine = StartCoroutine(UpdateProgressCoroutine());
@@ -490,7 +464,10 @@ namespace AMZNGoDSDK.Runtime
 
         private void HandleVideoReady()
         {
-            ShowLoading(false);
+            // Intentionally not hiding the loading indicator here.
+            // "Ready" means the video is buffered, but the RenderTexture is still black
+            // until the first decoded frame arrives. The loading indicator will be hidden
+            // by HandleVideoStateChanged once the Playing state fires (after first frame).
         }
 
         private void HandleVideoCompleted()
@@ -531,10 +508,35 @@ namespace AMZNGoDSDK.Runtime
             if (_config == null) return;
 
             ReportClick(_config);
-            StartCoroutine(TrackAndRedirect(_config));
+
+            // Open redirect FIRST, then send tracking as fire-and-forget on the module
+            // (which outlives the overlay). Otherwise the external OnCTAClick callback
+            // may Hide() the overlay, deactivating this GO and killing TrackAndRedirect
+            // before Application.OpenURL is reached — so the user's tap opens nothing.
+            if (!string.IsNullOrWhiteSpace(_config.RedirectUrl))
+                Application.OpenURL(_config.RedirectUrl);
+
+            var module = CrossPromoModule.Instance;
+            if (module != null)
+                module.StartCoroutine(SendClickTracking(_config));
 
             OnCTAClick?.Invoke();
             _callbackOnCTA?.Invoke();
+        }
+
+        private static IEnumerator SendClickTracking(PromoConfiguration config)
+        {
+            yield return CrossPromoAdjustTracking.SendGet(CrossPromoAdjustTracking.BuildClickUrl(config));
+
+            if (CrossPromoAdjustTracking.IsHttpUrl(config.TrackingUrl))
+            {
+                using var request = UnityWebRequest.Get(config.TrackingUrl);
+                yield return request.SendWebRequest();
+            }
+            else if (!string.IsNullOrWhiteSpace(config.TrackingUrl))
+            {
+                Debug.LogWarning($"[CrossPromoVideoOverlay] Skipping non-http(s) TrackingUrl: {config.TrackingUrl}");
+            }
         }
 
         private void HandleMuteClick()
@@ -578,18 +580,6 @@ namespace AMZNGoDSDK.Runtime
 
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
             CrossPromoModule.Instance?.TrackClick(paidAppId);
-        }
-
-        private IEnumerator TrackAndRedirect(PromoConfiguration config)
-        {
-            if (!string.IsNullOrWhiteSpace(config.TrackingUrl))
-            {
-                using var request = UnityWebRequest.Get(config.TrackingUrl);
-                yield return request.SendWebRequest();
-            }
-
-            if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
-                Application.OpenURL(config.RedirectUrl);
         }
 
         private static void IncrementShowCount(PromoConfiguration config)

@@ -136,20 +136,8 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            var bannerUrls = new List<string>();
-            var trackingUrls = new List<string>();
-            var redirectUrls = new List<string>();
-            var paidAppIds = new List<string>();
-
             foreach (var video in config.Videos)
-            {
-                bannerUrls.Add(video.BannerUrl);
-                trackingUrls.Add(video.TrackingUrl);
-                redirectUrls.Add(video.RedirectUrl);
-                paidAppIds.Add(video.AppPackageName?.Count > 0 ? video.AppPackageName[0] : null);
-            }
-
-            yield return StartCoroutine(DownloadBanners(bannerUrls, trackingUrls, redirectUrls, paidAppIds));
+                yield return StartCoroutine(DownloadBannerSprite(video));
 
             if (_rotationCoroutine != null)
             {
@@ -182,39 +170,37 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoAnalytics.ReportBannerShow(data);
             Debug.Log($"[CrossPromoBanner] Banner shown → sending cp_impression (paidAppId={data.paidAppId}, title={data.title})");
             CrossPromoModule.Instance?.TrackImpression(data.paidAppId);
+            if (!string.IsNullOrWhiteSpace(data.adjustImpressionUrl))
+                StartCoroutine(CrossPromoAdjustTracking.SendGet(data.adjustImpressionUrl));
             _lastShownIndex = index;
             _currentBannerIndex = (index + 1) % bannerDataList.Count;
         }
 
-        private IEnumerator DownloadBanners(List<string> bannerUrlList, List<string> trackingList, List<string> redirectList, List<string> paidAppIds)
+        private IEnumerator DownloadBannerSprite(PromoConfiguration video)
         {
-            if (bannerUrlList.Count == 0)
-            {
-                Debug.LogWarning("[CrossPromoBanner] No banner URLs to download.");
+            if (video == null || string.IsNullOrWhiteSpace(video.BannerUrl))
                 yield break;
-            }
 
-            for (int i = 0; i < bannerUrlList.Count; i++)
-            {
-                yield return StartCoroutine(DownloadBannerSprite(bannerUrlList[i], redirectList[i], trackingList[i], paidAppIds[i], $"banner_{i}"));
-            }
-        }
+            string title = string.IsNullOrWhiteSpace(video.Title) ? $"banner_{bannerDataList.Count}" : video.Title;
+            string paidAppId = video.AppPackageName?.Count > 0 ? video.AppPackageName[0] : null;
+            string adjustImpression = CrossPromoAdjustTracking.BuildImpressionUrl(video);
+            string adjustClick = CrossPromoAdjustTracking.BuildClickUrl(video);
 
-        private IEnumerator DownloadBannerSprite(string url, string redirectUrl, string trackingUrl, string paidAppId, string title)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                yield break;
-            }
-
-            using UnityWebRequest request = UnityWebRequestTexture.GetTexture(url);
+            using UnityWebRequest request = UnityWebRequestTexture.GetTexture(video.BannerUrl);
             yield return request.SendWebRequest();
 
             if (request.result == UnityWebRequest.Result.Success)
             {
                 var texture = DownloadHandlerTexture.GetContent(request);
                 var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
-                bannerDataList.Add(new BannerData(title, sprite, redirectUrl, trackingUrl, paidAppId));
+                bannerDataList.Add(new BannerData(
+                    title,
+                    sprite,
+                    video.RedirectUrl,
+                    video.TrackingUrl,
+                    paidAppId,
+                    adjustImpression,
+                    adjustClick));
             }
             else
             {
@@ -247,10 +233,16 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator TrackAndOpenUrl(BannerData data)
         {
-            if (!string.IsNullOrWhiteSpace(data.trackingUrl))
+            yield return CrossPromoAdjustTracking.SendGet(data.adjustClickUrl);
+
+            if (CrossPromoAdjustTracking.IsHttpUrl(data.trackingUrl))
             {
                 using UnityWebRequest request = UnityWebRequest.Get(data.trackingUrl);
                 yield return request.SendWebRequest();
+            }
+            else if (!string.IsNullOrWhiteSpace(data.trackingUrl))
+            {
+                Debug.LogWarning($"[CrossPromoBanner] Skipping non-http(s) TrackingUrl: {data.trackingUrl}");
             }
 
             if (!string.IsNullOrWhiteSpace(data.redirectUrl))
@@ -291,14 +283,25 @@ namespace AMZNGoDSDK.Runtime
         public string redirectUrl;
         public string trackingUrl;
         public string paidAppId;
+        public string adjustImpressionUrl;
+        public string adjustClickUrl;
 
-        public BannerData(string title, Sprite sprite, string redirectUrl, string trackingUrl, string paidAppId)
+        public BannerData(
+            string title,
+            Sprite sprite,
+            string redirectUrl,
+            string trackingUrl,
+            string paidAppId,
+            string adjustImpressionUrl = null,
+            string adjustClickUrl = null)
         {
             this.title = title;
             this.sprite = sprite;
             this.redirectUrl = redirectUrl;
             this.trackingUrl = trackingUrl;
             this.paidAppId = paidAppId;
+            this.adjustImpressionUrl = adjustImpressionUrl;
+            this.adjustClickUrl = adjustClickUrl;
         }
     }
 }

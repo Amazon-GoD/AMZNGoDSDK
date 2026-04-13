@@ -25,6 +25,9 @@ namespace AMZNGoDSDK.Editor
         private const string ConfigFileName = "amzn_god_sdk.json";
         private const string ResourcesPath = "Assets/Resources/";
 
+        private const string InfaticaWithJobsVisible = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs";
+        private const string InfaticaWithJobsHidden  = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs~";
+
         private static readonly string[] ALL_MODULE_DEFINES = 
         {
             ADJUST_DEFINE,
@@ -45,6 +48,8 @@ namespace AMZNGoDSDK.Editor
 
         private static void OnEditorLoaded()
         {
+            HideInfaticaWithJobsIfNeeded();
+
             if (!ConfigFileExists())
             {
                 RemoveAllSdkDefines();
@@ -54,6 +59,25 @@ namespace AMZNGoDSDK.Editor
             }
 
             UpdateDefineSymbolsFromSettings();
+        }
+
+        private static void HideInfaticaWithJobsIfNeeded()
+        {
+            if (!Directory.Exists(InfaticaWithJobsVisible) || Directory.Exists(InfaticaWithJobsHidden))
+                return;
+
+            Directory.Move(InfaticaWithJobsVisible, InfaticaWithJobsHidden);
+
+            string metaFrom = InfaticaWithJobsVisible + ".meta";
+            string metaTo   = InfaticaWithJobsHidden  + ".meta";
+            if (File.Exists(metaFrom))
+            {
+                if (File.Exists(metaTo)) File.Delete(metaTo);
+                File.Move(metaFrom, metaTo);
+            }
+
+            AssetDatabase.Refresh();
+            Debug.Log("[AMZN GoD SDK] Infatica: Plugins_WithJobs/ → Plugins_WithJobs~/ (hidden on domain reload).");
         }
 
         public static bool ConfigFileExists()

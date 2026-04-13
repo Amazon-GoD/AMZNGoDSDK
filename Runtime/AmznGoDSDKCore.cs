@@ -143,12 +143,6 @@ namespace AMZNGoDSDK.Runtime
             OnInfaticaAgree = _infaticaModule.OnAgree;
 #endif
         }
-        public void SetBannerFuncs(Action onClose, Func<bool> isNoAds)
-        {
-#if AMZN_CROSSPROMO_ENABLED
-            _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
-#endif
-        }
         #endregion
         
         #region Infatica
@@ -180,24 +174,6 @@ namespace AMZNGoDSDK.Runtime
         #region Cross Promo
 
 #if AMZN_CROSSPROMO_ENABLED
-        public bool IsAdsReady => _crossPromoModule.IsAdsReady;
-        
-        public void ShowInterstitial()
-        {
-            if(!_crossPromoModule.Enabled)
-                return;
-            
-            _crossPromoModule.ShowInterstitial();
-        }
-        
-        public void ShowRewarded(Action callback)
-        {
-            if(!_crossPromoModule.Enabled)
-                return;
-            
-            _crossPromoModule.ShowRewarded(callback);
-        }
-
         /// <summary>
         /// Shows a weighted-random video cross-promo from remote config.
         /// </summary>
@@ -216,12 +192,44 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>True if a video promo overlay is currently visible.</summary>
         public bool IsVideoPromoVisible => _crossPromoModule.IsVideoPromoVisible;
+
+        /// <summary>True when a cross-promo video is preloaded and ready to play instantly.</summary>
+        public bool IsVideoReady => _crossPromoModule.IsVideoReady;
+
+        /// <summary>
+        /// Shows a cross-promo video as an interstitial.
+        /// </summary>
+        public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
+        {
+            if (!_crossPromoModule.Enabled)
+            {
+                onClose?.Invoke();
+                return;
+            }
+
+            _crossPromoModule.ShowInterstitial(onClose, onCTAClick);
+        }
+
+        /// <summary>
+        /// Shows a cross-promo video as a rewarded ad.
+        /// <paramref name="onRewarded"/> fires when the video completes.
+        /// </summary>
+        public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null)
+        {
+            if (!_crossPromoModule.Enabled)
+            {
+                onClose?.Invoke();
+                return;
+            }
+
+            _crossPromoModule.ShowRewarded(onClose, onCTAClick, onRewarded);
+        }
 #else
-        public bool IsAdsReady => false;
-        public void ShowInterstitial() { }
-        public void ShowRewarded(Action callback) { }
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
+        public bool IsVideoReady => false;
+        public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
+        public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
 #endif
 
         #endregion
