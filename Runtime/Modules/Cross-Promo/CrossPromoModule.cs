@@ -28,6 +28,8 @@ namespace AMZNGoDSDK.Runtime
         private CrossPromoVideoPlayer _preloadPlayer;
         private PromoConfiguration _lastShownConfig;
         private bool _firstPreloadDone;
+        private Coroutine _initCoroutine;
+        private Coroutine _showCoroutine;
 
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
@@ -44,10 +46,14 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnDestroy()
         {
+            if (_initCoroutine != null) { StopCoroutine(_initCoroutine); _initCoroutine = null; }
+            if (_showCoroutine != null) { StopCoroutine(_showCoroutine); _showCoroutine = null; }
             DisposePreloadPlayer();
             if (Instance == this)
             {
                 Instance = null;
+                OnConfigLoaded = null;
+                OnBannerFuncsUpdated = null;
             }
         }
 
@@ -88,7 +94,7 @@ namespace AMZNGoDSDK.Runtime
             if (_initRunning) return;
             if (!isActiveAndEnabled) return;   // OnEnable will retry
             _initRunning = true;
-            StartCoroutine(InitCrossPromoModulesCorAsync());
+            _initCoroutine = StartCoroutine(InitCrossPromoModulesCorAsync());
         }
 
         private void OnEnable()
@@ -223,7 +229,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "interstitial", onRewarded: null));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "interstitial", onRewarded: null));
         }
 
         #endregion
@@ -243,7 +249,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "rewarded", onRewarded));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "rewarded", onRewarded));
         }
 
         #endregion
@@ -256,7 +262,7 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
         {
-            StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null));
         }
 
         /// <summary>Shows a specific video promo by <see cref="PromoConfiguration"/>.
@@ -271,7 +277,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null, forcedConfig: config));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null, forcedConfig: config));
         }
 
         /// <summary>Returns true if a video overlay is currently being shown.</summary>
@@ -524,7 +530,7 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        public override void Cleenup()
+        public override void Cleanup()
         {
         }
     }

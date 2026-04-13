@@ -101,7 +101,9 @@ namespace AMZNGoDSDK.Runtime
             catch (Exception e)
             {
                 Debug.LogError($"[AMZNGoDSDK] Amazon IAP initialization error: {e.Message}");
-                IsInitialized = true;
+                IsInitialized = false;
+                iapService = null;
+                return;
             }
 
             CheckExpiredSubscriptions();
@@ -437,12 +439,36 @@ namespace AMZNGoDSDK.Runtime
 
         public void SetPurchaseCompleteCallback(System.Action<string> callback)
         {
-            OnPurchaseComplete += callback;
+            OnPurchaseComplete = callback;
         }
 
         public void SetPurchaseFailedCallback(System.Action<string> callback)
         {
+            OnPurchaseFailedCallback = callback;
+        }
+
+        public void AddPurchaseCompleteCallback(System.Action<string> callback)
+        {
+            if (callback == null) return;
+            OnPurchaseComplete += callback;
+        }
+
+        public void RemovePurchaseCompleteCallback(System.Action<string> callback)
+        {
+            if (callback == null) return;
+            OnPurchaseComplete -= callback;
+        }
+
+        public void AddPurchaseFailedCallback(System.Action<string> callback)
+        {
+            if (callback == null) return;
             OnPurchaseFailedCallback += callback;
+        }
+
+        public void RemovePurchaseFailedCallback(System.Action<string> callback)
+        {
+            if (callback == null) return;
+            OnPurchaseFailedCallback -= callback;
         }
 
         public void SetConsumableRewardSetter(Action<string, int> rewardSetter)
@@ -459,7 +485,7 @@ namespace AMZNGoDSDK.Runtime
             _rewardTypeHandlers[rewardType] = handler;
         }
 
-        public override void Cleenup()
+        public override void Cleanup()
         {
             if (iapService != null)
             {

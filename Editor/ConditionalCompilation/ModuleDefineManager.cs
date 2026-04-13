@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+#if UNITY_2023_1_OR_NEWER
+using UnityEditor.Build;
+#endif
 
 namespace AMZNGoDSDK.Editor
 {
@@ -116,9 +119,27 @@ namespace AMZNGoDSDK.Editor
             Debug.Log("[AMZN GoD SDK] Module define symbols updated successfully");
         }
 
+        private static string GetDefines(BuildTargetGroup targetGroup)
+        {
+#if UNITY_2023_1_OR_NEWER
+            return PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.FromBuildTargetGroup(targetGroup));
+#else
+            return PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+#endif
+        }
+
+        private static void SetDefines(BuildTargetGroup targetGroup, string defines)
+        {
+#if UNITY_2023_1_OR_NEWER
+            PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.FromBuildTargetGroup(targetGroup), defines);
+#else
+            PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, defines);
+#endif
+        }
+
         private static void UpdateDefineSymbolsForTarget(BuildTargetGroup targetGroup, SdkSettingsData settings)
         {
-            var currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+            var currentDefines = GetDefines(targetGroup);
             var definesList = currentDefines.Split(';').ToList();
 
             definesList.RemoveAll(d => ALL_MODULE_DEFINES.Contains(d));
@@ -138,7 +159,7 @@ namespace AMZNGoDSDK.Editor
             }
 
             var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
-            PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, newDefines);
+            SetDefines(targetGroup, newDefines);
         }
 
         private static void TryAddModuleDefine(List<string> definesList, string define, bool enabledInSettings)
@@ -161,7 +182,7 @@ namespace AMZNGoDSDK.Editor
         public static List<string> GetActiveModuleDefines()
         {
             var targetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
-            var currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+            var currentDefines = GetDefines(targetGroup);
             var definesList = currentDefines.Split(';').ToList();
 
             return definesList.Where(d => ALL_MODULE_DEFINES.Contains(d)).ToList();
@@ -190,11 +211,11 @@ namespace AMZNGoDSDK.Editor
 
             foreach (var targetGroup in buildTargetGroups)
             {
-                var currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+                var currentDefines = GetDefines(targetGroup);
                 var definesList = currentDefines.Split(';').ToList();
                 definesList.RemoveAll(d => ALL_MODULE_DEFINES.Contains(d));
                 var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
-                PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, newDefines);
+                SetDefines(targetGroup, newDefines);
             }
         }
     }

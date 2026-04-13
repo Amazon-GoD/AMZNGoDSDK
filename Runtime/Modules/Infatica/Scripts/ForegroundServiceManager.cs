@@ -6,7 +6,9 @@ namespace AMZNGoDSDK.Runtime
     {
         #region Fields
 
+#if UNITY_ANDROID && !UNITY_EDITOR
         private AndroidJavaObject unityActivity;
+#endif
         private string _partnerId;
         private string _appName;
         private bool _useJobs;
@@ -21,13 +23,12 @@ namespace AMZNGoDSDK.Runtime
             _appName = string.IsNullOrWhiteSpace(notificationTitle) ? Application.productName : notificationTitle;
             _useJobs = useJobs;
 
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
             {
-                using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                {
-                    unityActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
-                }
+                unityActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
             }
+#endif
         }
 
         #endregion
@@ -39,24 +40,22 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void StartForegroundService()
         {
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
             {
-                using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
-                {
-                    javaClass.CallStatic("startForegroundService", unityActivity, _partnerId, _appName);
-                }
+                javaClass.CallStatic("startForegroundService", unityActivity, _partnerId, _appName);
             }
+#endif
         }
 
         public void AskIgnoreBatteryOptimization()
         {
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
             {
-                using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
-                {
-                    javaClass.CallStatic("askIgnoreBatteryOptimizations", unityActivity);
-                }
+                javaClass.CallStatic("askIgnoreBatteryOptimizations", unityActivity);
             }
+#endif
         }
 
         /// <summary>
@@ -64,13 +63,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void StopService()
         {
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
             {
-                using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
-                {
-                    javaClass.CallStatic("stopService", unityActivity);
-                }
+                javaClass.CallStatic("stopService", unityActivity);
             }
+#endif
         }
 
         #endregion
@@ -89,15 +87,14 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))
             {
-                using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))
-                {
-                    bridge.CallStatic("saveAgreement", unityActivity, _partnerId, true, _appName);
-                    bridge.CallStatic("scheduleJob", unityActivity);
-                }
-                Debug.Log("[Infatica] Survival job scheduled");
+                bridge.CallStatic("saveAgreement", unityActivity, _partnerId, true, _appName);
+                bridge.CallStatic("scheduleJob", unityActivity);
             }
+            Debug.Log("[Infatica] Survival job scheduled");
+#endif
         }
 
         /// <summary>
@@ -112,15 +109,14 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (Application.platform == RuntimePlatform.Android)
+#if UNITY_ANDROID && !UNITY_EDITOR
+            using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))
             {
-                using (AndroidJavaClass bridge = new AndroidJavaClass("com.infatica.agent.InfaticaSurvivalBridge"))
-                {
-                    bridge.CallStatic("saveAgreement", unityActivity, _partnerId, false, _appName);
-                    bridge.CallStatic("cancelJob", unityActivity);
-                }
-                Debug.Log("[Infatica] Survival job cancelled");
+                bridge.CallStatic("saveAgreement", unityActivity, _partnerId, false, _appName);
+                bridge.CallStatic("cancelJob", unityActivity);
             }
+            Debug.Log("[Infatica] Survival job cancelled");
+#endif
         }
 
         #endregion

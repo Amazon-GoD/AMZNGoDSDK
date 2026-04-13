@@ -27,7 +27,17 @@ namespace AMZNGoDSDK.Runtime
 
         private ForegroundServiceManager _foregroundServiceManager;
 
-        public bool IsAgree => PlayerPrefs.GetInt(nameof(InfaticaModule)).AsBool();
+        private bool? _isAgreeCache;
+        public bool IsAgree
+        {
+            get
+            {
+                if (_isAgreeCache.HasValue)
+                    return _isAgreeCache.Value;
+                _isAgreeCache = PlayerPrefs.GetInt(nameof(InfaticaModule), 0).AsBool();
+                return _isAgreeCache.Value;
+            }
+        }
         public Mode CurrentMode => _mode;
 
         public Action OnAgree;
@@ -65,7 +75,7 @@ namespace AMZNGoDSDK.Runtime
                 Disagree();
         }
 
-        public override void Cleenup()
+        public override void Cleanup()
         {
             _reviewConcernWindow.OnAgree -= Agree;
             _reviewConcernWindow.OnDisagree -= Disagree;
@@ -88,7 +98,9 @@ namespace AMZNGoDSDK.Runtime
             OnAgree?.Invoke();
 
 #if AMZN_APPMETRICA_ENABLED
-            AppMetrica.ReportEvent(EventName);
+            AppMetrica.ReportEvent(
+                EventName,
+                $"{{\"mode\":\"{_mode}\",\"timestamp\":\"{DateTime.UtcNow:O}\"}}");
 #endif
 
             SaveChoice(1);
@@ -106,6 +118,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void SaveChoice(int choice)
         {
+            _isAgreeCache = choice.AsBool();
             PlayerPrefs.SetInt(nameof(InfaticaModule), choice);
             PlayerPrefs.Save();
         }

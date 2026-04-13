@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -10,18 +9,22 @@ namespace AMZNGoDSDK.Runtime
 
         public void Awake()
         {
-            if (Instance == null)
+            if (Instance != null && Instance != (this as T))
             {
-                Instance = this as T;
-                DontDestroyOnLoad(this);
-            }
-            else
-            {
+                Debug.LogWarning($"[AMZNGoDSDK] {typeof(T).Name} already exists. Destroying duplicate.");
                 Destroy(gameObject);
-                throw new Exception($"{typeof(T).Name} already exists.");
+                return;
             }
-            
+
+            Instance = this as T;
+            DontDestroyOnLoad(this);
             OnAwake();
+        }
+
+        protected virtual void OnDestroy()
+        {
+            if (Instance == this as T)
+                Instance = null;
         }
 
         protected virtual void OnAwake() { }

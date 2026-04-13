@@ -1,6 +1,8 @@
 #if AMZN_ADJUST_ENABLED
+using System;
 using AdjustSdk;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
@@ -18,23 +20,47 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Initialize()
         {
+            if (string.IsNullOrWhiteSpace(_adjustKey))
+            {
+                Debug.LogError("[AMZNGoDSDK] Adjust app token is empty — SDK not initialized.");
+                return;
+            }
+
             var conf = new AdjustConfig(_adjustKey, _environment);
             Adjust.InitSdk(conf);
         }
 
         public void ReportEvent(string token, Dictionary<string, string> args)
         {
-            var adjustEvent = new AdjustEvent(token);
-            
-            foreach (var arg in args)
+            if (string.IsNullOrWhiteSpace(token))
             {
-                adjustEvent.AddCallbackParameter(arg.Key, arg.Value);
+                Debug.LogError("[AMZNGoDSDK] Adjust event token is empty.");
+                return;
             }
-            
-            Adjust.TrackEvent(adjustEvent);
+
+            try
+            {
+                var adjustEvent = new AdjustEvent(token);
+
+                if (args != null)
+                {
+                    foreach (var arg in args)
+                    {
+                        if (string.IsNullOrEmpty(arg.Key))
+                            continue;
+                        adjustEvent.AddCallbackParameter(arg.Key, arg.Value ?? string.Empty);
+                    }
+                }
+
+                Adjust.TrackEvent(adjustEvent);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AMZNGoDSDK] Adjust event '{token}' failed: {ex.Message}");
+            }
         }
 
-        public override void Cleenup() { }
+        public override void Cleanup() { }
     }
 }
 #endif

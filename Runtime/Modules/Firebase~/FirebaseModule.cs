@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Firebase;
 using Firebase.Analytics;
 using Firebase.Crashlytics;
+using Firebase.Extensions;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
@@ -34,17 +35,7 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled)
                 return;
 
-            TaskScheduler scheduler;
-            try
-            {
-                scheduler = TaskScheduler.FromCurrentSynchronizationContext();
-            }
-            catch (Exception)
-            {
-                scheduler = TaskScheduler.Current;
-            }
-
-            FirebaseApp.CheckAndFixDependenciesAsync().ContinueWith(checkTask =>
+            FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(checkTask =>
             {
                 if (checkTask.IsFaulted)
                 {
@@ -69,8 +60,11 @@ namespace AMZNGoDSDK.Runtime
 
                 _isInitialized = true;
                 OnInitialized?.Invoke();
-            }, scheduler);
+            });
         }
+
+        private const int MaxFirebaseParams = 25;
+        private const int MaxFirebaseValueLength = 100;
 
         public void LogEvent(string eventName, Dictionary<string, string> parameters = null)
         {
@@ -85,7 +79,14 @@ namespace AMZNGoDSDK.Runtime
 
             Parameter[] parameterArray = parameters
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .Select(kv => new Parameter(kv.Key, kv.Value ?? string.Empty))
+                .Take(MaxFirebaseParams)
+                .Select(kv =>
+                {
+                    var value = kv.Value ?? string.Empty;
+                    if (value.Length > MaxFirebaseValueLength)
+                        value = value.Substring(0, MaxFirebaseValueLength);
+                    return new Parameter(kv.Key, value);
+                })
                 .ToArray();
 
             if (parameterArray.Length == 0)
@@ -129,7 +130,7 @@ namespace AMZNGoDSDK.Runtime
             FirebaseAnalytics.SetUserProperty(propertyName, propertyValue);
         }
 
-        public override void Cleenup()
+        public override void Cleanup()
         {
             _isInitialized = false;
         }

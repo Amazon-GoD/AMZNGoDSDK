@@ -119,7 +119,7 @@ namespace AMZNGoDSDK.Runtime
                 _connectionBanner.SetActive(false);
         }
 
-        public override void Cleenup()
+        public override void Cleanup()
         {
             if (_monitorCoroutine != null)
             {

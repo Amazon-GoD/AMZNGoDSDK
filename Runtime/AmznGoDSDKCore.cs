@@ -1,12 +1,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
     public sealed class AmznGoDSDKCore : MonoBehaviourSingletonPersistent<AmznGoDSDKCore>
     {
+        public const string SdkVersion = "0.5.0";
+
+
 #if AMZN_ADJUST_ENABLED
         [SerializeField] private AdjustModule _adjustModule;
 #endif
@@ -31,7 +35,10 @@ namespace AMZNGoDSDK.Runtime
 #endif
         
         public bool Enabled { get; private set; }
-        
+        public bool IsInitialized { get; private set; }
+
+        public event Action OnInitializationComplete;
+
         #region Awake
         protected override void OnAwake()
         {
@@ -414,18 +421,50 @@ namespace AMZNGoDSDK.Runtime
         public void LogFirebaseCrash(string message) { }
 #endif
 
+        private static int GetModulePriority(ModuleBase module)
+        {
+            // Lower = earlier. Firebase first so Crashlytics catches other modules' init crashes.
+            switch (module.GetType().Name)
+            {
+                case "FirebaseModule": return 0;
+                case "AppMetricaModule": return 1;
+                case "AdjustModule": return 2;
+                case "InfaticaModule": return 3;
+                case "CrossPromoModule": return 4;
+                case "InAppPurchaseModule": return 5;
+                default: return 100;
+            }
+        }
+
         private void InitializeModules(params ModuleBase[] modules)
         {
-            foreach (var module in modules)
+            foreach (var module in modules.OrderBy(GetModulePriority))
             {
+                if (module == null)
+                    continue;
+
                 if (!module.Enabled)
                 {
                     module.gameObject.SetActive(false);
                     continue;
                 }
-                
-                module.Initialize();
+
+                if (module.Initialized)
+                    continue;
+
+                try
+                {
+                    module.Initialize();
+                    module.Initialized = true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[AMZNGoDSDK] Module {module.GetType().Name} initialization failed: {ex}");
+                }
             }
+
+            IsInitialized = true;
+            OnInitializationComplete?.Invoke();
         }
         
         #endregion

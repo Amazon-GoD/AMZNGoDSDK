@@ -25,8 +25,6 @@ namespace AMZNGoDSDK.Runtime
                     int current = PlayerPrefs.GetInt(rewardKey, 0);
                     PlayerPrefs.SetInt(rewardKey, current + amount * _bonusCoinsMultiplier);
                     PlayerPrefs.Save();
-                    
-                    Debug.Log("Коины");
                 });
 
             _module.RegisterConsumableRewardType(
@@ -36,20 +34,14 @@ namespace AMZNGoDSDK.Runtime
                     int current = PlayerPrefs.GetInt(rewardKey, 0);
                     PlayerPrefs.SetInt(rewardKey, current + amount * _energyAmount);
                     PlayerPrefs.Save();
-                    
-                    Debug.Log("Энергия");
                 });
-            
-            _module.SetConsumableRewardSetter(((id, value) =>
+
+            _module.SetConsumableRewardSetter((id, value) =>
             {
-                if (PlayerPrefs.HasKey(id))
-                {
-                    var temp = PlayerPrefs.GetInt(id);
-                    PlayerPrefs.SetInt(id, temp + value);
-                    
-                    Debug.Log("Дефолтный");
-                }
-            }));
+                int current = PlayerPrefs.GetInt(id, 0);
+                PlayerPrefs.SetInt(id, current + value);
+                PlayerPrefs.Save();
+            });
         }
     }
 }
