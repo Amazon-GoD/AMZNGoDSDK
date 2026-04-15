@@ -69,6 +69,7 @@ namespace AMZNGoDSDK.Runtime
         private Coroutine _retryCoroutine;
         private string _preloadedUrl;
         private bool _isPreloaded;
+        private Coroutine _playingFallbackCoroutine;
 
         #endregion
 
@@ -368,6 +369,7 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrWhiteSpace(url))
                 return;
 
+            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Preload() start for '{url}' (backend={_backend})");
             _isPreloaded = false;
             _preloadedUrl = url;
 
@@ -393,9 +395,10 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public bool PlayPreloaded(string url)
         {
+            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] PlayPreloaded() url='{url}', _preloadedUrl='{_preloadedUrl}', state={_state}, isPreloaded={_isPreloaded}");
             if (_preloadedUrl == url && _state == PlaybackState.Ready && _isPreloaded)
             {
-                Debug.Log("[CrossPromoVideoPlayer] Playing preloaded video.");
+                Debug.Log("[CrossPromoVideoPlayer] Playing preloaded video (READY branch).");
                 _isPreloaded = false;
                 _preloadedUrl = null;
 
@@ -424,10 +427,19 @@ namespace AMZNGoDSDK.Runtime
                         return false;
                     }
 
-                    // Don't apply texture or set Playing here — WaitForFirstFrameCoroutine
-                    // (triggered by VideoPlayer.started) will do both after the first
-                    // decoded frame lands in the RenderTexture, eliminating the black flash.
+                    // RT holds frame 0 from the preload decode-kick, but on Android the
+                    // MediaCodec takes ~150-200ms to resume from Pause and actually push
+                    // a fresh frame into the RT. During that gap the surface can appear
+                    // black. Keep state=Ready (→ loading indicator stays visible via the
+                    // overlay) until VideoPlayer.started fires — then HandleStarted will
+                    // transition to Playing. A safety coroutine forces the transition if
+                    // started doesn't fire within the expected window.
+                    ApplyTextureToTargets();
                     _player.Play();
+
+                    if (_playingFallbackCoroutine != null)
+                        StopCoroutine(_playingFallbackCoroutine);
+                    _playingFallbackCoroutine = StartCoroutine(ForcePlayingAfterDelay(0.5f));
                 }
 
                 return true;
@@ -435,14 +447,14 @@ namespace AMZNGoDSDK.Runtime
 
             if (_preloadedUrl == url && _state == PlaybackState.Loading)
             {
-                Debug.Log("[CrossPromoVideoPlayer] Preload still in progress — enabling autoplay on ready.");
+                Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Preload still in progress — enabling autoplay on ready (elapsed so far: {Time.realtimeSinceStartup - _prepareStartedAt:F2}s).");
                 _isPreloaded = false;
                 _preloadedUrl = null;
                 _autoPlay = true;
                 return true;
             }
 
-            Debug.Log("[CrossPromoVideoPlayer] No matching preload; falling back to normal Load.");
+            Debug.LogWarning($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] No matching preload; falling back to normal Load. (urlMatchesPreload={_preloadedUrl == url}, state={_state}, isPreloaded={_isPreloaded}) — this will add Prepare time to the wait.");
             _isPreloaded = false;
             _preloadedUrl = null;
             _autoPlay = true;
@@ -654,12 +666,7 @@ namespace AMZNGoDSDK.Runtime
         public void SetTargetRawImage(RawImage rawImage)
         {
             _targetRawImage = rawImage;
-
-            // Don't apply a black RenderTexture to the UI when the player is
-            // preloaded but hasn't started playing yet. WaitForFirstFrameCoroutine
-            // will call ApplyTextureToTargets once the first decoded frame is ready.
-            if (_state != PlaybackState.Ready || !_isPreloaded)
-                ApplyTextureToTargets();
+            ApplyTextureToTargets();
         }
 
         #endregion
@@ -690,6 +697,7 @@ namespace AMZNGoDSDK.Runtime
             _player.errorReceived += HandleErrorReceived;
             _player.loopPointReached += HandleLoopPointReached;
             _player.started += HandleStarted;
+            _player.frameReady += HandleFrameReady;
         }
 
         private void UnsubscribePlayerEvents()
@@ -700,11 +708,34 @@ namespace AMZNGoDSDK.Runtime
             _player.errorReceived -= HandleErrorReceived;
             _player.loopPointReached -= HandleLoopPointReached;
             _player.started -= HandleStarted;
+            _player.frameReady -= HandleFrameReady;
+        }
+
+        private void HandleFrameReady(VideoPlayer source, long frameIdx)
+        {
+            if (_isPreloaded) return;
+
+            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] FrameReady idx={frameIdx} — first decoded frame in RT");
+            source.sendFrameReadyEvents = false;
+            source.Pause();
+            source.SetDirectAudioMute(0, false);
+            _player.SetDirectAudioVolume(0, _volume);
+
+            if (!_autoPlay && !string.IsNullOrEmpty(_preloadedUrl))
+            {
+                SetState(PlaybackState.Ready);
+                _isPreloaded = true;
+                ApplyTextureToTargets();
+                Debug.Log($"[CrossPromoVideoPlayer] Preload fully ready (with decoded frame) for: {_preloadedUrl}");
+                OnReady?.Invoke();
+            }
         }
 
         #endregion
 
         #region Internal — Unity VideoPlayer Prepare & Retry
+
+        private float _prepareStartedAt;
 
         private void PrepareVideo()
         {
@@ -714,6 +745,8 @@ namespace AMZNGoDSDK.Runtime
             _player.source = VideoSource.Url;
             _player.url = _videoUrl;
             _player.isLooping = _loop;
+            _prepareStartedAt = Time.realtimeSinceStartup;
+            Debug.Log($"[CrossPromoVideoPlayer][T={_prepareStartedAt:F2}] Prepare() start for '{_videoUrl}' (autoPlay={_autoPlay}, preloadedUrl='{_preloadedUrl}')");
             _player.Prepare();
         }
 
@@ -749,35 +782,64 @@ namespace AMZNGoDSDK.Runtime
 
         private void HandlePrepareCompleted(VideoPlayer source)
         {
+            float prepDuration = Time.realtimeSinceStartup - _prepareStartedAt;
+            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] PrepareCompleted after {prepDuration:F2}s for '{_videoUrl}' (autoPlay={_autoPlay}, preloadedUrl='{_preloadedUrl}', w={source.width}, h={source.height})");
             SetState(PlaybackState.Ready);
             EnsureRenderTexture();
-
-            // In preload mode the texture is intentionally NOT applied here.
-            // The RT exists but is still black — applying it now would flash black
-            // on the RawImage before the first decoded frame arrives.
-            // ApplyTextureToTargets() is deferred to WaitForFirstFrameCoroutine.
-            bool isPreloadMode = !_autoPlay && !string.IsNullOrEmpty(_preloadedUrl);
-            if (!isPreloadMode)
-                ApplyTextureToTargets();
-
-            OnReady?.Invoke();
+            ApplyTextureToTargets();
 
             if (_autoPlay)
             {
+                OnReady?.Invoke();
                 Play();
             }
             else if (!string.IsNullOrEmpty(_preloadedUrl))
             {
-                _isPreloaded = true;
-                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl}");
+                // Kick decode so RT actually holds the first frame — on Android, Prepare
+                // alone leaves RT black. Play muted, frameReady(0) will pause + mark ready.
+                source.sendFrameReadyEvents = true;
+                source.SetDirectAudioMute(0, true);
+                source.Play();
+                Debug.Log("[CrossPromoVideoPlayer] Preload kicking decode (Play→wait for frame 0)");
+            }
+            else
+            {
+                OnReady?.Invoke();
             }
         }
 
         private void HandleStarted(VideoPlayer source)
         {
+            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] HandleStarted — first frame should be rendering now. rawImage={(_targetRawImage != null ? _targetRawImage.name : "null")}, targetTex={(_targetTexture != null ? $"{_targetTexture.width}x{_targetTexture.height}" : "null")}");
+
+            // Ignore Play() fired internally by preload decode-kick or RT refill.
+            // PlayPreloaded clears _preloadedUrl before calling Play, so an empty _preloadedUrl
+            // means the Play is user-initiated and should transition to Playing.
+            if (!_autoPlay && !string.IsNullOrEmpty(_preloadedUrl))
+                return;
+
+            if (_playingFallbackCoroutine != null)
+            {
+                StopCoroutine(_playingFallbackCoroutine);
+                _playingFallbackCoroutine = null;
+            }
+
             ApplyTextureToTargets();
             SetState(PlaybackState.Playing);
             OnStarted?.Invoke();
+        }
+
+        private IEnumerator ForcePlayingAfterDelay(float delay)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+            _playingFallbackCoroutine = null;
+            if (_state == PlaybackState.Ready)
+            {
+                Debug.LogWarning($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Fallback: VideoPlayer.started did not fire within {delay:F2}s — forcing state=Playing.");
+                ApplyTextureToTargets();
+                SetState(PlaybackState.Playing);
+                OnStarted?.Invoke();
+            }
         }
 
         private void HandleLoopPointReached(VideoPlayer source)

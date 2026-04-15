@@ -93,6 +93,7 @@ namespace AMZNGoDSDK.Runtime
                 _canvasGroup.interactable = false;
                 _canvasGroup.blocksRaycasts = false;
             }
+
         }
 
         private void OnDestroy()
@@ -129,18 +130,24 @@ namespace AMZNGoDSDK.Runtime
             // uses _videoPlayer as the target.
             UnsubscribeVideoEvents();
 
-            // Assign the new player first so the overlay is never in a null state.
+            // Assign the new player. We do NOT reparent the preload player's GameObject —
+            // reparenting a Unity VideoPlayer on Android causes the underlying MediaCodec /
+            // render surface to be re-created, which burns ~700ms to 1s of black on first show.
+            // The preload player lives on its own DontDestroyOnLoad host; leaving it there
+            // preserves its decoder state. The overlay only needs the RT for the RawImage.
             _videoPlayer = preloadedPlayer;
-            _videoPlayer.transform.SetParent(transform, false);
-            if (_videoDisplay != null)
-                _videoPlayer.SetTargetRawImage(_videoDisplay);
 
-            if (previous != null)
+            if (_videoDisplay != null)
+            {
+                if (_videoPlayer.CurrentTexture == null)
+                    _videoDisplay.texture = null;
+                _videoPlayer.SetTargetRawImage(_videoDisplay);
+            }
+
+            if (previous != null && previous != _videoPlayer)
             {
                 previous.Stop();
 
-                // Never destroy the overlay root or the RawImage host: the player often lives on
-                // the same GameObject as this overlay / video display (e.g. "CrossAdPanel").
                 var prevGo = previous.gameObject;
                 bool playerOnOverlayRoot = prevGo == gameObject;
                 bool playerOnVideoDisplay = _videoDisplay != null && prevGo == _videoDisplay.gameObject;
@@ -151,7 +158,7 @@ namespace AMZNGoDSDK.Runtime
                     Destroy(prevGo);
             }
 
-            Debug.Log("[CrossPromoVideoOverlay] Swapped to preloaded player.");
+            Debug.Log($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] Swapped to preloaded player (no reparent; newState={_videoPlayer.State}, hasTexture={_videoPlayer.CurrentTexture != null}, playerGO={_videoPlayer.gameObject.name}, active={_videoPlayer.gameObject.activeInHierarchy})");
         }
 
         /// <summary>
@@ -207,17 +214,16 @@ namespace AMZNGoDSDK.Runtime
             if (closeDelay > 0)
                 _countdownCoroutine = StartCoroutine(CloseCountdownCoroutine(closeDelay));
 
+            Debug.Log($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] Show() entry: playerState={_videoPlayer.State}, isPreloaded={_videoPlayer.IsPreloaded}, preloadedUrl='{_videoPlayer.PreloadedUrl}', requestedUrl='{videoUrl}'");
             bool usedPreload = _videoPlayer.PlayPreloaded(videoUrl);
+            Debug.Log($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] Show() after PlayPreloaded: usedPreload={usedPreload}, state={_videoPlayer.State}");
             if (usedPreload)
             {
-                // Keep loading indicator visible until the Playing state fires.
-                // The preloaded player is in Ready state — IsLoading is false — but
-                // the RenderTexture is still black until WaitForFirstFrameCoroutine
-                // finishes and transitions to Playing.
                 ShowLoading(_videoPlayer.State != CrossPromoVideoPlayer.PlaybackState.Playing);
             }
             else
             {
+                Debug.LogWarning($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] FALLBACK: overlay's own player starting fresh Load — black screen until Prepare completes");
                 if (_videoDisplay != null)
                     _videoDisplay.texture = null;
 
@@ -490,6 +496,7 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoVideoPlayer.PlaybackState prev,
             CrossPromoVideoPlayer.PlaybackState next)
         {
+            Debug.Log($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] VideoState {prev} -> {next}");
             if (next == CrossPromoVideoPlayer.PlaybackState.Playing)
                 ShowLoading(false);
         }
