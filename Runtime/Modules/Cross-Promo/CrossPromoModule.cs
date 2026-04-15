@@ -106,8 +106,10 @@ namespace AMZNGoDSDK.Runtime
             {
                 StartInitCoroutine();
             }
-            else if (_preloadedConfig == null && !_initRunning)
+            else if (_preloadPlayer == null || (!_preloadPlayer.IsPreloaded && !_preloadPlayer.IsLoading))
             {
+                // Preload was lost while host was deactivated — restart it so the next
+                // Show can swap instantly instead of loading from scratch.
                 PreloadNextVideo();
             }
         }
