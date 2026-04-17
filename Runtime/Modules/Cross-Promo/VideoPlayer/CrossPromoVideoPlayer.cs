@@ -69,7 +69,6 @@ namespace AMZNGoDSDK.Runtime
         private Coroutine _retryCoroutine;
         private string _preloadedUrl;
         private bool _isPreloaded;
-        private Coroutine _playingFallbackCoroutine;
 
         #endregion
 
@@ -359,6 +358,10 @@ namespace AMZNGoDSDK.Runtime
         public bool IsPreloaded => _isPreloaded;
         public string PreloadedUrl => _preloadedUrl;
 
+        /// <summary>When true, the player kicks an invisible muted looped playback as
+        /// soon as Preload reaches Ready — burns MediaCodec cold-start before any Show.</summary>
+        public bool WarmupOnReady { get; set; }
+
         /// <summary>
         /// Preloads (buffers) a video URL without starting playback.
         /// When ready, <see cref="OnReady"/> fires and <see cref="IsPreloaded"/> becomes true.
@@ -369,7 +372,6 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrWhiteSpace(url))
                 return;
 
-            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Preload() start for '{url}' (backend={_backend})");
             _isPreloaded = false;
             _preloadedUrl = url;
 
@@ -395,10 +397,15 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public bool PlayPreloaded(string url)
         {
-            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] PlayPreloaded() url='{url}', _preloadedUrl='{_preloadedUrl}', state={_state}, isPreloaded={_isPreloaded}");
-            if (_preloadedUrl == url && _state == PlaybackState.Ready && _isPreloaded)
+            bool canConsume = _preloadedUrl == url && _isPreloaded
+                && (_state == PlaybackState.Ready || _state == PlaybackState.Playing);
+
+            if (canConsume)
             {
-                Debug.Log("[CrossPromoVideoPlayer] Playing preloaded video (READY branch).");
+                // Playing state here means the player is in "warmup" mode — already
+                // decoding muted/looped to burn MediaCodec cold-start. We seek to 0
+                // and unmute instead of a fresh Play() so MediaCodec never stops.
+                bool wasWarming = _state == PlaybackState.Playing;
                 _isPreloaded = false;
                 _preloadedUrl = null;
 
@@ -406,55 +413,55 @@ namespace AMZNGoDSDK.Runtime
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
                     ApplyTextureToTargets();
-                    Media3Resume();
-                    SetState(PlaybackState.Playing);
+                    if (wasWarming)
+                    {
+                        if (_media3Plugin != null)
+                        {
+                            _media3Plugin.Call("setLooping", _loop);
+                            _media3Plugin.Call("seekTo", 0L);
+                            _media3Plugin.Call("setVolume", _volume);
+                        }
+                        _media3Muted = false;
+                    }
+                    else
+                    {
+                        Media3Resume();
+                        SetState(PlaybackState.Playing);
+                    }
                     OnStarted?.Invoke();
 #endif
                 }
                 else
                 {
-                    // Safety: if the host GameObject was deactivated after preload, Unity
-                    // resets the VideoPlayer and isPrepared becomes false. Fall back to a
-                    // fresh Load so we never call Play() on an unprepared player.
                     if (_player == null || !_player.isPrepared)
                     {
-                        Debug.LogWarning("[CrossPromoVideoPlayer] Preloaded VideoPlayer is no longer prepared " +
-                                         "(host was likely deactivated). Falling back to Load.");
-                        _isPreloaded = false;
-                        _preloadedUrl = null;
+                        Debug.LogWarning("[CrossPromoVideoPlayer] Preloaded VideoPlayer is no longer prepared (host was likely deactivated). Falling back to Load.");
                         _autoPlay = true;
                         Load(url);
                         return false;
                     }
 
-                    // RT holds frame 0 from the preload decode-kick, but on Android the
-                    // MediaCodec takes ~150-200ms to resume from Pause and actually push
-                    // a fresh frame into the RT. During that gap the surface can appear
-                    // black. Keep state=Ready (→ loading indicator stays visible via the
-                    // overlay) until VideoPlayer.started fires — then HandleStarted will
-                    // transition to Playing. A safety coroutine forces the transition if
-                    // started doesn't fire within the expected window.
                     ApplyTextureToTargets();
-                    _player.Play();
-
-                    if (_playingFallbackCoroutine != null)
-                        StopCoroutine(_playingFallbackCoroutine);
-                    _playingFallbackCoroutine = StartCoroutine(ForcePlayingAfterDelay(0.5f));
+                    if (wasWarming)
+                    {
+                        _player.isLooping = _loop;
+                        _player.time = 0;
+                        _player.SetDirectAudioMute(0, false);
+                        _player.SetDirectAudioVolume(0, _volume);
+                        OnStarted?.Invoke();
+                    }
+                    else
+                    {
+                        _player.Play();
+                        SetState(PlaybackState.Playing);
+                        OnStarted?.Invoke();
+                    }
                 }
 
                 return true;
             }
 
-            if (_preloadedUrl == url && _state == PlaybackState.Loading)
-            {
-                Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Preload still in progress — enabling autoplay on ready (elapsed so far: {Time.realtimeSinceStartup - _prepareStartedAt:F2}s).");
-                _isPreloaded = false;
-                _preloadedUrl = null;
-                _autoPlay = true;
-                return true;
-            }
-
-            Debug.LogWarning($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] No matching preload; falling back to normal Load. (urlMatchesPreload={_preloadedUrl == url}, state={_state}, isPreloaded={_isPreloaded}) — this will add Prepare time to the wait.");
+            Debug.LogWarning("[CrossPromoVideoPlayer] No matching preload; falling back to normal Load.");
             _isPreloaded = false;
             _preloadedUrl = null;
             _autoPlay = true;
@@ -697,7 +704,6 @@ namespace AMZNGoDSDK.Runtime
             _player.errorReceived += HandleErrorReceived;
             _player.loopPointReached += HandleLoopPointReached;
             _player.started += HandleStarted;
-            _player.frameReady += HandleFrameReady;
         }
 
         private void UnsubscribePlayerEvents()
@@ -708,34 +714,11 @@ namespace AMZNGoDSDK.Runtime
             _player.errorReceived -= HandleErrorReceived;
             _player.loopPointReached -= HandleLoopPointReached;
             _player.started -= HandleStarted;
-            _player.frameReady -= HandleFrameReady;
-        }
-
-        private void HandleFrameReady(VideoPlayer source, long frameIdx)
-        {
-            if (_isPreloaded) return;
-
-            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] FrameReady idx={frameIdx} — first decoded frame in RT");
-            source.sendFrameReadyEvents = false;
-            source.Pause();
-            source.SetDirectAudioMute(0, false);
-            _player.SetDirectAudioVolume(0, _volume);
-
-            if (!_autoPlay && !string.IsNullOrEmpty(_preloadedUrl))
-            {
-                SetState(PlaybackState.Ready);
-                _isPreloaded = true;
-                ApplyTextureToTargets();
-                Debug.Log($"[CrossPromoVideoPlayer] Preload fully ready (with decoded frame) for: {_preloadedUrl}");
-                OnReady?.Invoke();
-            }
         }
 
         #endregion
 
         #region Internal — Unity VideoPlayer Prepare & Retry
-
-        private float _prepareStartedAt;
 
         private void PrepareVideo()
         {
@@ -745,8 +728,6 @@ namespace AMZNGoDSDK.Runtime
             _player.source = VideoSource.Url;
             _player.url = _videoUrl;
             _player.isLooping = _loop;
-            _prepareStartedAt = Time.realtimeSinceStartup;
-            Debug.Log($"[CrossPromoVideoPlayer][T={_prepareStartedAt:F2}] Prepare() start for '{_videoUrl}' (autoPlay={_autoPlay}, preloadedUrl='{_preloadedUrl}')");
             _player.Prepare();
         }
 
@@ -782,8 +763,6 @@ namespace AMZNGoDSDK.Runtime
 
         private void HandlePrepareCompleted(VideoPlayer source)
         {
-            float prepDuration = Time.realtimeSinceStartup - _prepareStartedAt;
-            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] PrepareCompleted after {prepDuration:F2}s for '{_videoUrl}' (autoPlay={_autoPlay}, preloadedUrl='{_preloadedUrl}', w={source.width}, h={source.height})");
             SetState(PlaybackState.Ready);
             EnsureRenderTexture();
             ApplyTextureToTargets();
@@ -792,15 +771,27 @@ namespace AMZNGoDSDK.Runtime
             {
                 OnReady?.Invoke();
                 Play();
+                return;
             }
-            else if (!string.IsNullOrEmpty(_preloadedUrl))
+
+            if (!string.IsNullOrEmpty(_preloadedUrl))
             {
-                // Kick decode so RT actually holds the first frame — on Android, Prepare
-                // alone leaves RT black. Play muted, frameReady(0) will pause + mark ready.
-                source.sendFrameReadyEvents = true;
-                source.SetDirectAudioMute(0, true);
-                source.Play();
-                Debug.Log("[CrossPromoVideoPlayer] Preload kicking decode (Play→wait for frame 0)");
+                _isPreloaded = true;
+                OnReady?.Invoke();
+
+                // Inline warmup kick — synchronous transition to Playing on the same frame
+                // Prepare completes. This closes the race where a fast user tap could swap
+                // the preload player out before a separate coroutine fired Play().
+                if (WarmupOnReady)
+                {
+                    _loop = true;
+                    source.isLooping = true;
+                    source.SetDirectAudioMute(0, true);
+                    source.Play();
+                    SetState(PlaybackState.Playing);
+                }
+
+                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl} (warmup={WarmupOnReady})");
             }
             else
             {
@@ -810,36 +801,9 @@ namespace AMZNGoDSDK.Runtime
 
         private void HandleStarted(VideoPlayer source)
         {
-            Debug.Log($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] HandleStarted — first frame should be rendering now. rawImage={(_targetRawImage != null ? _targetRawImage.name : "null")}, targetTex={(_targetTexture != null ? $"{_targetTexture.width}x{_targetTexture.height}" : "null")}");
-
-            // Ignore Play() fired internally by preload decode-kick or RT refill.
-            // PlayPreloaded clears _preloadedUrl before calling Play, so an empty _preloadedUrl
-            // means the Play is user-initiated and should transition to Playing.
-            if (!_autoPlay && !string.IsNullOrEmpty(_preloadedUrl))
-                return;
-
-            if (_playingFallbackCoroutine != null)
-            {
-                StopCoroutine(_playingFallbackCoroutine);
-                _playingFallbackCoroutine = null;
-            }
-
             ApplyTextureToTargets();
             SetState(PlaybackState.Playing);
             OnStarted?.Invoke();
-        }
-
-        private IEnumerator ForcePlayingAfterDelay(float delay)
-        {
-            yield return new WaitForSecondsRealtime(delay);
-            _playingFallbackCoroutine = null;
-            if (_state == PlaybackState.Ready)
-            {
-                Debug.LogWarning($"[CrossPromoVideoPlayer][T={Time.realtimeSinceStartup:F2}] Fallback: VideoPlayer.started did not fire within {delay:F2}s — forcing state=Playing.");
-                ApplyTextureToTargets();
-                SetState(PlaybackState.Playing);
-                OnStarted?.Invoke();
-            }
         }
 
         private void HandleLoopPointReached(VideoPlayer source)
@@ -1124,7 +1088,22 @@ namespace AMZNGoDSDK.Runtime
             else if (!string.IsNullOrEmpty(_preloadedUrl))
             {
                 _isPreloaded = true;
-                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl}");
+
+                if (WarmupOnReady)
+                {
+                    _loop = true;
+                    if (_media3Plugin != null)
+                    {
+                        _media3Plugin.Call("setLooping", true);
+                        _media3Plugin.Call("setVolume", 0f);
+                        _media3Plugin.Call("play");
+                    }
+                    _media3Muted = true;
+                    _media3SavedVolume = _volume;
+                    SetState(PlaybackState.Playing);
+                }
+
+                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl} (Media3, warmup={WarmupOnReady})");
             }
 #endif
         }

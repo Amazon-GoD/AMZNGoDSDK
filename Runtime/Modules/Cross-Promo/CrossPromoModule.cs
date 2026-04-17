@@ -28,6 +28,7 @@ namespace AMZNGoDSDK.Runtime
         private CrossPromoVideoPlayer _preloadPlayer;
         private PromoConfiguration _lastShownConfig;
         private bool _firstPreloadDone;
+        private bool _firstWarmupTriggered;
         private Coroutine _initCoroutine;
         private Coroutine _showCoroutine;
 
@@ -84,6 +85,7 @@ namespace AMZNGoDSDK.Runtime
             DisposePreloadPlayer();
             _preloadedConfig = null;
             _firstPreloadDone = false;
+            _firstWarmupTriggered = false;
             _initializeRequested = true;
             _trackingService?.Initialize();
             StartInitCoroutine();
@@ -287,9 +289,6 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator ShowVideoInternalCoroutine(Action onClose, Action onCTAClick, string placement, Action onRewarded, PromoConfiguration forcedConfig = null)
         {
-            float tShow = Time.realtimeSinceStartup;
-            Debug.Log($"[CrossPromoModule][T={tShow:F2}] >>> ShowVideoInternal() TAP. Enabled={Enabled}, placement={placement ?? "video"}, preloadPlayer={(_preloadPlayer == null ? "null" : $"state={_preloadPlayer.State},isPreloaded={_preloadPlayer.IsPreloaded},isLoading={_preloadPlayer.IsLoading},url={_preloadPlayer.PreloadedUrl}")}");
-
             if (!Enabled)
             {
                 Debug.LogWarning("[CrossPromoModule] ShowVideoInternal: module is DISABLED");
@@ -331,29 +330,28 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            // Swap in the preload player whether it's Ready OR still Loading (as long as the URL
-            // matches). For the Loading case, CrossPromoVideoPlayer.PlayPreloaded sets autoPlay=true
-            // so playback kicks in the moment Prepare completes — starting a second Load on the
-            // overlay's own player would waste the in-flight Prepare and double the wait.
             bool usedPreload = false;
-            if (_preloadPlayer != null && (_preloadPlayer.IsPreloaded || _preloadPlayer.IsLoading))
+            if (_preloadPlayer != null)
             {
                 string preloadUrl = ResolvePromoUrl(config);
-                bool urlMatch = _preloadPlayer.PreloadedUrl == preloadUrl;
-                Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup - tShow:F2}] Preload-swap check: urlMatch={urlMatch}, preloadedUrl='{_preloadPlayer.PreloadedUrl}', requestedUrl='{preloadUrl}', preloadState={_preloadPlayer.State}");
-                if (urlMatch)
+                if (_preloadPlayer.PreloadedUrl == preloadUrl && _preloadPlayer.IsLoading)
                 {
-                    Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup - tShow:F2}] SWAPPING preload player into overlay (was {(_preloadPlayer.IsPreloaded ? "READY" : "LOADING")})");
+                    Debug.Log("[CrossPromoModule] Preload still loading, waiting...");
+                    while (_preloadPlayer != null && _preloadPlayer.IsLoading)
+                        yield return null;
+                }
+
+                if (_preloadPlayer != null
+                    && _preloadPlayer.IsPreloaded
+                    && _preloadPlayer.PreloadedUrl == preloadUrl)
+                {
                     _preloadPlayer.OnError -= HandlePreloadError;
+                    _preloadPlayer.Loop = false;
                     _videoOverlay.SwapVideoPlayer(_preloadPlayer);
                     _preloadPlayer = null;
                     _preloadedConfig = null;
                     usedPreload = true;
                 }
-            }
-            else
-            {
-                Debug.LogWarning($"[CrossPromoModule][T={Time.realtimeSinceStartup - tShow:F2}] NO preload available. preloadPlayer={(_preloadPlayer == null ? "null" : $"state={_preloadPlayer.State}")} — overlay will Load from scratch (expect long black screen)");
             }
 
             if (!usedPreload && _videoOverlay.VideoPlayer != null)
@@ -383,40 +381,44 @@ namespace AMZNGoDSDK.Runtime
                 _videoOverlay.OnVideoCompleted += rewardHandler;
             }
 
-            Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup - tShow:F2}] Calling overlay.Show() usedPreload={usedPreload}");
             _videoOverlay.Show(config, () =>
             {
                 onClose?.Invoke();
             }, onCTAClick);
 
-            // Defer the next preload until the current video has actually started rendering.
-            // On Android, starting a second VideoPlayer.Prepare while the first is still
-            // spinning up MediaCodec competes for hardware decoders — the current video
-            // stalls on a black RT for ~1s while the next preload grabs resources.
-            Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup - tShow:F2}] overlay.Show returned; deferring next preload until current video is Playing");
             StartCoroutine(DeferredPreloadNextVideo());
         }
 
         private IEnumerator DeferredPreloadNextVideo()
         {
-            var currentPlayer = _videoOverlay != null ? _videoOverlay.VideoPlayer : null;
-            if (currentPlayer != null)
+            // Wait until the current video has finished one way or another (completed,
+            // stopped by close, errored) or the overlay was hidden. Preloading while the
+            // current MediaCodec is still active competes for hardware decoders on Android.
+            float waitStart = Time.realtimeSinceStartup;
+            const float maxWait = 120f;
+
+            while (Time.realtimeSinceStartup - waitStart < maxWait)
             {
-                float waitStart = Time.realtimeSinceStartup;
-                const float maxWait = 3f;
-                while (currentPlayer.State != CrossPromoVideoPlayer.PlaybackState.Playing
-                       && Time.realtimeSinceStartup - waitStart < maxWait)
-                {
-                    yield return null;
-                }
+                if (_videoOverlay == null || !_videoOverlay.IsVisible)
+                    break;
 
-                // Small grace period after the first frame lands so Android MediaCodec
-                // finishes its init work before we spin up a second decoder.
-                yield return new WaitForSecondsRealtime(0.15f);
+                var p = _videoOverlay.VideoPlayer;
+                if (p == null)
+                    break;
 
-                Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup:F2}] Deferred preload trigger (waited {Time.realtimeSinceStartup - waitStart:F2}s, currentState={currentPlayer.State})");
+                var s = p.State;
+                if (s == CrossPromoVideoPlayer.PlaybackState.Completed
+                    || s == CrossPromoVideoPlayer.PlaybackState.Idle
+                    || s == CrossPromoVideoPlayer.PlaybackState.Error)
+                    break;
+
+                yield return null;
             }
 
+            // Short grace so the old decoder fully releases before we spin up a new one.
+            yield return new WaitForSecondsRealtime(0.15f);
+
+            Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup:F2}] Deferred preload trigger (waited {Time.realtimeSinceStartup - waitStart:F2}s)");
             PreloadNextVideo();
         }
 
@@ -474,8 +476,10 @@ namespace AMZNGoDSDK.Runtime
             var player = EnsurePreloadPlayer();
             player.SetBackend(_videoBackend);
             player.Loop = false;
+            player.WarmupOnReady = !_firstWarmupTriggered;
+            if (!_firstWarmupTriggered) _firstWarmupTriggered = true;
             player.Preload(url);
-            Debug.Log($"[CrossPromoModule] Preloading next video on dedicated player: {next.Title}");
+            Debug.Log($"[CrossPromoModule] Preloading next video on dedicated player: {next.Title} (warmup={player.WarmupOnReady})");
 
             // Skip analytics for the very first preload after app launch (there's no
             // corresponding Show event for it yet). Every subsequent preload follows a
