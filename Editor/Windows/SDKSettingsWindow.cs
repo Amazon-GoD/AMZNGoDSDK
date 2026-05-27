@@ -67,6 +67,7 @@ namespace AMZNGoDSDK.Editor
             DrawAdjustSettings();
             DrawInAppPurchaseSettings();
             DrawDebugConsoleSettings();
+            DrawFirstOpenTrackingSettings();
 
             EditorGUILayout.BeginHorizontal();
             
@@ -398,6 +399,29 @@ namespace AMZNGoDSDK.Editor
                 "Встроенная консоль для отладки: просмотр логов, ошибок и выполнение команд прямо в игре.",
                 _currentSettings.DebugConsole.Enabled,
                 null);
+        }
+
+        private void DrawFirstOpenTrackingSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("First Open Tracking", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "Отправляет paid_first_open / free_first_open на свой бэк. Активен, когда Cross-Promo выключен и включён Adjust. " +
+                "При включённом Cross-Promo событие шлёт сам Cross-Promo модуль — этот блок не задействуется.",
+                ModuleDescriptionStyle);
+
+            GUILayout.Space(6);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            _currentSettings.FirstOpenTracking.BaseUrl = EditorGUILayout
+                .TextField("Backend URL", _currentSettings.FirstOpenTracking.BaseUrl);
+            _currentSettings.FirstOpenTracking.ApiKey = EditorGUILayout
+                .TextField("API Key", _currentSettings.FirstOpenTracking.ApiKey);
+            _currentSettings.FirstOpenTracking.AppType = (FirstOpenAppType)EditorGUILayout
+                .EnumPopup("App Type", _currentSettings.FirstOpenTracking.AppType);
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.EndVertical();
+            GUILayout.Space(10);
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)

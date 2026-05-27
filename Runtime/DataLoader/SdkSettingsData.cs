@@ -15,5 +15,6 @@ namespace AMZNGoDSDK.Runtime
         public FirebaseSettingData Firebase = new();
         public InternetConnectionSettingData InternetConnection = new();
         public DebugConsoleSettingData DebugConsole = new();
+        public FirstOpenTrackingSettingData FirstOpenTracking = new();
     }
 }

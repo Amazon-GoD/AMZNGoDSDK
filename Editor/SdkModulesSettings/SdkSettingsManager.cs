@@ -57,7 +57,8 @@ namespace AMZNGoDSDK.Editor
                 InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection),
-                DebugConsole = ConvertDebugConsoleSettingsToEditor(runtimeSettings.DebugConsole)
+                DebugConsole = ConvertDebugConsoleSettingsToEditor(runtimeSettings.DebugConsole),
+                FirstOpenTracking = ConvertFirstOpenTrackingSettingsToEditor(runtimeSettings.FirstOpenTracking)
             };
 
             return editorSettings;
@@ -279,7 +280,8 @@ namespace AMZNGoDSDK.Editor
                 InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection),
-                DebugConsole = ConvertDebugConsoleSettings(editorSettings.DebugConsole)
+                DebugConsole = ConvertDebugConsoleSettings(editorSettings.DebugConsole),
+                FirstOpenTracking = ConvertFirstOpenTrackingSettings(editorSettings.FirstOpenTracking)
             };
 
             return runtimeSettings;
@@ -430,6 +432,38 @@ namespace AMZNGoDSDK.Editor
         private static Runtime.DebugConsoleSettingData ConvertDebugConsoleSettings(DebugConsoleSettingData editorSettings)
         {
             return new Runtime.DebugConsoleSettingData { Enabled = editorSettings.Enabled };
+        }
+
+        private static FirstOpenTrackingSettingData ConvertFirstOpenTrackingSettingsToEditor(Runtime.FirstOpenTrackingSettingData runtimeSettings)
+        {
+            runtimeSettings ??= new Runtime.FirstOpenTrackingSettingData();
+
+            var appType = runtimeSettings.AppType == Runtime.FirstOpenAppType.Paid
+                ? FirstOpenAppType.Paid
+                : FirstOpenAppType.Free;
+
+            return new FirstOpenTrackingSettingData
+            {
+                BaseUrl = runtimeSettings.BaseUrl,
+                ApiKey = runtimeSettings.ApiKey,
+                AppType = appType
+            };
+        }
+
+        private static Runtime.FirstOpenTrackingSettingData ConvertFirstOpenTrackingSettings(FirstOpenTrackingSettingData editorSettings)
+        {
+            editorSettings ??= new FirstOpenTrackingSettingData();
+
+            var appType = editorSettings.AppType == FirstOpenAppType.Paid
+                ? Runtime.FirstOpenAppType.Paid
+                : Runtime.FirstOpenAppType.Free;
+
+            return new Runtime.FirstOpenTrackingSettingData
+            {
+                BaseUrl = editorSettings.BaseUrl,
+                ApiKey = editorSettings.ApiKey,
+                AppType = appType
+            };
         }
     }
 }

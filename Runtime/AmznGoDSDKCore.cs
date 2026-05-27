@@ -52,6 +52,11 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            // Hotfix: first_open идёт независимо от CrossPromoModule. Раньше paid_first_open
+            // / free_first_open сидели внутри CrossPromoTrackingService и не уходили, если
+            // галочка Cross-Promo снята в SDK Settings (вместе со снятым define).
+            EnsureFirstOpenReporterIfNeeded(sdkSettingsData);
+
             var internetSettings = sdkSettingsData.InternetConnection;
             var firebaseSettings = sdkSettingsData.Firebase;
             var infaticaSettings = sdkSettingsData.Infatica;
@@ -350,6 +355,26 @@ namespace AMZNGoDSDK.Runtime
         #endregion
 
         #region Private Members
+
+        private void EnsureFirstOpenReporterIfNeeded(SdkSettingsData s)
+        {
+            if (!s.Adjust.Enabled) return;
+            if (string.IsNullOrWhiteSpace(s.FirstOpenTracking.BaseUrl)) return;
+            if (string.IsNullOrWhiteSpace(s.FirstOpenTracking.ApiKey)) return;
+
+#if AMZN_CROSSPROMO_ENABLED
+            // CrossPromo включён → CrossPromoTrackingService сам пошлёт first_open.
+            // Не дублируем, чтобы не было гонки за PlayerPrefs-ключи.
+            if (s.CrossPromo.Enabled) return;
+#endif
+
+            var reporter = gameObject.AddComponent<FirstOpenReporter>();
+            reporter.Construct(
+                s.FirstOpenTracking.BaseUrl,
+                s.FirstOpenTracking.ApiKey,
+                s.FirstOpenTracking.AppType);
+            reporter.Initialize();
+        }
 
         private IEnumerator InitializeWhenReady(params ModuleBase[] modules)
         {
