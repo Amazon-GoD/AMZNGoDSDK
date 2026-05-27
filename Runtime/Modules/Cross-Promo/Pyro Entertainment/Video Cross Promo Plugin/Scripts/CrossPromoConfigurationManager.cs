@@ -27,12 +27,15 @@ namespace AMZNGoDSDK.Runtime
             [Range(0f, 1f)]
             public float Weight;
             public List<PromoConfiguration> Videos = new();
+            [System.NonSerialized]
+            private List<PromoConfiguration> _masterVideos = null;
 
             public PromosConfigurationInfo Copy()
             {
                 var confInfo = new PromosConfigurationInfo();
                 confInfo.Weight = Weight;
                 confInfo.Videos.AddRange(Videos);
+                confInfo._masterVideos = _masterVideos?.Select(v => v.Copy()).ToList();
                 return confInfo;
             }
 
@@ -66,12 +69,53 @@ namespace AMZNGoDSDK.Runtime
                     }
 
                     Videos.Remove(vid);
+                    RemoveFromMaster(vid.Title);
                 }
 
                 if (Videos.Count > 0)
                 {
                     Videos.First().Weight += 1 - Videos.Sum(video => video.Weight);
                 }
+            }
+
+            public void ApplyCooldownFilter(string lastShownTitle)
+            {
+                if (Videos == null || Videos.Count == 0) return;
+
+                // Master-список инициализируется ОДИН РАЗ из полного Videos (после CheckVideosShowLimit)
+                if (_masterVideos == null)
+                    _masterVideos = Videos.Select(v => v.Copy()).ToList();
+
+                if (_masterVideos.Count == 0) return;
+
+                // Фильтруем из master-списка (не из Videos!); используем копии, чтобы
+                // NormalizeWeights не мутировал оригинальные объекты в _masterVideos
+                var available = _masterVideos
+                    .Where(v => !VideoCooldownRegistry.IsOnCooldown(v.Title))
+                    .Select(v => v.Copy())
+                    .ToList();
+
+                // Если все на cooldown — сброс всех кроме последнего показанного
+                if (available.Count == 0)
+                {
+                    VideoCooldownRegistry.ClearAllCooldownsExcept(lastShownTitle, _masterVideos.Select(v => v.Title));
+                    available = _masterVideos
+                        .Where(v => v.Title != lastShownTitle)
+                        .Select(v => v.Copy())
+                        .ToList();
+
+                    // Edge-case: единственное видео в конфиге
+                    if (available.Count == 0)
+                        available = _masterVideos.Select(v => v.Copy()).ToList();
+                }
+
+                Videos = available;
+                CrossPromoConfigurationManager.NormalizeWeights(this);
+            }
+
+            public void RemoveFromMaster(string title)
+            {
+                _masterVideos?.RemoveAll(v => v.Title == title);
             }
         }
 
@@ -100,6 +144,31 @@ namespace AMZNGoDSDK.Runtime
             public float Weight;
             public List<string> AppPackageName = new();
             public int MaxShowCount;
+
+            public PromoConfiguration Copy()
+            {
+                return new PromoConfiguration
+                {
+                    Title = Title,
+                    ButtonText = ButtonText,
+                    FileName = FileName,
+                    VideoUrl = VideoUrl,
+                    BannerUrl = BannerUrl,
+                    TrackingUrl = TrackingUrl,
+                    RedirectUrl = RedirectUrl,
+                    adjust_click_url = adjust_click_url,
+                    adjust_impression_url = adjust_impression_url,
+                    campaign = campaign,
+                    adgroup = adgroup,
+                    creative = creative,
+                    OverlayShowDelayInSeconds = OverlayShowDelayInSeconds,
+                    CloseShowDelayInSeconds = CloseShowDelayInSeconds,
+                    FileExtension = FileExtension,
+                    Weight = Weight,
+                    AppPackageName = AppPackageName != null ? new List<string>(AppPackageName) : new List<string>(),
+                    MaxShowCount = MaxShowCount
+                };
+            }
         }
 
         public async Task<PromosConfigurationInfo> FetchRemoteConfigAsync(string configUrl)

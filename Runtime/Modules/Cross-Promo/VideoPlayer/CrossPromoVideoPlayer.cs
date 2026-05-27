@@ -372,6 +372,13 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrWhiteSpace(url))
                 return;
 
+            // Сбрасываем счётчик ретраев и гасим висящий retry-coroutine. Иначе после
+            // первой неудачной серии preload (3 ретрая × 2с) _retryCount остаётся равным
+            // _maxRetries, и любой следующий Preload(...) валится в OnError на первой
+            // же ошибке без ретраев. В отличие от Load() здесь раньше сброса не было.
+            CancelRetry();
+            _retryCount = 0;
+
             _isPreloaded = false;
             _preloadedUrl = url;
 
@@ -446,8 +453,12 @@ namespace AMZNGoDSDK.Runtime
                     {
                         _player.isLooping = _loop;
                         _player.time = 0;
-                        _player.SetDirectAudioMute(0, false);
-                        _player.SetDirectAudioVolume(0, _volume);
+                        ushort tracks = _player.audioTrackCount;
+                        for (ushort i = 0; i < tracks; i++)
+                        {
+                            _player.SetDirectAudioMute(i, false);
+                            _player.SetDirectAudioVolume(i, _volume);
+                        }
                         OnStarted?.Invoke();
                     }
                     else
@@ -786,7 +797,12 @@ namespace AMZNGoDSDK.Runtime
                 {
                     _loop = true;
                     source.isLooping = true;
-                    source.SetDirectAudioMute(0, true);
+                    ushort tracks = source.audioTrackCount;
+                    for (ushort i = 0; i < tracks; i++)
+                    {
+                        source.SetDirectAudioMute(i, true);
+                        source.SetDirectAudioVolume(i, 0f);
+                    }
                     source.Play();
                     SetState(PlaybackState.Playing);
                 }

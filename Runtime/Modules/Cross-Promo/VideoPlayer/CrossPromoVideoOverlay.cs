@@ -195,8 +195,13 @@ namespace AMZNGoDSDK.Runtime
 
             SetVisible(true);
 
+            // Обе кнопки стартуют скрытыми; DelayedUICoroutine ниже активирует их
+            // после соответствующих задержек из конфига (OverlayShowDelayInSeconds для
+            // CTA, CloseShowDelayInSeconds для крестика). Иначе игрок может случайно
+            // тапнуть CTA в первый момент показа (открывая внешнюю Amazon-страницу
+            // во время активного игрового тапа) — UX-баг.
             if (_closeButton != null) _closeButton.gameObject.SetActive(false);
-            if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
+            if (_ctaButton != null) _ctaButton.gameObject.SetActive(false);
 
             if (_progressSlider != null)
             {
@@ -596,6 +601,7 @@ namespace AMZNGoDSDK.Runtime
             int count = PlayerPrefs.GetInt(config.Title, 0);
             PlayerPrefs.SetInt(config.Title, count + 1);
             PlayerPrefs.Save();
+            VideoCooldownRegistry.RecordShown(config.Title);
         }
 
         #endregion

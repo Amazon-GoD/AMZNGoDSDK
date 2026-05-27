@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using static AMZNGoDSDK.Runtime.CrossPromoConfigurationManager;
 
 namespace AMZNGoDSDK.Runtime
@@ -27,10 +28,17 @@ namespace AMZNGoDSDK.Runtime
         private PromoConfiguration _preloadedConfig;
         private CrossPromoVideoPlayer _preloadPlayer;
         private PromoConfiguration _lastShownConfig;
+        private string _lastShownTitleFromPrefs;
         private bool _firstPreloadDone;
         private bool _firstWarmupTriggered;
         private Coroutine _initCoroutine;
         private Coroutine _showCoroutine;
+
+        // На смене сцены дёргаем подстраховочный re-warmup preload-плеера (на случай
+        // если прогретое видео потерялось / отвалилось между показами). Throttle, чтобы
+        // быстрые цепочки переходов (Menu→Level→Menu) не плодили лишнюю работу.
+        private float _lastSceneReloadRefreshTime = -10f;
+        private const float SceneReloadRefreshThrottleSeconds = 5f;
 
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
@@ -43,10 +51,34 @@ namespace AMZNGoDSDK.Runtime
         private void Awake()
         {
             Instance = this;
+
+            // Подписка статичная — живёт всю сессию вне зависимости от того,
+            // активен ли host-GO модуля (модуль на DontDestroyOnLoad-объекте SDK).
+            // remove-then-add гарантирует отсутствие двойной подписки.
+            SceneManager.sceneLoaded -= OnSceneLoadedRefreshPreload;
+            SceneManager.sceneLoaded += OnSceneLoadedRefreshPreload;
+        }
+
+        // При каждой смене сцены тыкаем preload-плеер подстраховочным re-warmup'ом.
+        // Если preload здоров — RefreshPreloadIfStale внутри сделает no-op. Throttle 5с
+        // защищает от спама на быстрых переходах.
+        private void OnSceneLoadedRefreshPreload(Scene scene, LoadSceneMode mode)
+        {
+            float sinceLast = Time.unscaledTime - _lastSceneReloadRefreshTime;
+            if (sinceLast < SceneReloadRefreshThrottleSeconds)
+            {
+                Debug.Log($"[CrossPromoModule] OnSceneLoaded('{scene.name}'): refresh throttled ({sinceLast:F2}s < {SceneReloadRefreshThrottleSeconds}s).");
+                return;
+            }
+
+            _lastSceneReloadRefreshTime = Time.unscaledTime;
+            Debug.Log($"[CrossPromoModule] OnSceneLoaded('{scene.name}'): дёргаем RefreshPreloadIfStale (IsVideoReady={IsVideoReady}).");
+            RefreshPreloadIfStale();
         }
 
         private void OnDestroy()
         {
+            SceneManager.sceneLoaded -= OnSceneLoadedRefreshPreload;
             if (_initCoroutine != null) { StopCoroutine(_initCoroutine); _initCoroutine = null; }
             if (_showCoroutine != null) { StopCoroutine(_showCoroutine); _showCoroutine = null; }
             DisposePreloadPlayer();
@@ -79,14 +111,56 @@ namespace AMZNGoDSDK.Runtime
         private bool _initializeRequested;
         private bool _initRunning;
 
+        // Cross-Promo через UnityVideoPlayer backend выводит звук видео по пути
+        // VideoPlayer.audioOutputMode = Direct. Этот путь требует работающего Unity
+        // Audio engine. Если в проекте стоит галка PlayerSettings → Audio → "Disable
+        // Unity Audio" (типично для проектов на чистом FMOD/Wwise), Unity audio output
+        // не инициализируется, и реклама проигрывается БЕЗ ЗВУКА — причём молча, без
+        // единой ошибки. Это съедает дни на диагностику. Здесь ловим этот кейс заранее
+        // и громко об этом сообщаем. Media3 backend не затрагивается — у него свой
+        // нативный AudioTrack, от Unity Audio не зависит.
+        private void WarnIfUnityAudioDisabled()
+        {
+            if (_videoBackend != VideoPlayerBackend.UnityVideoPlayer)
+                return;
+
+            AudioConfiguration cfg = AudioSettings.GetConfiguration();
+
+            // При выключенном Unity Audio движок не инициализируется и
+            // GetConfiguration() возвращает обнулённый конфиг (dspBufferSize == 0,
+            // sampleRate == 0). При включённом — там валидные значения
+            // (dspBufferSize обычно 256/512/1024). Проверяем оба признака, чтобы
+            // не словить ложное срабатывание.
+            bool audioLikelyDisabled = cfg.dspBufferSize == 0 && cfg.sampleRate == 0;
+
+            if (audioLikelyDisabled)
+            {
+                Debug.LogError(
+                    "[CrossPromoModule] ВНИМАНИЕ: похоже, Unity Audio отключён " +
+                    "(PlayerSettings → Audio → 'Disable Unity Audio'). С backend'ом " +
+                    "UnityVideoPlayer видео-реклама будет проигрываться БЕЗ ЗВУКА — " +
+                    "VideoPlayer.audioOutputMode=Direct требует инициализированный " +
+                    "Unity Audio engine. Решение: либо снять 'Disable Unity Audio' в " +
+                    "PlayerSettings, либо переключить VideoBackend на Media3 (Android). " +
+                    $"(AudioConfiguration: sampleRate={cfg.sampleRate}, dspBufferSize={cfg.dspBufferSize}, speakerMode={cfg.speakerMode})");
+            }
+            else
+            {
+                Debug.Log($"[CrossPromoModule] Unity Audio check OK: sampleRate={cfg.sampleRate}, dspBufferSize={cfg.dspBufferSize}, speakerMode={cfg.speakerMode}");
+            }
+        }
+
         public override void Initialize()
         {
             Debug.Log($"[CrossPromoModule] Initialize() called. Enabled={Enabled}, configUrl='{_configUrl}', videoBackend={_videoBackend}");
+            WarnIfUnityAudioDisabled();
             DisposePreloadPlayer();
+            _crossPromoConfig = null;
             _preloadedConfig = null;
             _firstPreloadDone = false;
             _firstWarmupTriggered = false;
             _initializeRequested = true;
+            _lastShownTitleFromPrefs = VideoCooldownRegistry.GetLastShownTitle();
             _trackingService?.Initialize();
             StartInitCoroutine();
         }
@@ -138,6 +212,24 @@ namespace AMZNGoDSDK.Runtime
         {
             Debug.LogWarning($"[CrossPromoModule] Preload failed: {error}. Clearing preloaded config.");
             _preloadedConfig = null;
+        }
+
+        /// <summary>
+        /// Подстраховочный перезапуск preload+warmup, если предзагруженного видео нет
+        /// или оно "застряло" (не Preloaded и не IsLoading — то есть в ошибке или idle).
+        /// Если preload здоров (или уже грузится) — no-op. Безопасно вызывать часто:
+        /// внутренний guard не позволит дёргать дублирующую работу.
+        /// </summary>
+        public void RefreshPreloadIfStale()
+        {
+            if (!Enabled) return;
+            if (_crossPromoConfig == null) return;   // Init ещё не завершён
+
+            if (_preloadPlayer == null || (!_preloadPlayer.IsPreloaded && !_preloadPlayer.IsLoading))
+            {
+                Debug.Log("[CrossPromoModule] RefreshPreloadIfStale: preload missing/stale, restarting.");
+                PreloadNextVideo();
+            }
         }
 
         private IEnumerator InitCrossPromoModulesCorAsync()
@@ -304,6 +396,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             _crossPromoConfig?.CheckVideosShowLimit();
+            _crossPromoConfig?.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
 
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
             {
@@ -459,6 +552,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             _crossPromoConfig.CheckVideosShowLimit();
+            _crossPromoConfig.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
             if (_crossPromoConfig.Videos.Count == 0)
                 return;
 
@@ -476,8 +570,14 @@ namespace AMZNGoDSDK.Runtime
             var player = EnsurePreloadPlayer();
             player.SetBackend(_videoBackend);
             player.Loop = false;
-            player.WarmupOnReady = !_firstWarmupTriggered;
-            if (!_firstWarmupTriggered) _firstWarmupTriggered = true;
+            // Warmup'им КАЖДОЕ предзагружаемое видео, не только первое. Изначально SDK
+            // прогревал MediaCodec только на первом preload (через _firstWarmupTriggered),
+            // но на практике на слабых Android-устройствах следующие preload'ы стартуют
+            // с холодным декодером — отсюда 5-7 секунд лага при показе. Лишний muted-loop
+            // в фоне на одном дополнительном MediaCodec — приемлемая цена, чтобы каждый
+            // последующий swap был мгновенным.
+            player.WarmupOnReady = true;
+            _firstWarmupTriggered = true;
             player.Preload(url);
             Debug.Log($"[CrossPromoModule] Preloading next video on dedicated player: {next.Title} (warmup={player.WarmupOnReady})");
 

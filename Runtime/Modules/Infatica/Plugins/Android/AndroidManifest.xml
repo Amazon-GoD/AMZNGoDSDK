@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifest fragment for the Infatica *WithJobs* variant only.
+
+  Ships with the WithJobs addon (Plugins_WithJobs~). When WithJobs is inactive
+  the folder is hidden by the ~ suffix, so these entries never reach a
+  WithoutJobs build. When active the folder becomes Plugins/Android and Unity's
+  Gradle manifest merger merges these nodes into the app manifest.
+
+  Contains exactly what WithJobs needs on top of the base SDK:
+    - InfaticaBootReceiver + RECEIVE_BOOT_COMPLETED (survival rescheduling)
+    - foreground-service permissions for the WorkManager watchdog
+    - the agent service override so it survives task removal
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <!-- WithJobs: the WorkManager watchdog promotes itself to a foreground
+       service (type dataSync) to be allowed to (re)start the agent from the
+       background on Android 12+. Android 14 enforces the typed permission. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+  <application>
+    <!-- Infatica: override service from AAR to survive app kill -->
+    <service
+        android:name="com.infatica.agent.service.Service"
+        android:stopWithTask="false"
+        tools:node="merge" />
+
+    <!-- Infatica: boot & power receiver for survival scheduling -->
+    <receiver
+        android:name="com.infatica.agent.InfaticaBootReceiver"
+        android:enabled="true"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

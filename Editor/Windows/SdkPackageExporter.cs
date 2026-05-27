@@ -21,6 +21,16 @@ namespace AMZNGoDSDK.Editor
         private const string ConfigPath = "Assets/Resources/amzn_god_sdk.json";
         private const string ConfigMetaPath = "Assets/Resources/amzn_god_sdk.json.meta";
 
+        /// <summary>
+        /// SessionState guard. While an export is running we deliberately
+        /// move/Refresh/ImportAsset the Infatica plugin folders — that fires
+        /// SdkImportPostprocessor.OnPostprocessAllAssets, which would mistake
+        /// it for a real package import and move the folders out from under
+        /// the exporter. The postprocessor checks this flag and bails.
+        /// SessionState survives domain reloads, clears on editor restart.
+        /// </summary>
+        internal const string ExportInProgressKey = "AMZN_SDK_EXPORT_IN_PROGRESS";
+
         private const string InfaticaFolder          = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica";
         private const string InfaticaPlugins          = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins";
         private const string InfaticaWithJobsStorage  = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs~";
@@ -50,6 +60,7 @@ namespace AMZNGoDSDK.Editor
             string backupConfigPath = null;
             bool infaticaDidSwapToWithoutJobs = false;
 
+            SessionState.SetBool(ExportInProgressKey, true);
             EditorApplication.LockReloadAssemblies();
 
             try
@@ -175,6 +186,7 @@ namespace AMZNGoDSDK.Editor
 
                 AssetDatabase.Refresh();
                 EditorApplication.UnlockReloadAssemblies();
+                SessionState.SetBool(ExportInProgressKey, false);
             }
         }
 
@@ -189,6 +201,7 @@ namespace AMZNGoDSDK.Editor
             bool withJobsMadeVisible = false;  // Plugins_WithJobs~ → Plugins_WithJobs/
             bool withJobsFromActive  = false;  // Plugins/ (WithJobs active) → Plugins_WithJobs/ (temp)
 
+            SessionState.SetBool(ExportInProgressKey, true);
             EditorApplication.LockReloadAssemblies();
 
             try
@@ -229,7 +242,12 @@ namespace AMZNGoDSDK.Editor
                     return;
                 }
 
-                // 3. Регистрируем новую папку
+                // 3. Регистрируем новую папку.
+                // Refresh() нужен первым: папка перемещена из Plugins_WithJobs~,
+                // Unity её игнорировал и .meta для содержимого нет. Refresh создаёт
+                // .meta для новых файлов/папок, после чего ImportAsset их видит —
+                // иначе ExportPackage видит "только папки" и падает.
+                AssetDatabase.Refresh();
                 AssetDatabase.ImportAsset(InfaticaWithJobsExport, ImportAssetOptions.ImportRecursive);
 
                 // 4. Выбираем путь
@@ -280,6 +298,7 @@ namespace AMZNGoDSDK.Editor
 
                 AssetDatabase.Refresh();
                 EditorApplication.UnlockReloadAssemblies();
+                SessionState.SetBool(ExportInProgressKey, false);
             }
         }
 

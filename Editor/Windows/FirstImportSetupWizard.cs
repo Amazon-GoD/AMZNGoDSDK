@@ -221,6 +221,7 @@ namespace AMZNGoDSDK.Editor
 
         private const string InfaticaPlugins            = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins";
         private const string InfaticaWithJobsFolder     = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs";
+        private const string InfaticaWithJobsStorage    = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs~";
         private const string InfaticaWithoutJobsStorage = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithoutJobs~";
 
         static void OnPostprocessAllAssets(
@@ -229,6 +230,14 @@ namespace AMZNGoDSDK.Editor
             string[] movedAssets,
             string[] movedFromAssetPaths)
         {
+            // Re-entrancy guard: SdkPackageExporter deliberately moves /
+            // Refresh / ImportAsset the Infatica plugin folders during export,
+            // which fires this callback. Without this bail-out the postprocessor
+            // would mistake the export for a real import and move folders out
+            // from under the exporter (corrupts/loses the WithJobs set).
+            if (SessionState.GetBool(SdkPackageExporter.ExportInProgressKey, false))
+                return;
+
             bool sdkImported         = false;
             bool withJobsAddonImported = false;
 
@@ -255,24 +264,69 @@ namespace AMZNGoDSDK.Editor
 
         private static void ActivateWithJobsPlugins()
         {
-            // 1. Убираем текущие WithoutJobs-плагины в хранилище
-            if (Directory.Exists(InfaticaPlugins) && !Directory.Exists(InfaticaWithoutJobsStorage))
+            // Свежеимпортированная staging-папка аддона.
+            if (!Directory.Exists(InfaticaWithJobsFolder))
+                return;
+
+            // WithJobs уже активен, если существует хранилище WithoutJobs (Plugins/ = WithJobs).
+            bool withJobsAlreadyActive = Directory.Exists(InfaticaWithoutJobsStorage);
+
+            if (withJobsAlreadyActive)
             {
+                // Plugins/ уже WithJobs. Импортнутая staging-папка избыточна и при
+                // компиляции дала бы duplicate-class (Java компилится дважды) — удаляем её.
+                DeleteFolderAndMeta(InfaticaWithJobsFolder);
+                UpdateSettingsToWithJobs();
+                Debug.Log("[AMZN GoD SDK] Infatica WithJobs уже активен; избыточная staging-папка удалена.");
+                return;
+            }
+
+            // 1. Plugins/ сейчас = WithoutJobs. Архивируем его в хранилище.
+            if (Directory.Exists(InfaticaPlugins))
+            {
+                if (Directory.Exists(InfaticaWithoutJobsStorage))
+                {
+                    // Инвариант нарушен: бэкап WithoutJobs уже есть, а Plugins/ всё ещё на месте.
+                    // Не перетираем бэкап, чтобы не потерять данные.
+                    Debug.LogError("[AMZN GoD SDK] Infatica: Plugins/ и Plugins_WithoutJobs~ существуют одновременно — активация WithJobs отменена во избежание потери данных.");
+                    return;
+                }
+
                 Directory.Move(InfaticaPlugins, InfaticaWithoutJobsStorage);
                 MoveMeta(InfaticaPlugins, InfaticaWithoutJobsStorage);
             }
 
             // 2. Активируем: Plugins_WithJobs/ → Plugins/
-            if (Directory.Exists(InfaticaWithJobsFolder) && !Directory.Exists(InfaticaPlugins))
-            {
-                Directory.Move(InfaticaWithJobsFolder, InfaticaPlugins);
-                MoveMeta(InfaticaWithJobsFolder, InfaticaPlugins);
-            }
+            Directory.Move(InfaticaWithJobsFolder, InfaticaPlugins);
+            MoveMeta(InfaticaWithJobsFolder, InfaticaPlugins);
 
-            // 3. Обновляем SdkVersion в конфиге
+            // 3. Удаляем устаревшее хранилище WithJobs, если осталось от «грязного»
+            //    проекта, чтобы держать инвариант «существует ровно одно хранилище».
+            //    Чистый SDK-пакет Plugins_WithJobs~ не содержит.
+            if (Directory.Exists(InfaticaWithJobsStorage))
+                DeleteFolderAndMeta(InfaticaWithJobsStorage);
+
+            // 4. Обновляем SdkVersion в конфиге
             UpdateSettingsToWithJobs();
 
             Debug.Log("[AMZN GoD SDK] Infatica WithJobs module activated: Plugins/ = WithJobs.");
+        }
+
+        private static void DeleteFolderAndMeta(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+
+                string meta = path + ".meta";
+                if (File.Exists(meta))
+                    File.Delete(meta);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[AMZN GoD SDK] Could not remove '{path}': {e.Message}");
+            }
         }
 
         private static void UpdateSettingsToWithJobs()

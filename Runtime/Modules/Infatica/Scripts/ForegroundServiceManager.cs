@@ -40,10 +40,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void StartForegroundService()
         {
+            Debug.Log($"[Infatica] C#: StartForegroundService — partnerId={_partnerId}, appName={_appName}, useJobs={_useJobs}");
 #if UNITY_ANDROID && !UNITY_EDITOR
             using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
             {
                 javaClass.CallStatic("startForegroundService", unityActivity, _partnerId, _appName);
+                Debug.Log("[Infatica] C#: startForegroundService Java call returned");
             }
 #endif
         }
@@ -63,10 +65,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void StopService()
         {
+            Debug.Log($"[Infatica] C#: StopService — useJobs={_useJobs}");
 #if UNITY_ANDROID && !UNITY_EDITOR
             using (AndroidJavaClass javaClass = new AndroidJavaClass("com.infatica.agent.ForegroundServiceBridge"))
             {
                 javaClass.CallStatic("stopService", unityActivity);
+                Debug.Log("[Infatica] C#: stopService Java call returned");
             }
 #endif
         }

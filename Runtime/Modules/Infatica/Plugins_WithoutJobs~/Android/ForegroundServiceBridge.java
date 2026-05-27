@@ -56,4 +56,3 @@ public class ForegroundServiceBridge {
         Service.Companion.stop(context);
     }
 }
-

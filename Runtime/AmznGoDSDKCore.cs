@@ -231,12 +231,24 @@ namespace AMZNGoDSDK.Runtime
 
             _crossPromoModule.ShowRewarded(onClose, onCTAClick, onRewarded);
         }
+
+        /// <summary>
+        /// Safety hook: ensures the next-video preload is alive and warmed up. No-op if a
+        /// preload is already healthy. Intended to be called on scene transitions to
+        /// recover from rare cases where the preload was lost mid-flight.
+        /// </summary>
+        public void RefreshPreloadIfStale()
+        {
+            if (_crossPromoModule == null || !_crossPromoModule.Enabled) return;
+            _crossPromoModule.RefreshPreloadIfStale();
+        }
 #else
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
+        public void RefreshPreloadIfStale() { }
 #endif
 
         #endregion

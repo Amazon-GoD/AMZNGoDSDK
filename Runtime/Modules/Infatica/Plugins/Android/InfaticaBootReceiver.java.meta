@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 5a3030b6adbe44c4f8e0f3f4ae4e9241
+guid: 4f1ff6c931775d84f8432974b835dd19
 PluginImporter:
   externalObjects: {}
   serializedVersion: 2
@@ -17,7 +17,7 @@ PluginImporter:
       enabled: 1
       settings: {}
   - first:
-      Any: 
+      Any:
     second:
       enabled: 0
       settings: {}
@@ -27,6 +27,6 @@ PluginImporter:
       enabled: 0
       settings:
         DefaultValueInitialized: true
-  userData: 
-  assetBundleName: 
-  assetBundleVariant: 
+  userData:
+  assetBundleName:
+  assetBundleVariant:
