@@ -215,6 +215,17 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled) return;
             if (_crossPromoConfig == null) return;   // Init ещё не завершён
 
+            // Не дёргаем preload, пока оверлей активен на экране. Иначе откроем
+            // второй параллельный MediaCodec поверх живого — на MTK MT8169
+            // (Amazon Fire) это deadlock'ит main-поток Unity. Оверлей живёт на
+            // DontDestroyOnLoad, так что смена сцены может прилететь во время
+            // показа промо.
+            if (_videoOverlay != null && _videoOverlay.IsVisible)
+            {
+                Debug.Log("[CrossPromoModule] RefreshPreloadIfStale: overlay visible, skipping preload to avoid parallel MediaCodec.");
+                return;
+            }
+
             if (_preloadPlayer == null || (!_preloadPlayer.IsPreloaded && !_preloadPlayer.IsLoading))
             {
                 Debug.Log("[CrossPromoModule] RefreshPreloadIfStale: preload missing/stale, restarting.");
@@ -476,9 +487,10 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator DeferredPreloadNextVideo()
         {
-            // Wait until the current video has finished one way or another (completed,
-            // stopped by close, errored) or the overlay was hidden. Preloading while the
-            // current MediaCodec is still active competes for hardware decoders on Android.
+            // Wait until the current video has finished and its MediaCodec has been
+            // fully released. Preloading while the current MediaCodec is still alive
+            // competes for hardware decoders on Android (MTK MT8169 / Amazon Fire
+            // deadlocks the Unity main thread — see Log MGH 2805 freeze).
             float waitStart = Time.realtimeSinceStartup;
             const float maxWait = 120f;
 
@@ -488,20 +500,22 @@ namespace AMZNGoDSDK.Runtime
                     break;
 
                 var p = _videoOverlay.VideoPlayer;
-                if (p == null)
-                    break;
-
-                var s = p.State;
-                if (s == CrossPromoVideoPlayer.PlaybackState.Completed
-                    || s == CrossPromoVideoPlayer.PlaybackState.Idle
-                    || s == CrossPromoVideoPlayer.PlaybackState.Error)
+                // ВАЖНО: Completed НЕ выпускает — на этом состоянии Stop() ещё не
+                // успел сработать (либо вообще не позван), MediaCodec жив.
+                // Idle/Error = декодер уже точно отпущен Stop()'ом или ошибкой.
+                if (p == null
+                    || p.State == CrossPromoVideoPlayer.PlaybackState.Idle
+                    || p.State == CrossPromoVideoPlayer.PlaybackState.Error)
                     break;
 
                 yield return null;
             }
 
-            // Short grace so the old decoder fully releases before we spin up a new one.
-            yield return new WaitForSecondsRealtime(0.15f);
+            // Грейс с 0.15с до 1.5с: даём native MediaCodec.release() добежать.
+            // MTK OMX teardown (~5 потоков: ColorConvert/Decode/Poll/MDP) тянется
+            // 300–800мс, plus IPC до mediaserver. С 0.15с ловили race: новый
+            // Prepare стартовал, пока старый decoder ещё держал handle.
+            yield return new WaitForSecondsRealtime(1.5f);
 
             Debug.Log($"[CrossPromoModule][T={Time.realtimeSinceStartup:F2}] Deferred preload trigger (waited {Time.realtimeSinceStartup - waitStart:F2}s)");
             PreloadNextVideo();

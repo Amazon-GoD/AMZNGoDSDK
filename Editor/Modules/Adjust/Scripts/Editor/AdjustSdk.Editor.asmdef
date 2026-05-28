@@ -6,5 +6,8 @@
     "includePlatforms": [
         "Editor"
     ],
-    "excludePlatforms": []
+    "excludePlatforms": [],
+    "defineConstraints": [
+        "AMZN_ADJUST_ENABLED"
+    ]
 }

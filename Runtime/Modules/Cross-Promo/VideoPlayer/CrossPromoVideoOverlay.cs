@@ -254,17 +254,29 @@ namespace AMZNGoDSDK.Runtime
         {
             if (!_isVisible) return;
 
+            // 1) Снимаем интерактивность немедленно — игрок видит реакцию на
+            //    крестик даже если native Stop() ниже залипнет на блокировке
+            //    MediaCodec.release (см. фриз на MTK MT8169, Log MGH 2805).
+            _isVisible = false;
+            SetVisible(false);
+
+            // 2) Отдаём управление игре ДО потенциально блокирующего Stop().
+            //    Раньше Stop() стоял до callback'а — при native-блокировке
+            //    крестик не давал ни визуальной реакции, ни возврата в игру.
+            OnClose?.Invoke();
+            var cb = _callbackOnClose;
+            _callbackOnClose = null;
+            _callbackOnCTA = null;
+            cb?.Invoke();
+
+            // 3) Чистим внутреннее состояние.
             StopAllOverlayCoroutines();
             UnsubscribeVideoEvents();
 
-            _videoPlayer?.Stop();
-            SetVisible(false);
-
-            _isVisible = false;
-            OnClose?.Invoke();
-            _callbackOnClose?.Invoke();
-            _callbackOnClose = null;
-            _callbackOnCTA = null;
+            // 4) Best-effort остановка плеера. Если native-стек залип — экран
+            //    уже свободен, игра уже получила управление.
+            try { _videoPlayer?.Stop(); }
+            catch (Exception e) { Debug.LogWarning($"[CrossPromoVideoOverlay] Stop() threw: {e.Message}"); }
         }
 
         #endregion
@@ -487,6 +499,15 @@ namespace AMZNGoDSDK.Runtime
 
             if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
             if (_closeButton != null) _closeButton.gameObject.SetActive(true);
+
+            // Сразу освобождаем хардварный декодер на Completed. Без этого
+            // следующий фоновый Preload откроет второй параллельный MediaCodec,
+            // а на MTK MT8169 (Amazon Fire) одновременно два H.264-сессии
+            // упираются в ограниченный пул декодеров — Prepare второго встаёт
+            // в native-call и через ResourceManager блокирует main-поток Unity
+            // (фриз ~3 минуты на циклах Show+CTA, см. лог Log MGH 2805).
+            // Последний кадр остаётся на RawImage — texture уже скопирована.
+            _videoPlayer?.Stop();
         }
 
         private void HandleVideoError(string error)
