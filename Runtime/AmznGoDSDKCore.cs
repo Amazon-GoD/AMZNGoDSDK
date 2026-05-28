@@ -33,7 +33,10 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_INTERNETCONNECTION_ENABLED
         [SerializeField] private InternetConnectionModule _internetConnectionModule;
 #endif
-        
+#if AMZN_ANALYTICS_ENABLED
+        [SerializeField] private AnalyticsModule _analyticsModule;
+#endif
+
         public bool Enabled { get; private set; }
         public bool IsInitialized { get; private set; }
 
@@ -52,11 +55,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            // Hotfix: first_open идёт независимо от CrossPromoModule. Раньше paid_first_open
-            // / free_first_open сидели внутри CrossPromoTrackingService и не уходили, если
-            // галочка Cross-Promo снята в SDK Settings (вместе со снятым define).
-            EnsureFirstOpenReporterIfNeeded(sdkSettingsData);
-
+            var analyticsSettings = sdkSettingsData.Analytics;
             var internetSettings = sdkSettingsData.InternetConnection;
             var firebaseSettings = sdkSettingsData.Firebase;
             var infaticaSettings = sdkSettingsData.Infatica;
@@ -71,11 +70,23 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_FIREBASE_ENABLED
             EnsureFirebaseModule();
 #endif
+#if AMZN_ANALYTICS_ENABLED
+            EnsureAnalyticsModule();
+#endif
 
             #region Constructs
 
 #if AMZN_INTERNETCONNECTION_ENABLED
             _internetConnectionModule.Construct(internetSettings.Enabled, internetSettings);
+#endif
+
+#if AMZN_ANALYTICS_ENABLED
+            _analyticsModule.Construct(
+                analyticsSettings.Enabled,
+                analyticsSettings.BaseUrl,
+                analyticsSettings.ApiKey,
+                analyticsSettings.AppType,
+                crossPromoSettings.DefaultPromotedAppId);
 #endif
 
 #if AMZN_FIREBASE_ENABLED
@@ -130,6 +141,9 @@ namespace AMZNGoDSDK.Runtime
             #endregion
             
             var modules = new List<ModuleBase>();
+#if AMZN_ANALYTICS_ENABLED
+            modules.Add(_analyticsModule);
+#endif
 #if AMZN_FIREBASE_ENABLED
             modules.Add(_firebaseModule);
 #endif
@@ -281,13 +295,25 @@ namespace AMZNGoDSDK.Runtime
         {
             if(!_adjustModule.Enabled)
                 return;
-            
+
             _adjustModule.ReportEvent(token, args);
         }
 #else
         public void ReportEventAdjust(string token, Dictionary<string, string> args) { }
 #endif
-        
+
+        #endregion
+
+        #region Analytics
+
+#if AMZN_ANALYTICS_ENABLED
+        public void TrackAnalyticsImpression(string paidAppId) => _analyticsModule?.TrackImpression(paidAppId);
+        public void TrackAnalyticsClick(string paidAppId) => _analyticsModule?.TrackClick(paidAppId);
+#else
+        public void TrackAnalyticsImpression(string paidAppId) { }
+        public void TrackAnalyticsClick(string paidAppId) { }
+#endif
+
         #endregion
 
         #region In-App Purchase
@@ -356,25 +382,17 @@ namespace AMZNGoDSDK.Runtime
 
         #region Private Members
 
-        private void EnsureFirstOpenReporterIfNeeded(SdkSettingsData s)
+#if AMZN_ANALYTICS_ENABLED
+        private void EnsureAnalyticsModule()
         {
-            if (!s.Adjust.Enabled) return;
-            if (string.IsNullOrWhiteSpace(s.FirstOpenTracking.BaseUrl)) return;
-            if (string.IsNullOrWhiteSpace(s.FirstOpenTracking.ApiKey)) return;
+            if (_analyticsModule != null)
+                return;
 
-#if AMZN_CROSSPROMO_ENABLED
-            // CrossPromo включён → CrossPromoTrackingService сам пошлёт first_open.
-            // Не дублируем, чтобы не было гонки за PlayerPrefs-ключи.
-            if (s.CrossPromo.Enabled) return;
-#endif
-
-            var reporter = gameObject.AddComponent<FirstOpenReporter>();
-            reporter.Construct(
-                s.FirstOpenTracking.BaseUrl,
-                s.FirstOpenTracking.ApiKey,
-                s.FirstOpenTracking.AppType);
-            reporter.Initialize();
+            _analyticsModule = GetComponent<AnalyticsModule>();
+            if (_analyticsModule == null)
+                _analyticsModule = gameObject.AddComponent<AnalyticsModule>();
         }
+#endif
 
         private IEnumerator InitializeWhenReady(params ModuleBase[] modules)
         {
@@ -460,15 +478,17 @@ namespace AMZNGoDSDK.Runtime
 
         private static int GetModulePriority(ModuleBase module)
         {
-            // Lower = earlier. Firebase first so Crashlytics catches other modules' init crashes.
+            // Lower = earlier. Analytics first so first_open уходит до того, как
+            // другие модули потратят время. Firebase следом — Crashlytics ловит init crashes остальных.
             switch (module.GetType().Name)
             {
-                case "FirebaseModule": return 0;
-                case "AppMetricaModule": return 1;
-                case "AdjustModule": return 2;
-                case "InfaticaModule": return 3;
-                case "CrossPromoModule": return 4;
-                case "InAppPurchaseModule": return 5;
+                case "AnalyticsModule": return 0;
+                case "FirebaseModule": return 1;
+                case "AppMetricaModule": return 2;
+                case "AdjustModule": return 3;
+                case "InfaticaModule": return 4;
+                case "CrossPromoModule": return 5;
+                case "InAppPurchaseModule": return 6;
                 default: return 100;
             }
         }

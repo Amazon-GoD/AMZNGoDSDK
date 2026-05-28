@@ -23,6 +23,7 @@ namespace AMZNGoDSDK.Editor
         public const string FIREBASE_DEFINE = "AMZN_FIREBASE_ENABLED";
         public const string INTERNETCONNECTION_DEFINE = "AMZN_INTERNETCONNECTION_ENABLED";
         public const string DEBUGCONSOLE_DEFINE = "AMZN_DEBUGCONSOLE_ENABLED";
+        public const string ANALYTICS_DEFINE = "AMZN_ANALYTICS_ENABLED";
         public const string SDK_ENABLED_DEFINE = "AMZN_SDK_ENABLED";
 
         private const string ConfigFileName = "amzn_god_sdk.json";
@@ -41,6 +42,7 @@ namespace AMZNGoDSDK.Editor
             FIREBASE_DEFINE,
             INTERNETCONNECTION_DEFINE,
             DEBUGCONSOLE_DEFINE,
+            ANALYTICS_DEFINE,
             SDK_ENABLED_DEFINE
         };
 
@@ -156,6 +158,7 @@ namespace AMZNGoDSDK.Editor
                 TryAddModuleDefine(definesList, FIREBASE_DEFINE, settings.Firebase.Enabled);
                 TryAddModuleDefine(definesList, INTERNETCONNECTION_DEFINE, settings.InternetConnection.Enabled);
                 TryAddModuleDefine(definesList, DEBUGCONSOLE_DEFINE, settings.DebugConsole.Enabled);
+                TryAddModuleDefine(definesList, ANALYTICS_DEFINE, settings.Analytics.Enabled);
             }
 
             var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());

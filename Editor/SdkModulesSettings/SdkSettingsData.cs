@@ -6,7 +6,7 @@ namespace AMZNGoDSDK.Editor
     public class SdkSettingsData
     {
         public bool Enabled = false;
-        
+
         public AdjustSettingData Adjust = new();
         public AppMetricaSettingData AppMetrica = new();
         public CrossPromoSettingData CrossPromo = new();
@@ -15,6 +15,6 @@ namespace AMZNGoDSDK.Editor
         public FirebaseSettingData Firebase = new();
         public InternetConnectionSettingData InternetConnection = new();
         public DebugConsoleSettingData DebugConsole = new();
-        public FirstOpenTrackingSettingData FirstOpenTracking = new();
+        public AnalyticsSettingData Analytics = new();
     }
 }

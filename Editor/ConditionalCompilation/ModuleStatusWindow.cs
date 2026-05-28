@@ -40,7 +40,8 @@ namespace AMZNGoDSDK.Editor
                 { "In-App Purchase", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.IAP_DEFINE) },
                 { "Firebase", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.FIREBASE_DEFINE) },
                 { "Internet Connection", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.INTERNETCONNECTION_DEFINE) },
-                { "Debug Console", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.DEBUGCONSOLE_DEFINE) }
+                { "Debug Console", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.DEBUGCONSOLE_DEFINE) },
+                { "Analytics", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.ANALYTICS_DEFINE) }
             };
         }
 

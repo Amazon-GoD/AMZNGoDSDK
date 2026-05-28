@@ -20,6 +20,7 @@
 | In-App Purchase | `AMZN_IAP_ENABLED` |
 | Firebase | `AMZN_FIREBASE_ENABLED` |
 | Internet Connection | `AMZN_INTERNETCONNECTION_ENABLED` |
+| Analytics | `AMZN_ANALYTICS_ENABLED` |
 
 ### 2. Условная компиляция кода
 
@@ -195,6 +196,7 @@ ModuleDefineManager.INFATICA_DEFINE              // "AMZN_INFATICA_ENABLED"
 ModuleDefineManager.IAP_DEFINE                   // "AMZN_IAP_ENABLED"
 ModuleDefineManager.FIREBASE_DEFINE              // "AMZN_FIREBASE_ENABLED"
 ModuleDefineManager.INTERNETCONNECTION_DEFINE    // "AMZN_INTERNETCONNECTION_ENABLED"
+ModuleDefineManager.ANALYTICS_DEFINE             // "AMZN_ANALYTICS_ENABLED"
 ```
 
 ## Лучшие практики

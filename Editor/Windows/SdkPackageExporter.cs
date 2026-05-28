@@ -47,6 +47,7 @@ namespace AMZNGoDSDK.Editor
             "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase",
             "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection",
             "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole",
+            "Assets/AMZNGoDSDK/Runtime/Modules/Analytics",
         };
 
         // ─────────────────────────────────────────────────────────────────────

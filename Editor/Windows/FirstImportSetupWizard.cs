@@ -188,6 +188,7 @@ namespace AMZNGoDSDK.Editor
             settings.Firebase.Enabled = GetToggle(ModuleDefineManager.FIREBASE_DEFINE);
             settings.InternetConnection.Enabled = GetToggle(ModuleDefineManager.INTERNETCONNECTION_DEFINE);
             settings.DebugConsole.Enabled = GetToggle(ModuleDefineManager.DEBUGCONSOLE_DEFINE);
+            settings.Analytics.Enabled = GetToggle(ModuleDefineManager.ANALYTICS_DEFINE);
 
             if (!SdkSettingsManager.SaveSettings(settings))
                 return;

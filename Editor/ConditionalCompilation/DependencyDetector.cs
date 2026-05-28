@@ -116,6 +116,16 @@ namespace AMZNGoDSDK.Editor
                     Description = "yasirkula In-Game Debug Console (bundled)"
                 }
             },
+            {
+                ModuleDefineManager.ANALYTICS_DEFINE,
+                new ModuleSpec
+                {
+                    Name = "Analytics",
+                    RequiredAssemblies = Array.Empty<string>(),
+                    RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/Analytics" },
+                    Description = "HTTP tracker /v1/events: first_open, impression, click. No external deps."
+                }
+            },
         };
 
         private static HashSet<string> _dllCache;

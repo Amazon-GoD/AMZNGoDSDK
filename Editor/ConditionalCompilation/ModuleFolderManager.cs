@@ -60,6 +60,12 @@ namespace AMZNGoDSDK.Editor
                 {
                     "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole"
                 }
+            },
+            {
+                "Analytics", new[]
+                {
+                    "Assets/AMZNGoDSDK/Runtime/Modules/Analytics"
+                }
             }
         };
 
@@ -119,6 +125,10 @@ namespace AMZNGoDSDK.Editor
 
             // InGameDebugConsole
             if (UpdateModuleFolderState("InGameDebugConsole", settings.DebugConsole.Enabled))
+                renamedCount++;
+
+            // Analytics
+            if (UpdateModuleFolderState("Analytics", settings.Analytics.Enabled))
                 renamedCount++;
 
             Debug.Log($"=== Updated {renamedCount} module folders ===");
@@ -316,6 +326,7 @@ namespace AMZNGoDSDK.Editor
             CheckModuleFolderStatus("InAppPurchase", settings.InAppPurchase.Enabled);
             CheckModuleFolderStatus("InternetConnection", settings.InternetConnection.Enabled);
             CheckModuleFolderStatus("InGameDebugConsole", settings.DebugConsole.Enabled);
+            CheckModuleFolderStatus("Analytics", settings.Analytics.Enabled);
 
             Debug.Log("============================================");
 
@@ -418,7 +429,10 @@ namespace AMZNGoDSDK.Editor
             
             Debug.Log("[Module Folders] Checking InGameDebugConsole...");
             if (UpdateModuleFolderState("InGameDebugConsole", settings.DebugConsole.Enabled)) updated++;
-            
+
+            Debug.Log("[Module Folders] Checking Analytics...");
+            if (UpdateModuleFolderState("Analytics", settings.Analytics.Enabled)) updated++;
+
             if (updated > 0)
             {
                 Debug.Log($"[Module Folders] ✅ Updated {updated} folder(s), refreshing AssetDatabase...");

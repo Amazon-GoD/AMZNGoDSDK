@@ -65,9 +65,9 @@ namespace AMZNGoDSDK.Editor
             DrawAppMetricaSettings();
             DrawFirebaseSettings();
             DrawAdjustSettings();
+            DrawAnalyticsSettings();
             DrawInAppPurchaseSettings();
             DrawDebugConsoleSettings();
-            DrawFirstOpenTrackingSettings();
 
             EditorGUILayout.BeginHorizontal();
             
@@ -178,24 +178,13 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.CrossPromo.Enabled = DrawModuleSection(
                 "Cross Promo",
-                "Видео кросс-промо с гибкой конфигурацией и трекингом.",
+                "Видео кросс-промо с гибкой конфигурацией. Трекинг impression/click делегируется в Analytics-модуль.",
                 _currentSettings.CrossPromo.Enabled,
                 () =>
                 {
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                         .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
 
-                    GUILayout.Space(10);
-                    EditorGUILayout.LabelField("Cross-Promo Tracking", EditorStyles.miniBoldLabel);
-                    _currentSettings.CrossPromo.TrackingBaseUrl = EditorGUILayout
-                        .TextField("Backend URL", _currentSettings.CrossPromo.TrackingBaseUrl);
-                    _currentSettings.CrossPromo.TrackingApiKey = EditorGUILayout
-                        .TextField("API Key", _currentSettings.CrossPromo.TrackingApiKey);
-                    EditorGUI.BeginDisabledGroup(true);
-                    EditorGUILayout.TextField("App ID (auto)", UnityEditor.PlayerSettings.applicationIdentifier);
-                    EditorGUI.EndDisabledGroup();
-                    _currentSettings.CrossPromo.AppType = (Runtime.CrossPromoAppType)EditorGUILayout
-                        .EnumPopup("App Type", _currentSettings.CrossPromo.AppType);
                     _currentSettings.CrossPromo.DefaultPromotedAppId = EditorGUILayout
                         .TextField(
                             new GUIContent("Default Promoted App ID",
@@ -401,27 +390,24 @@ namespace AMZNGoDSDK.Editor
                 null);
         }
 
-        private void DrawFirstOpenTrackingSettings()
+        private void DrawAnalyticsSettings()
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("First Open Tracking", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField(
-                "Отправляет paid_first_open / free_first_open на свой бэк. Активен, когда Cross-Promo выключен и включён Adjust. " +
-                "При включённом Cross-Promo событие шлёт сам Cross-Promo модуль — этот блок не задействуется.",
-                ModuleDescriptionStyle);
-
-            GUILayout.Space(6);
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            _currentSettings.FirstOpenTracking.BaseUrl = EditorGUILayout
-                .TextField("Backend URL", _currentSettings.FirstOpenTracking.BaseUrl);
-            _currentSettings.FirstOpenTracking.ApiKey = EditorGUILayout
-                .TextField("API Key", _currentSettings.FirstOpenTracking.ApiKey);
-            _currentSettings.FirstOpenTracking.AppType = (FirstOpenAppType)EditorGUILayout
-                .EnumPopup("App Type", _currentSettings.FirstOpenTracking.AppType);
-            EditorGUILayout.EndVertical();
-
-            EditorGUILayout.EndVertical();
-            GUILayout.Space(10);
+            _currentSettings.Analytics.Enabled = DrawModuleSection(
+                "Analytics",
+                "Кастомный HTTP-трекер /v1/events: paid/free_first_open, cp_impression, cp_click. Единый владелец device_id_hash и очереди ретраев.",
+                _currentSettings.Analytics.Enabled,
+                () =>
+                {
+                    _currentSettings.Analytics.BaseUrl = EditorGUILayout
+                        .TextField("Backend URL", _currentSettings.Analytics.BaseUrl);
+                    _currentSettings.Analytics.ApiKey = EditorGUILayout
+                        .TextField("API Key", _currentSettings.Analytics.ApiKey);
+                    EditorGUI.BeginDisabledGroup(true);
+                    EditorGUILayout.TextField("App ID (auto)", UnityEditor.PlayerSettings.applicationIdentifier);
+                    EditorGUI.EndDisabledGroup();
+                    _currentSettings.Analytics.AppType = (AnalyticsAppType)EditorGUILayout
+                        .EnumPopup("App Type", _currentSettings.Analytics.AppType);
+                });
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)

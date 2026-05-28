@@ -58,7 +58,7 @@ namespace AMZNGoDSDK.Editor
                 Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection),
                 DebugConsole = ConvertDebugConsoleSettingsToEditor(runtimeSettings.DebugConsole),
-                FirstOpenTracking = ConvertFirstOpenTrackingSettingsToEditor(runtimeSettings.FirstOpenTracking)
+                Analytics = ConvertAnalyticsSettingsToEditor(runtimeSettings.Analytics)
             };
 
             return editorSettings;
@@ -93,9 +93,6 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 ConfigUrl = runtimeSettings.ConfigUrl,
-                TrackingBaseUrl = runtimeSettings.TrackingBaseUrl,
-                TrackingApiKey = runtimeSettings.TrackingApiKey,
-                AppType = runtimeSettings.AppType,
                 DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId,
                 VideoBackend = runtimeSettings.VideoBackend
             };
@@ -281,7 +278,7 @@ namespace AMZNGoDSDK.Editor
                 Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection),
                 DebugConsole = ConvertDebugConsoleSettings(editorSettings.DebugConsole),
-                FirstOpenTracking = ConvertFirstOpenTrackingSettings(editorSettings.FirstOpenTracking)
+                Analytics = ConvertAnalyticsSettings(editorSettings.Analytics)
             };
 
             return runtimeSettings;
@@ -316,9 +313,6 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 ConfigUrl = editorSettings.ConfigUrl,
-                TrackingBaseUrl = editorSettings.TrackingBaseUrl,
-                TrackingApiKey = editorSettings.TrackingApiKey,
-                AppType = editorSettings.AppType,
                 DefaultPromotedAppId = editorSettings.DefaultPromotedAppId,
                 VideoBackend = editorSettings.VideoBackend
             };
@@ -434,32 +428,34 @@ namespace AMZNGoDSDK.Editor
             return new Runtime.DebugConsoleSettingData { Enabled = editorSettings.Enabled };
         }
 
-        private static FirstOpenTrackingSettingData ConvertFirstOpenTrackingSettingsToEditor(Runtime.FirstOpenTrackingSettingData runtimeSettings)
+        private static AnalyticsSettingData ConvertAnalyticsSettingsToEditor(Runtime.AnalyticsSettingData runtimeSettings)
         {
-            runtimeSettings ??= new Runtime.FirstOpenTrackingSettingData();
+            runtimeSettings ??= new Runtime.AnalyticsSettingData();
 
-            var appType = runtimeSettings.AppType == Runtime.FirstOpenAppType.Paid
-                ? FirstOpenAppType.Paid
-                : FirstOpenAppType.Free;
+            var appType = runtimeSettings.AppType == Runtime.AnalyticsAppType.Paid
+                ? AnalyticsAppType.Paid
+                : AnalyticsAppType.Free;
 
-            return new FirstOpenTrackingSettingData
+            return new AnalyticsSettingData
             {
+                Enabled = runtimeSettings.Enabled,
                 BaseUrl = runtimeSettings.BaseUrl,
                 ApiKey = runtimeSettings.ApiKey,
                 AppType = appType
             };
         }
 
-        private static Runtime.FirstOpenTrackingSettingData ConvertFirstOpenTrackingSettings(FirstOpenTrackingSettingData editorSettings)
+        private static Runtime.AnalyticsSettingData ConvertAnalyticsSettings(AnalyticsSettingData editorSettings)
         {
-            editorSettings ??= new FirstOpenTrackingSettingData();
+            editorSettings ??= new AnalyticsSettingData();
 
-            var appType = editorSettings.AppType == FirstOpenAppType.Paid
-                ? Runtime.FirstOpenAppType.Paid
-                : Runtime.FirstOpenAppType.Free;
+            var appType = editorSettings.AppType == AnalyticsAppType.Paid
+                ? Runtime.AnalyticsAppType.Paid
+                : Runtime.AnalyticsAppType.Free;
 
-            return new Runtime.FirstOpenTrackingSettingData
+            return new Runtime.AnalyticsSettingData
             {
+                Enabled = editorSettings.Enabled,
                 BaseUrl = editorSettings.BaseUrl,
                 ApiKey = editorSettings.ApiKey,
                 AppType = appType
