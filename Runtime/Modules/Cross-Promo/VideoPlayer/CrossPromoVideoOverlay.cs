@@ -209,15 +209,17 @@ namespace AMZNGoDSDK.Runtime
                 _progressSlider.SetValueWithoutNotify(0f);
             }
 
-            int closeDelay = Mathf.Max(0, config.CloseShowDelayInSeconds);
+            // Таймер крестика теперь привязан к времени видео, а не к
+            // CloseShowDelayInSeconds из конфига: крестик появляется только
+            // когда ролик доиграл до конца — юзер обязан досмотреть.
+            // CloseCountdownCoroutine читает CurrentTime/Duration напрямую,
+            // поэтому он автоматически встаёт на паузе, когда видео паузится
+            // (свернули приложение в Amazon-попап — VideoPlayer.Pause()
+            // приходит из OnApplicationPause, CurrentTime замирает).
             if (_closeCountdownText != null)
-            {
-                _closeCountdownText.gameObject.SetActive(closeDelay > 0);
-                _closeCountdownText.text = closeDelay.ToString();
-            }
+                _closeCountdownText.gameObject.SetActive(true);
 
-            if (closeDelay > 0)
-                _countdownCoroutine = StartCoroutine(CloseCountdownCoroutine(closeDelay));
+            _countdownCoroutine = StartCoroutine(CloseCountdownCoroutine());
 
             Debug.Log($"[CrossPromoVideoOverlay][T={Time.realtimeSinceStartup:F2}] Show() entry: playerState={_videoPlayer.State}, isPreloaded={_videoPlayer.IsPreloaded}, preloadedUrl='{_videoPlayer.PreloadedUrl}', requestedUrl='{videoUrl}'");
             bool usedPreload = _videoPlayer.PlayPreloaded(videoUrl);
@@ -380,41 +382,14 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator DelayedUICoroutine(PromoConfiguration config)
         {
+            // Крестик здесь больше НЕ активируется — он появляется только когда
+            // видео доиграло (см. CloseCountdownCoroutine + HandleVideoCompleted).
+            // CloseShowDelayInSeconds из конфига игнорится сознательно.
             float ctaDelay = Mathf.Max(0, config.OverlayShowDelayInSeconds);
-            float closeDelay = Mathf.Max(0, config.CloseShowDelayInSeconds);
+            if (ctaDelay > 0)
+                yield return new WaitForSecondsRealtime(ctaDelay);
 
-            float minDelay = Mathf.Min(ctaDelay, closeDelay);
-            float maxDelay = Mathf.Max(ctaDelay, closeDelay);
-            bool ctaFirst = ctaDelay <= closeDelay;
-
-            if (minDelay > 0)
-                yield return new WaitForSecondsRealtime(minDelay);
-
-            if (ctaFirst)
-            {
-                if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
-            }
-            else
-            {
-                if (_closeButton != null) _closeButton.gameObject.SetActive(true);
-                if (_closeCountdownText != null)
-                    _closeCountdownText.gameObject.SetActive(false);
-            }
-
-            float remaining = maxDelay - minDelay;
-            if (remaining > 0)
-                yield return new WaitForSecondsRealtime(remaining);
-
-            if (ctaFirst)
-            {
-                if (_closeButton != null) _closeButton.gameObject.SetActive(true);
-                if (_closeCountdownText != null)
-                    _closeCountdownText.gameObject.SetActive(false);
-            }
-            else
-            {
-                if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
-            }
+            if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
         }
 
         private IEnumerator UpdateProgressCoroutine()
@@ -426,21 +401,35 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private IEnumerator CloseCountdownCoroutine(int totalSeconds)
+        private IEnumerator CloseCountdownCoroutine()
         {
-            int remaining = totalSeconds;
-
-            while (remaining > 0)
+            // Тик по фактическому времени видео, а не по wall-clock. Решает два
+            // кейса разом:
+            //   1) Видео на паузе (приложение свёрнуто в Amazon-попап) →
+            //      CurrentTime замирает → таймер автоматически встаёт.
+            //   2) Длина таймера = длине ролика: когда CurrentTime ≥ Duration,
+            //      крестик активируется. Юзер обязан досмотреть.
+            while (_videoPlayer != null && _isVisible)
             {
-                if (_closeCountdownText != null)
-                    _closeCountdownText.text = remaining.ToString();
+                double duration = _videoPlayer.Duration;
+                if (duration > 0)
+                {
+                    int remaining = Mathf.Max(0, Mathf.CeilToInt((float)(duration - _videoPlayer.CurrentTime)));
+                    if (_closeCountdownText != null)
+                        _closeCountdownText.text = remaining.ToString();
 
-                yield return new WaitForSecondsRealtime(1f);
-                remaining--;
+                    if (remaining <= 0)
+                        break;
+                }
+
+                yield return null;
             }
 
             if (_closeCountdownText != null)
                 _closeCountdownText.gameObject.SetActive(false);
+
+            if (_closeButton != null)
+                _closeButton.gameObject.SetActive(true);
 
             _countdownCoroutine = null;
         }
@@ -499,6 +488,13 @@ namespace AMZNGoDSDK.Runtime
 
             if (_ctaButton != null) _ctaButton.gameObject.SetActive(true);
             if (_closeButton != null) _closeButton.gameObject.SetActive(true);
+
+            // Прячем countdown-текст: видео доиграло, крестик уже активен.
+            // CloseCountdownCoroutine обычно делает это сама на остатке=0, но
+            // если корутина ещё не успела дотикать (округление, частота фрейма),
+            // подстраховываемся здесь.
+            if (_closeCountdownText != null)
+                _closeCountdownText.gameObject.SetActive(false);
 
             // Сразу освобождаем хардварный декодер на Completed. Без этого
             // следующий фоновый Preload откроет второй параллельный MediaCodec,
