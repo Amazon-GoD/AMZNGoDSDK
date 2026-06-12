@@ -60,7 +60,6 @@ namespace AMZNGoDSDK.Editor
             GUILayout.Label("SDK Module Settings:", EditorStyles.boldLabel);
 
             DrawInternetConnectionSettings();
-            DrawInfaticaSettings();
             DrawCrossPromoSettings();
             DrawAppMetricaSettings();
             DrawFirebaseSettings();
@@ -153,27 +152,6 @@ namespace AMZNGoDSDK.Editor
                 });
         }
 
-        private void DrawInfaticaSettings()
-        {
-            _currentSettings.Infatica.Enabled = DrawModuleSection(
-                "Infatica",
-                "Контроль согласия пользователя, фоновые сервисы и работа с батарейной оптимизацией.",
-                _currentSettings.Infatica.Enabled,
-                () =>
-                {
-                    _currentSettings.Infatica.PartnerId = EditorGUILayout
-                        .TextField("Partner ID", _currentSettings.Infatica.PartnerId);
-                    _currentSettings.Infatica.NotificationTitle = EditorGUILayout
-                        .TextField(
-                            new GUIContent("Notification Title", "Заголовок уведомления сервиса. Если пусто — \"Welcome to <Product Name>\"."),
-                            _currentSettings.Infatica.NotificationTitle);
-                    _currentSettings.Infatica.Mode = (InfaticaSettingData.InfaticaMode)EditorGUILayout
-                        .EnumPopup("Mode", _currentSettings.Infatica.Mode);
-                    _currentSettings.Infatica.BatteryOptimizationIgnoreAsking = EditorGUILayout
-                        .Toggle("Battery Optimization Ignore Asking", _currentSettings.Infatica.BatteryOptimizationIgnoreAsking);
-                });
-        }
-        
         private void DrawCrossPromoSettings()
         {
             _currentSettings.CrossPromo.Enabled = DrawModuleSection(

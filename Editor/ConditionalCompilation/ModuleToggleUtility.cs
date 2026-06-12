@@ -26,7 +26,6 @@ namespace AMZNGoDSDK.Editor
             settings.Adjust.Enabled = true;
             settings.AppMetrica.Enabled = true;
             settings.CrossPromo.Enabled = true;
-            settings.Infatica.Enabled = true;
             settings.InAppPurchase.Enabled = true;
             settings.Firebase.Enabled = true;
             settings.InternetConnection.Enabled = true;
@@ -55,7 +54,6 @@ namespace AMZNGoDSDK.Editor
             settings.Adjust.Enabled = false;
             settings.AppMetrica.Enabled = false;
             settings.CrossPromo.Enabled = false;
-            settings.Infatica.Enabled = false;
             settings.InAppPurchase.Enabled = false;
             settings.Firebase.Enabled = false;
             settings.InternetConnection.Enabled = false;
@@ -87,7 +85,6 @@ namespace AMZNGoDSDK.Editor
             settings.Firebase.Enabled = true;
             
             settings.CrossPromo.Enabled = false;
-            settings.Infatica.Enabled = false;
             settings.InAppPurchase.Enabled = false;
             settings.InternetConnection.Enabled = false;
             settings.DebugConsole.Enabled = false;
@@ -116,7 +113,6 @@ namespace AMZNGoDSDK.Editor
             settings.Adjust.Enabled = false;
             settings.AppMetrica.Enabled = false;
             settings.CrossPromo.Enabled = false;
-            settings.Infatica.Enabled = false;
             settings.InAppPurchase.Enabled = false;
             settings.Firebase.Enabled = false;
             settings.InternetConnection.Enabled = false;
@@ -192,7 +188,6 @@ namespace AMZNGoDSDK.Editor
             Debug.Log($"Adjust: {settings.Adjust.Enabled}");
             Debug.Log($"AppMetrica: {settings.AppMetrica.Enabled}");
             Debug.Log($"CrossPromo: {settings.CrossPromo.Enabled}");
-            Debug.Log($"Infatica: {settings.Infatica.Enabled}");
             Debug.Log($"In-App Purchase: {settings.InAppPurchase.Enabled}");
             Debug.Log($"Firebase: {settings.Firebase.Enabled}");
             Debug.Log($"Internet Connection: {settings.InternetConnection.Enabled}");
@@ -226,7 +221,6 @@ namespace AMZNGoDSDK.Editor
             CheckModule("Adjust", settings.Adjust.Enabled, ModuleDefineManager.ADJUST_DEFINE, activeDefines, issues);
             CheckModule("AppMetrica", settings.AppMetrica.Enabled, ModuleDefineManager.APPMETRICA_DEFINE, activeDefines, issues);
             CheckModule("CrossPromo", settings.CrossPromo.Enabled, ModuleDefineManager.CROSSPROMO_DEFINE, activeDefines, issues);
-            CheckModule("Infatica", settings.Infatica.Enabled, ModuleDefineManager.INFATICA_DEFINE, activeDefines, issues);
             CheckModule("IAP", settings.InAppPurchase.Enabled, ModuleDefineManager.IAP_DEFINE, activeDefines, issues);
             CheckModule("Firebase", settings.Firebase.Enabled, ModuleDefineManager.FIREBASE_DEFINE, activeDefines, issues);
             CheckModule("Internet Connection", settings.InternetConnection.Enabled, ModuleDefineManager.INTERNETCONNECTION_DEFINE, activeDefines, issues);

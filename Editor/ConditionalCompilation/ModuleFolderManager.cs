@@ -38,12 +38,6 @@ namespace AMZNGoDSDK.Editor
                 }
             },
             {
-                "Infatica", new[]
-                {
-                    "Assets/AMZNGoDSDK/Runtime/Modules/Infatica"
-                }
-            },
-            {
                 "InAppPurchase", new[]
                 {
                     "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase"
@@ -106,13 +100,6 @@ namespace AMZNGoDSDK.Editor
 
             // Firebase
             if (UpdateModuleFolderState("Firebase", settings.Firebase.Enabled))
-                renamedCount++;
-
-            // Infatica
-            if (UpdateModuleFolderState("Infatica", settings.Infatica.Enabled))
-                renamedCount++;
-
-            if (settings.Infatica.Enabled && SwapInfaticaPlugins(settings.Infatica.SdkVersion))
                 renamedCount++;
 
             // InAppPurchase
@@ -313,9 +300,6 @@ namespace AMZNGoDSDK.Editor
             CheckModuleFolderStatus("Adjust", settings.Adjust.Enabled);
             CheckModuleFolderStatus("AppMetrica", settings.AppMetrica.Enabled);
             CheckModuleFolderStatus("Firebase", settings.Firebase.Enabled);
-            CheckModuleFolderStatus("Infatica", settings.Infatica.Enabled);
-            if (settings.Infatica.Enabled)
-                CheckInfaticaPluginsStatus(settings.Infatica.SdkVersion);
             CheckModuleFolderStatus("InAppPurchase", settings.InAppPurchase.Enabled);
             CheckModuleFolderStatus("InternetConnection", settings.InternetConnection.Enabled);
             CheckModuleFolderStatus("InGameDebugConsole", settings.DebugConsole.Enabled);
@@ -373,8 +357,7 @@ namespace AMZNGoDSDK.Editor
         public static void OnSettingsSaved(SdkSettingsData settings)
         {
             Debug.Log("[Module Folders] ===== OnSettingsSaved CALLED =====");
-            Debug.Log($"[Module Folders] Infatica.Enabled = {settings.Infatica.Enabled}, SdkVersion = {settings.Infatica.SdkVersion}");
-            
+
             // По умолчанию авто-обновление ВКЛЮЧЕНО (true)
             bool autoUpdate = EditorPrefs.GetBool("AMZN_AutoUpdateModuleFolders", true);
             Debug.Log($"[Module Folders] Auto-update setting: {autoUpdate}");
@@ -407,13 +390,7 @@ namespace AMZNGoDSDK.Editor
             
             Debug.Log("[Module Folders] Checking Firebase...");
             if (UpdateModuleFolderState("Firebase", settings.Firebase.Enabled)) updated++;
-            
-            Debug.Log("[Module Folders] Checking Infatica...");
-            if (UpdateModuleFolderState("Infatica", settings.Infatica.Enabled)) updated++;
 
-            if (settings.Infatica.Enabled && SwapInfaticaPlugins(settings.Infatica.SdkVersion))
-                updated++;
-            
             Debug.Log("[Module Folders] Checking InAppPurchase...");
             if (UpdateModuleFolderState("InAppPurchase", settings.InAppPurchase.Enabled)) updated++;
             
@@ -437,106 +414,6 @@ namespace AMZNGoDSDK.Editor
                 Debug.Log($"[Module Folders] ℹ All folders already in correct state");
             }
         }
-
-        #region Infatica Plugin Swap
-
-        private const string InfaticaPluginsPath = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins";
-        private const string InfaticaStorageWithJobs = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs~";
-        private const string InfaticaStorageWithoutJobs = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithoutJobs~";
-
-        /// <summary>
-        /// Переключает набор нативных плагинов Infatica.
-        /// Plugins/ всегда содержит активный набор (Unity видит только эту папку).
-        /// Неактивный набор хранится в Plugins_WithJobs~ или Plugins_WithoutJobs~.
-        /// </summary>
-        private static bool SwapInfaticaPlugins(InfaticaSettingData.InfaticaSdkVersion targetVersion)
-        {
-            bool storageWithJobsExists = Directory.Exists(InfaticaStorageWithJobs);
-            bool storageWithoutJobsExists = Directory.Exists(InfaticaStorageWithoutJobs);
-
-            if (storageWithJobsExists && storageWithoutJobsExists)
-            {
-                Debug.LogError("[Module Folders] ❌ Infatica: both plugin storages exist — invalid state");
-                return false;
-            }
-
-            bool pluginsExist = Directory.Exists(InfaticaPluginsPath);
-            if (!pluginsExist)
-            {
-                Debug.LogWarning("[Module Folders] ⚠ Infatica: Plugins folder not found");
-                return false;
-            }
-
-            if (targetVersion == InfaticaSettingData.InfaticaSdkVersion.WithJobs)
-            {
-                if (!storageWithJobsExists)
-                    return false; // Plugins already has WithJobs
-
-                return DoSwap(InfaticaStorageWithoutJobs, InfaticaStorageWithJobs, "WithJobs");
-            }
-            else
-            {
-                if (!storageWithoutJobsExists)
-                    return false; // Plugins already has WithoutJobs
-
-                return DoSwap(InfaticaStorageWithJobs, InfaticaStorageWithoutJobs, "WithoutJobs");
-            }
-        }
-
-        private static bool DoSwap(string archiveCurrentAs, string restoreFrom, string label)
-        {
-            Debug.Log($"[Module Folders] 🔄 Swapping Infatica plugins → {label}");
-
-            try
-            {
-                // 1. Архивируем текущий Plugins/ в хранилище
-                Directory.Move(InfaticaPluginsPath, archiveCurrentAs);
-                MoveMetaFile(InfaticaPluginsPath + ".meta", archiveCurrentAs + ".meta");
-
-                // 2. Достаём нужный набор из хранилища в Plugins/
-                Directory.Move(restoreFrom, InfaticaPluginsPath);
-                MoveMetaFile(restoreFrom + ".meta", InfaticaPluginsPath + ".meta");
-
-                Debug.Log($"[Module Folders] ✅ Infatica plugins switched to {label}");
-                return true;
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[Module Folders] ❌ Infatica plugin swap failed: {e.Message}");
-                return false;
-            }
-        }
-
-        private static void MoveMetaFile(string from, string to)
-        {
-            if (!File.Exists(from))
-                return;
-
-            if (File.Exists(to))
-                File.Delete(to);
-
-            File.Move(from, to);
-        }
-
-        private static void CheckInfaticaPluginsStatus(InfaticaSettingData.InfaticaSdkVersion targetVersion)
-        {
-            bool storageWithJobsExists = Directory.Exists(InfaticaStorageWithJobs);
-            bool storageWithoutJobsExists = Directory.Exists(InfaticaStorageWithoutJobs);
-
-            string currentInPlugins = storageWithoutJobsExists ? "WithJobs"
-                : storageWithJobsExists ? "WithoutJobs"
-                : "Unknown";
-
-            bool isCorrect = (targetVersion == InfaticaSettingData.InfaticaSdkVersion.WithJobs && currentInPlugins == "WithJobs")
-                || (targetVersion == InfaticaSettingData.InfaticaSdkVersion.WithoutJobs && currentInPlugins == "WithoutJobs");
-
-            if (isCorrect)
-                Debug.Log($"  ✓ Infatica Plugins: {currentInPlugins} (correct)");
-            else
-                Debug.LogWarning($"  ⚠ Infatica Plugins: {currentInPlugins} in Plugins/, expected {targetVersion}");
-        }
-
-        #endregion
 
         /// <summary>
         /// Настройки автообновления папок

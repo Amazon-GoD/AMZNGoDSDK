@@ -259,7 +259,6 @@ namespace AMZNGoDSDK.Editor
             Debug.Log($"  Adjust: {settings.Adjust.Enabled}");
             Debug.Log($"  AppMetrica: {settings.AppMetrica.Enabled}");
             Debug.Log($"  CrossPromo: {settings.CrossPromo.Enabled}");
-            Debug.Log($"  Infatica: {settings.Infatica.Enabled}");
             Debug.Log($"  IAP: {settings.InAppPurchase.Enabled}");
             Debug.Log($"  Firebase: {settings.Firebase.Enabled}");
             Debug.Log($"  Internet Connection: {settings.InternetConnection.Enabled}");
@@ -275,8 +274,7 @@ namespace AMZNGoDSDK.Editor
             Debug.Log("\nDependency files status:");
             CheckDependencyFile("Adjust", "Assets/AMZNGoDSDK/Runtime/Modules/Adjust/Adjust/Native/Editor/Dependencies.xml");
             CheckDependencyFile("AppMetrica", "Assets/AMZNGoDSDK/Editor/Modules/Appmetrica/Editor/AppMetricaDependencies.xml");
-            CheckDependencyFile("Infatica", "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins/Editor/Dependencies.xml");
-            
+
             Debug.Log("============================");
         }
         

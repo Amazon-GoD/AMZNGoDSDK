@@ -1,6 +1,0 @@
-framework module UnityInfaticaFramework {
-  umbrella header "UnityInfaticaFramework.h"
-  export *
-
-  module * { export * }
-}

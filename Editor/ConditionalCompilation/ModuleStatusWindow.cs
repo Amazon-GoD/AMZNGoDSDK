@@ -36,7 +36,6 @@ namespace AMZNGoDSDK.Editor
                 { "Adjust", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.ADJUST_DEFINE) },
                 { "AppMetrica", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.APPMETRICA_DEFINE) },
                 { "Cross Promo", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.CROSSPROMO_DEFINE) },
-                { "Infatica", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.INFATICA_DEFINE) },
                 { "In-App Purchase", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.IAP_DEFINE) },
                 { "Firebase", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.FIREBASE_DEFINE) },
                 { "Internet Connection", ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.INTERNETCONNECTION_DEFINE) },

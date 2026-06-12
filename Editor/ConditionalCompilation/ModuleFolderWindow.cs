@@ -155,7 +155,6 @@ namespace AMZNGoDSDK.Editor
             DrawFolderStatus("Adjust", "Assets/AMZNGoDSDK/Runtime/Modules/Adjust", settings.Adjust.Enabled);
             DrawFolderStatus("AppMetrica", "Assets/AMZNGoDSDK/Runtime/Modules/AppMetrica", settings.AppMetrica.Enabled);
             DrawFolderStatus("Firebase", "Assets/AMZNGoDSDK/Runtime/Modules/Firebase", settings.Firebase.Enabled);
-            DrawFolderStatus("Infatica", "Assets/AMZNGoDSDK/Runtime/Modules/Infatica", settings.Infatica.Enabled);
             DrawFolderStatus("InAppPurchase", "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase", settings.InAppPurchase.Enabled);
             DrawFolderStatus("InternetConnection", "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection", settings.InternetConnection.Enabled);
             DrawFolderStatus("InGameDebugConsole", "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole", settings.DebugConsole.Enabled);

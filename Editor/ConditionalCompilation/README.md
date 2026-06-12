@@ -16,7 +16,6 @@
 | Adjust | `AMZN_ADJUST_ENABLED` |
 | AppMetrica | `AMZN_APPMETRICA_ENABLED` |
 | Cross Promo | `AMZN_CROSSPROMO_ENABLED` |
-| Infatica | `AMZN_INFATICA_ENABLED` |
 | In-App Purchase | `AMZN_IAP_ENABLED` |
 | Firebase | `AMZN_FIREBASE_ENABLED` |
 | Internet Connection | `AMZN_INTERNETCONNECTION_ENABLED` |
@@ -103,7 +102,6 @@ Unity Editor окно для просмотра статуса модулей и
 Управляемые Dependencies.xml:
 - `Assets/AMZNGoDSDK/Runtime/Modules/Adjust/Adjust/Native/Editor/Dependencies.xml`
 - `Assets/AMZNGoDSDK/Editor/Modules/Appmetrica/Editor/AppMetricaDependencies.xml`
-- `Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins/Editor/Dependencies.xml`
 
 ### Автоматическое обновление
 
@@ -192,7 +190,6 @@ ModuleDefineManager.SDK_ENABLED_DEFINE           // "AMZN_SDK_ENABLED"
 ModuleDefineManager.ADJUST_DEFINE                // "AMZN_ADJUST_ENABLED"
 ModuleDefineManager.APPMETRICA_DEFINE            // "AMZN_APPMETRICA_ENABLED"
 ModuleDefineManager.CROSSPROMO_DEFINE            // "AMZN_CROSSPROMO_ENABLED"
-ModuleDefineManager.INFATICA_DEFINE              // "AMZN_INFATICA_ENABLED"
 ModuleDefineManager.IAP_DEFINE                   // "AMZN_IAP_ENABLED"
 ModuleDefineManager.FIREBASE_DEFINE              // "AMZN_FIREBASE_ENABLED"
 ModuleDefineManager.INTERNETCONNECTION_DEFINE    // "AMZN_INTERNETCONNECTION_ENABLED"

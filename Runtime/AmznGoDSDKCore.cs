@@ -20,9 +20,6 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_CROSSPROMO_ENABLED
         [SerializeField] private CrossPromoModule _crossPromoModule;
 #endif
-#if AMZN_INFATICA_ENABLED
-        [SerializeField] private InfaticaModule _infaticaModule;
-#endif
 #if AMZN_IAP_ENABLED
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
         [SerializeField] private InAppPurchaseModuleInitializer _inAppPurchaseModuleInitializer;
@@ -58,7 +55,6 @@ namespace AMZNGoDSDK.Runtime
             var analyticsSettings = sdkSettingsData.Analytics;
             var internetSettings = sdkSettingsData.InternetConnection;
             var firebaseSettings = sdkSettingsData.Firebase;
-            var infaticaSettings = sdkSettingsData.Infatica;
             var crossPromoSettings = sdkSettingsData.CrossPromo;
             var appMetricaSettings = sdkSettingsData.AppMetrica;
             var adjustSettings = sdkSettingsData.Adjust;
@@ -96,20 +92,6 @@ namespace AMZNGoDSDK.Runtime
                 firebaseSettings.EnableCrashlytics);
 #endif
 
-#if AMZN_INFATICA_ENABLED
-            var infaticaMode = infaticaSettings.Mode == InfaticaSettingData.InfaticaMode.Review
-                ? InfaticaModule.Mode.Review
-                : InfaticaModule.Mode.Production;
-            
-            _infaticaModule.Construct(
-                infaticaSettings.Enabled, 
-                infaticaMode, 
-                infaticaSettings.BatteryOptimizationIgnoreAsking,
-                infaticaSettings.PartnerId,
-                infaticaSettings.NotificationTitle,
-                infaticaSettings.SdkVersion == InfaticaSettingData.InfaticaSdkVersion.WithJobs);
-#endif
-            
 #if AMZN_CROSSPROMO_ENABLED
             _crossPromoModule.Construct(crossPromoSettings);
 #endif
@@ -147,9 +129,6 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_FIREBASE_ENABLED
             modules.Add(_firebaseModule);
 #endif
-#if AMZN_INFATICA_ENABLED
-            modules.Add(_infaticaModule);
-#endif
 #if AMZN_CROSSPROMO_ENABLED
             modules.Add(_crossPromoModule);
 #endif
@@ -164,39 +143,9 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
             StartCoroutine(InitializeWhenReady(modules.ToArray()));
-            
-#if AMZN_INFATICA_ENABLED
-            OnInfaticaAgree = _infaticaModule.OnAgree;
-#endif
         }
         #endregion
-        
-        #region Infatica
-        
-#if AMZN_INFATICA_ENABLED
-        public bool IsInfaticaAgree => _infaticaModule.IsAgree;
-        public InfaticaSettingData.InfaticaMode InfaticaMode => 
-            _infaticaModule.CurrentMode == InfaticaModule.Mode.Review 
-                ? InfaticaSettingData.InfaticaMode.Review 
-                : InfaticaSettingData.InfaticaMode.Production;
-        
-        public Action OnInfaticaAgree;
-        
-        public void ShowInfaticaBanner()
-        {
-            if(!_infaticaModule.Enabled)
-                return;
-            
-            _infaticaModule.ChangeChoice();
-        }
-#else
-        public bool IsInfaticaAgree => false;
-        public Action OnInfaticaAgree;
-        public void ShowInfaticaBanner() { }
-#endif
-        
-        #endregion
-        
+
         #region Cross Promo
 
 #if AMZN_CROSSPROMO_ENABLED
@@ -486,7 +435,6 @@ namespace AMZNGoDSDK.Runtime
                 case "FirebaseModule": return 1;
                 case "AppMetricaModule": return 2;
                 case "AdjustModule": return 3;
-                case "InfaticaModule": return 4;
                 case "CrossPromoModule": return 5;
                 case "InAppPurchaseModule": return 6;
                 default: return 100;

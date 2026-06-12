@@ -53,7 +53,6 @@ namespace AMZNGoDSDK.Editor
                 Adjust = ConvertAdjustSettingsToEditor(runtimeSettings.Adjust),
                 AppMetrica = ConvertAppMetricaSettingsToEditor(runtimeSettings.AppMetrica),
                 CrossPromo = ConvertCrossPromoSettingsToEditor(runtimeSettings.CrossPromo),
-                Infatica = ConvertInfaticaSettingsToEditor(runtimeSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettingsToEditor(runtimeSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection),
@@ -95,27 +94,6 @@ namespace AMZNGoDSDK.Editor
                 ConfigUrl = runtimeSettings.ConfigUrl,
                 DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId,
                 VideoBackend = runtimeSettings.VideoBackend
-            };
-        }
-
-        private static InfaticaSettingData ConvertInfaticaSettingsToEditor(Runtime.InfaticaSettingData runtimeSettings)
-        {
-            var mode = runtimeSettings.Mode == Runtime.InfaticaSettingData.InfaticaMode.Review
-                ? InfaticaSettingData.InfaticaMode.Review
-                : InfaticaSettingData.InfaticaMode.Production;
-
-            var sdkVersion = runtimeSettings.SdkVersion == Runtime.InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
-                ? InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
-                : InfaticaSettingData.InfaticaSdkVersion.WithJobs;
-
-            return new InfaticaSettingData
-            {
-                Enabled = runtimeSettings.Enabled,
-                PartnerId = runtimeSettings.PartnerId,
-                NotificationTitle = runtimeSettings.NotificationTitle,
-                Mode = mode,
-                SdkVersion = sdkVersion,
-                BatteryOptimizationIgnoreAsking = runtimeSettings.BatteryOptimizationIgnoreAsking
             };
         }
 
@@ -251,8 +229,7 @@ namespace AMZNGoDSDK.Editor
             AssetDatabase.Refresh();
             
             Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS STARTED =====");
-            Debug.Log($"[SdkSettingsManager] Infatica.Enabled = {settings.Infatica.Enabled}, SdkVersion = {settings.Infatica.SdkVersion}");
-            
+
             // Обновляем define symbols для условной компиляции
             Debug.Log("[SdkSettingsManager] Updating define symbols...");
             ModuleDefineManager.UpdateDefineSymbols(settings);
@@ -273,7 +250,6 @@ namespace AMZNGoDSDK.Editor
                 Adjust = ConvertAdjustSettings(editorSettings.Adjust),
                 AppMetrica = ConvertAppMetricaSettings(editorSettings.AppMetrica),
                 CrossPromo = ConvertCrossPromoSettings(editorSettings.CrossPromo),
-                Infatica = ConvertInfaticaSettings(editorSettings.Infatica),
                 InAppPurchase = ConvertInAppPurchaseSettings(editorSettings.InAppPurchase),
                 Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection),
@@ -315,27 +291,6 @@ namespace AMZNGoDSDK.Editor
                 ConfigUrl = editorSettings.ConfigUrl,
                 DefaultPromotedAppId = editorSettings.DefaultPromotedAppId,
                 VideoBackend = editorSettings.VideoBackend
-            };
-        }
-
-        private static Runtime.InfaticaSettingData ConvertInfaticaSettings(InfaticaSettingData editorSettings)
-        {
-            var mode = editorSettings.Mode == InfaticaSettingData.InfaticaMode.Review
-                ? Runtime.InfaticaSettingData.InfaticaMode.Review
-                : Runtime.InfaticaSettingData.InfaticaMode.Production;
-
-            var sdkVersion = editorSettings.SdkVersion == InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
-                ? Runtime.InfaticaSettingData.InfaticaSdkVersion.WithoutJobs
-                : Runtime.InfaticaSettingData.InfaticaSdkVersion.WithJobs;
-
-            return new Runtime.InfaticaSettingData
-            {
-                Enabled = editorSettings.Enabled,
-                PartnerId = editorSettings.PartnerId,
-                NotificationTitle = editorSettings.NotificationTitle,
-                Mode = mode,
-                SdkVersion = sdkVersion,
-                BatteryOptimizationIgnoreAsking = editorSettings.BatteryOptimizationIgnoreAsking
             };
         }
 

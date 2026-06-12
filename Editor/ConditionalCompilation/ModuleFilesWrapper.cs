@@ -126,7 +126,6 @@ namespace AMZNGoDSDK.Editor
             CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Adjust", "AMZN_ADJUST_ENABLED", "Adjust");
             CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/AppMetrica", "AMZN_APPMETRICA_ENABLED", "AppMetrica");
             CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Firebase", "AMZN_FIREBASE_ENABLED", "Firebase");
-            CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Infatica", "AMZN_INFATICA_ENABLED", "Infatica");
             CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase", "AMZN_IAP_ENABLED", "InAppPurchase");
             CheckModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection", "AMZN_INTERNETCONNECTION_ENABLED", "InternetConnection");
 

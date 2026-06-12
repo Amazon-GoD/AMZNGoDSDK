@@ -52,15 +52,6 @@ namespace AMZNGoDSDK.Editor
                 });
             }
 
-            // Infatica
-            if (!settings.Infatica.Enabled)
-            {
-                DisableDependencyFiles(new[]
-                {
-                    "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins/Editor/Dependencies.xml"
-                });
-            }
-
             // CrossPromo
             if (!settings.CrossPromo.Enabled)
             {

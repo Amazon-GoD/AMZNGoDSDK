@@ -112,7 +112,7 @@ namespace AMZNGoDSDK.Editor
 
             DrawError(
                 "Io.AppMetrica not found",
-                "Disable AppMetrica and Infatica modules in Settings");
+                "Disable AppMetrica module in Settings");
 
             GUILayout.Space(20);
 

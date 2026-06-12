@@ -66,23 +66,7 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static readonly List<ModuleManifestFootprint> Footprints = new List<ModuleManifestFootprint>
         {
-            new ModuleManifestFootprint
-            {
-                ModuleName = "Infatica",
-                // Пакетный префикс ловит и сервис, и boot-receiver, и любые
-                // компоненты, которые объявит сам AAR (residential proxy агент).
-                ComponentNamePrefixes = new[] { "com.infatica." },
-                // RECEIVE_BOOT_COMPLETED добавлен в глобальный манифест именно ради
-                // Infatica boot-receiver. FOREGROUND_SERVICE_* живут в скрытой папке
-                // WithJobs~ и в выключенную сборку не попадают, но перечислены для
-                // полноты (защищены проверкой "не нужен включённому модулю").
-                Permissions = new[]
-                {
-                    "android.permission.RECEIVE_BOOT_COMPLETED",
-                    "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
-                },
-            },
-            // Добавляй новые модули по образцу выше.
+            // Добавляй новые модули по образцу: ModuleName + ComponentNamePrefixes/Permissions.
         };
 
         /// <summary>
@@ -97,7 +81,6 @@ namespace AMZNGoDSDK.Editor
                 { "Adjust",             settings.Adjust.Enabled },
                 { "AppMetrica",         settings.AppMetrica.Enabled },
                 { "Firebase",           settings.Firebase.Enabled },
-                { "Infatica",           settings.Infatica.Enabled },
                 { "InAppPurchase",      settings.InAppPurchase.Enabled },
                 { "InternetConnection", settings.InternetConnection.Enabled },
                 { "InGameDebugConsole", settings.DebugConsole.Enabled },

@@ -18,7 +18,6 @@ namespace AMZNGoDSDK.Editor
         public const string ADJUST_DEFINE = "AMZN_ADJUST_ENABLED";
         public const string APPMETRICA_DEFINE = "AMZN_APPMETRICA_ENABLED";
         public const string CROSSPROMO_DEFINE = "AMZN_CROSSPROMO_ENABLED";
-        public const string INFATICA_DEFINE = "AMZN_INFATICA_ENABLED";
         public const string IAP_DEFINE = "AMZN_IAP_ENABLED";
         public const string FIREBASE_DEFINE = "AMZN_FIREBASE_ENABLED";
         public const string INTERNETCONNECTION_DEFINE = "AMZN_INTERNETCONNECTION_ENABLED";
@@ -29,15 +28,11 @@ namespace AMZNGoDSDK.Editor
         private const string ConfigFileName = "amzn_god_sdk.json";
         private const string ResourcesPath = "Assets/Resources/";
 
-        private const string InfaticaWithJobsVisible = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs";
-        private const string InfaticaWithJobsHidden  = "Assets/AMZNGoDSDK/Runtime/Modules/Infatica/Plugins_WithJobs~";
-
-        private static readonly string[] ALL_MODULE_DEFINES = 
+        private static readonly string[] ALL_MODULE_DEFINES =
         {
             ADJUST_DEFINE,
             APPMETRICA_DEFINE,
             CROSSPROMO_DEFINE,
-            INFATICA_DEFINE,
             IAP_DEFINE,
             FIREBASE_DEFINE,
             INTERNETCONNECTION_DEFINE,
@@ -53,8 +48,6 @@ namespace AMZNGoDSDK.Editor
 
         private static void OnEditorLoaded()
         {
-            HideInfaticaWithJobsIfNeeded();
-
             if (!ConfigFileExists())
             {
                 RemoveAllSdkDefines();
@@ -64,25 +57,6 @@ namespace AMZNGoDSDK.Editor
             }
 
             UpdateDefineSymbolsFromSettings();
-        }
-
-        private static void HideInfaticaWithJobsIfNeeded()
-        {
-            if (!Directory.Exists(InfaticaWithJobsVisible) || Directory.Exists(InfaticaWithJobsHidden))
-                return;
-
-            Directory.Move(InfaticaWithJobsVisible, InfaticaWithJobsHidden);
-
-            string metaFrom = InfaticaWithJobsVisible + ".meta";
-            string metaTo   = InfaticaWithJobsHidden  + ".meta";
-            if (File.Exists(metaFrom))
-            {
-                if (File.Exists(metaTo)) File.Delete(metaTo);
-                File.Move(metaFrom, metaTo);
-            }
-
-            AssetDatabase.Refresh();
-            Debug.Log("[AMZN GoD SDK] Infatica: Plugins_WithJobs/ → Plugins_WithJobs~/ (hidden on domain reload).");
         }
 
         public static bool ConfigFileExists()
@@ -153,7 +127,6 @@ namespace AMZNGoDSDK.Editor
                 TryAddModuleDefine(definesList, ADJUST_DEFINE, settings.Adjust.Enabled);
                 TryAddModuleDefine(definesList, APPMETRICA_DEFINE, settings.AppMetrica.Enabled);
                 TryAddModuleDefine(definesList, CROSSPROMO_DEFINE, settings.CrossPromo.Enabled);
-                TryAddModuleDefine(definesList, INFATICA_DEFINE, settings.Infatica.Enabled);
                 TryAddModuleDefine(definesList, IAP_DEFINE, settings.InAppPurchase.Enabled);
                 TryAddModuleDefine(definesList, FIREBASE_DEFINE, settings.Firebase.Enabled);
                 TryAddModuleDefine(definesList, INTERNETCONNECTION_DEFINE, settings.InternetConnection.Enabled);

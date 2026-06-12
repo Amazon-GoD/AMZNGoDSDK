@@ -18,7 +18,6 @@ namespace AMZNGoDSDK.Editor
             { "Appmetrica", "AMZN_APPMETRICA_ENABLED" },
             { "AppMetrica", "AMZN_APPMETRICA_ENABLED" },
             { "Firebase", "AMZN_FIREBASE_ENABLED" },
-            { "Infatica", "AMZN_INFATICA_ENABLED" },
             { "InAppPurchase", "AMZN_IAP_ENABLED" },
             { "InternetConnection", "AMZN_INTERNETCONNECTION_ENABLED" }
         };
@@ -49,7 +48,6 @@ namespace AMZNGoDSDK.Editor
             totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Adjust", "AMZN_ADJUST_ENABLED", "Adjust Runtime");
             totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/AppMetrica", "AMZN_APPMETRICA_ENABLED", "AppMetrica Runtime");
             totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Firebase", "AMZN_FIREBASE_ENABLED", "Firebase Runtime");
-            totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Infatica", "AMZN_INFATICA_ENABLED", "Infatica Runtime");
             totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase", "AMZN_IAP_ENABLED", "InAppPurchase Runtime");
             totalWrapped += WrapModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection", "AMZN_INTERNETCONNECTION_ENABLED", "InternetConnection Runtime");
 
@@ -165,7 +163,6 @@ namespace AMZNGoDSDK.Editor
             totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Adjust", "AMZN_ADJUST_ENABLED", "Adjust Runtime");
             totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/AppMetrica", "AMZN_APPMETRICA_ENABLED", "AppMetrica Runtime");
             totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Firebase", "AMZN_FIREBASE_ENABLED", "Firebase Runtime");
-            totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/Infatica", "AMZN_INFATICA_ENABLED", "Infatica Runtime");
             totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase", "AMZN_IAP_ENABLED", "InAppPurchase Runtime");
             totalUnwrapped += ReportModuleDirectory("Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection", "AMZN_INTERNETCONNECTION_ENABLED", "InternetConnection Runtime");
 

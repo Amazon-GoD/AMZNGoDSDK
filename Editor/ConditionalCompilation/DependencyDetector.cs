@@ -87,16 +87,6 @@ namespace AMZNGoDSDK.Editor
                 }
             },
             {
-                ModuleDefineManager.INFATICA_DEFINE,
-                new ModuleSpec
-                {
-                    Name = "Infatica",
-                    RequiredAssemblies = Array.Empty<string>(),
-                    RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/Infatica" },
-                    Description = "no external deps"
-                }
-            },
-            {
                 ModuleDefineManager.INTERNETCONNECTION_DEFINE,
                 new ModuleSpec
                 {
