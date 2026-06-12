@@ -27,6 +27,7 @@ namespace AMZNGoDSDK.Runtime
         private VideoPlayerBackend _videoBackend;
         private PromoConfiguration _preloadedConfig;
         private CrossPromoVideoPlayer _preloadPlayer;
+        private CrossPromoExoNativeOverlay _exoOverlay;
         private PromoConfiguration _lastShownConfig;
         private string _lastShownTitleFromPrefs;
         private bool _firstPreloadDone;
@@ -42,8 +43,13 @@ namespace AMZNGoDSDK.Runtime
 
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
-        /// <summary>True when a video is preloaded and ready to play instantly.</summary>
-        public bool IsVideoReady => _preloadPlayer != null && _preloadPlayer.IsPreloaded;
+        /// <summary>True when a video is ready to play. For the UnityVideoPlayer backend this
+        /// means a clip is preloaded for an instant swap; for the ExoPlayer backend (native
+        /// overlay buffers on show) it means the remote config has at least one video.</summary>
+        public bool IsVideoReady =>
+            _videoBackend == VideoPlayerBackend.ExoPlayer
+                ? (_crossPromoConfig?.Videos != null && _crossPromoConfig.Videos.Count > 0)
+                : (_preloadPlayer != null && _preloadPlayer.IsPreloaded);
 
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
@@ -82,6 +88,11 @@ namespace AMZNGoDSDK.Runtime
             if (_initCoroutine != null) { StopCoroutine(_initCoroutine); _initCoroutine = null; }
             if (_showCoroutine != null) { StopCoroutine(_showCoroutine); _showCoroutine = null; }
             DisposePreloadPlayer();
+            if (_exoOverlay != null)
+            {
+                Destroy(_exoOverlay.gameObject);
+                _exoOverlay = null;
+            }
             if (Instance == this)
             {
                 Instance = null;
@@ -108,7 +119,7 @@ namespace AMZNGoDSDK.Runtime
         // Unity Audio" (типично для проектов на чистом FMOD/Wwise), Unity audio output
         // не инициализируется, и реклама проигрывается БЕЗ ЗВУКА — причём молча, без
         // единой ошибки. Это съедает дни на диагностику. Здесь ловим этот кейс заранее
-        // и громко об этом сообщаем. Media3 backend не затрагивается — у него свой
+        // и громко об этом сообщаем. ExoPlayer backend не затрагивается — у него свой
         // нативный AudioTrack, от Unity Audio не зависит.
         private void WarnIfUnityAudioDisabled()
         {
@@ -132,7 +143,7 @@ namespace AMZNGoDSDK.Runtime
                     "UnityVideoPlayer видео-реклама будет проигрываться БЕЗ ЗВУКА — " +
                     "VideoPlayer.audioOutputMode=Direct требует инициализированный " +
                     "Unity Audio engine. Решение: либо снять 'Disable Unity Audio' в " +
-                    "PlayerSettings, либо переключить VideoBackend на Media3 (Android). " +
+                    "PlayerSettings, либо переключить VideoBackend на ExoPlayer (Android). " +
                     $"(AudioConfiguration: sampleRate={cfg.sampleRate}, dspBufferSize={cfg.dspBufferSize}, speakerMode={cfg.speakerMode})");
             }
             else
@@ -213,6 +224,7 @@ namespace AMZNGoDSDK.Runtime
         public void RefreshPreloadIfStale()
         {
             if (!Enabled) return;
+            if (_videoBackend != VideoPlayerBackend.UnityVideoPlayer) return;   // ExoPlayer: нет Unity-preload
             if (_crossPromoConfig == null) return;   // Init ещё не завершён
 
             // Не дёргаем preload, пока оверлей активен на экране. Иначе откроем
@@ -328,6 +340,11 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            // ExoPlayer-бэкенд не использует Unity-preload (где шлётся inter_requested),
+            // поэтому для него считаем запрос здесь — при вызове. Unity-путь не трогаем.
+            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
+                CrossPromoAnalytics.ReportInterRequested("interstitial");
+
             _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "interstitial", onRewarded: null));
         }
 
@@ -347,6 +364,10 @@ namespace AMZNGoDSDK.Runtime
                 onClose?.Invoke();
                 return;
             }
+
+            // ExoPlayer-бэкенд: считаем запрос при вызове (Unity-preload, где это делалось, у него нет).
+            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
+                CrossPromoAnalytics.ReportRewardRequested("rewarded");
 
             _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "rewarded", onRewarded));
         }
@@ -380,7 +401,9 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Returns true if a video overlay is currently being shown.</summary>
-        public bool IsVideoPromoVisible => _videoOverlay != null && _videoOverlay.IsVisible;
+        public bool IsVideoPromoVisible =>
+            (_videoOverlay != null && _videoOverlay.IsVisible)
+            || (_exoOverlay != null && _exoOverlay.IsVisible);
 
         private IEnumerator ShowVideoInternalCoroutine(Action onClose, Action onCTAClick, string placement, Action onRewarded, PromoConfiguration forcedConfig = null)
         {
@@ -416,6 +439,27 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning("[CrossPromoModule] Selected video promo has no URL or file name.");
                 onClose?.Invoke();
+                yield break;
+            }
+
+            // ExoPlayer backend renders through a native StyledPlayerView overlay (no Unity
+            // RawImage / preload-swap pipeline). Analytics/tracking/redirect/cooldown stay on
+            // the C# bridge; we only hand it the selected config and the callbacks.
+            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
+            {
+                _lastShownConfig = config;
+
+                if (placement == "interstitial")
+                    CrossPromoAnalytics.ReportInterDisplayed(BuildBannerData(config), placement);
+                else if (placement == "rewarded")
+                    CrossPromoAnalytics.ReportRewardDisplayed(BuildBannerData(config), placement);
+
+                EnsureExoOverlay();
+                _exoOverlay.Show(
+                    config,
+                    onClose: () => onClose?.Invoke(),
+                    onCTA: onCTAClick,
+                    onCompleted: onRewarded);
                 yield break;
             }
 
@@ -528,6 +572,17 @@ namespace AMZNGoDSDK.Runtime
                 config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null);
         }
 
+        private void EnsureExoOverlay()
+        {
+            if (_exoOverlay != null) return;
+
+            // The GameObject name is the UnitySendMessage target for the native overlay's
+            // callbacks, so it must stay unique and alive across scene loads.
+            var go = new GameObject("CrossPromoExoOverlayBridge");
+            _exoOverlay = go.AddComponent<CrossPromoExoNativeOverlay>();
+            DontDestroyOnLoad(go);
+        }
+
         private CrossPromoVideoPlayer EnsurePreloadPlayer()
         {
             if (_preloadPlayer != null) return _preloadPlayer;
@@ -541,7 +596,7 @@ namespace AMZNGoDSDK.Runtime
             //
             // Create inactive first so Awake() is deferred — lets us set the backend
             // BEFORE Awake() spins up a default Unity VideoPlayer component that
-            // would be useless for the Media3 backend.
+            // would be useless for the ExoPlayer backend.
             var go = new GameObject("CrossPromoPreloader");
             go.SetActive(false);
             _preloadPlayer = go.AddComponent<CrossPromoVideoPlayer>();
@@ -554,6 +609,11 @@ namespace AMZNGoDSDK.Runtime
 
         private void PreloadNextVideo()
         {
+            // ExoPlayer backend uses the native overlay, which buffers on show — there is no
+            // Unity preload/warmup pipeline for it.
+            if (_videoBackend != VideoPlayerBackend.UnityVideoPlayer)
+                return;
+
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
                 return;
 

@@ -12,7 +12,7 @@ namespace AMZNGoDSDK.Runtime
     /// Cross-platform video player with two backends:
     /// <list type="bullet">
     /// <item><see cref="VideoPlayerBackend.UnityVideoPlayer"/> — works on all platforms.</item>
-    /// <item><see cref="VideoPlayerBackend.Media3"/> — Android-only via AndroidX Media3 ExoPlayer.
+    /// <item><see cref="VideoPlayerBackend.ExoPlayer"/> — Android-only via Google ExoPlayer 2.19.1 (com.google.android.exoplayer2).
     /// On non-Android platforms fires <see cref="OnError"/> immediately.</item>
     /// </list>
     /// </summary>
@@ -79,14 +79,14 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Private State — Media3 (Android)
+        #region Private State — ExoPlayer (Android)
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-        private AndroidJavaObject _media3Plugin;
-        private Texture2D _media3Texture;
-        private bool _media3Ready;
-        private float _media3SavedVolume = 1f;
-        private bool _media3Muted;
+        private AndroidJavaObject _exoPlayerPlugin;
+        private Texture2D _exoPlayerTexture;
+        private bool _exoPlayerReady;
+        private float _exoPlayerSavedVolume = 1f;
+        private bool _exoPlayerMuted;
 #endif
 
         #endregion
@@ -102,11 +102,11 @@ namespace AMZNGoDSDK.Runtime
         {
             get
             {
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    if (_media3Plugin != null && _media3Ready)
-                        return _media3Plugin.Call<long>("getDuration") / 1000.0;
+                    if (_exoPlayerPlugin != null && _exoPlayerReady)
+                        return _exoPlayerPlugin.Call<long>("getDuration") / 1000.0;
 #endif
                     return 0;
                 }
@@ -119,11 +119,11 @@ namespace AMZNGoDSDK.Runtime
         {
             get
             {
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    if (_media3Plugin != null && _media3Ready)
-                        return _media3Plugin.Call<long>("getCurrentPosition") / 1000.0;
+                    if (_exoPlayerPlugin != null && _exoPlayerReady)
+                        return _exoPlayerPlugin.Call<long>("getCurrentPosition") / 1000.0;
 #endif
                     return 0;
                 }
@@ -142,10 +142,10 @@ namespace AMZNGoDSDK.Runtime
         {
             get
             {
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    return _media3Texture != null ? _media3Texture.width : 0;
+                    return _exoPlayerTexture != null ? _exoPlayerTexture.width : 0;
 #else
                     return 0;
 #endif
@@ -158,10 +158,10 @@ namespace AMZNGoDSDK.Runtime
         {
             get
             {
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    return _media3Texture != null ? _media3Texture.height : 0;
+                    return _exoPlayerTexture != null ? _exoPlayerTexture.height : 0;
 #else
                     return 0;
 #endif
@@ -176,11 +176,11 @@ namespace AMZNGoDSDK.Runtime
             set
             {
                 _volume = Mathf.Clamp01(value);
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    if (_media3Plugin != null)
-                        _media3Plugin.Call("setVolume", _volume);
+                    if (_exoPlayerPlugin != null)
+                        _exoPlayerPlugin.Call("setVolume", _volume);
 #endif
                 }
                 else if (_player != null)
@@ -196,11 +196,11 @@ namespace AMZNGoDSDK.Runtime
             set
             {
                 _loop = value;
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    if (_media3Plugin != null)
-                        _media3Plugin.Call("setLooping", _loop);
+                    if (_exoPlayerPlugin != null)
+                        _exoPlayerPlugin.Call("setLooping", _loop);
 #endif
                 }
                 else if (_player != null)
@@ -222,10 +222,10 @@ namespace AMZNGoDSDK.Runtime
         {
             get
             {
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                    return _media3Texture;
+                    return _exoPlayerTexture;
 #else
                     return null;
 #endif
@@ -265,9 +265,9 @@ namespace AMZNGoDSDK.Runtime
         private void Update()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            if (_backend == VideoPlayerBackend.Media3 && _media3Ready && _media3Plugin != null)
+            if (_backend == VideoPlayerBackend.ExoPlayer && _exoPlayerReady && _exoPlayerPlugin != null)
             {
-                _media3Plugin.Call("updateTexture");
+                _exoPlayerPlugin.Call("updateTexture");
             }
 #endif
         }
@@ -296,10 +296,10 @@ namespace AMZNGoDSDK.Runtime
         {
             CancelRetry();
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Cleanup();
+                ExoPlayerCleanup();
 #endif
             }
             else
@@ -327,14 +327,14 @@ namespace AMZNGoDSDK.Runtime
             _videoUrl = url;
             _retryCount = 0;
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Load(url);
+                ExoPlayerLoad(url);
 #else
-                Debug.LogWarning("[CrossPromoVideoPlayer] Media3 backend is only supported on Android. Video will not play.");
+                Debug.LogWarning("[CrossPromoVideoPlayer] ExoPlayer backend is only supported on Android. Video will not play.");
                 SetState(PlaybackState.Error);
-                OnError?.Invoke("Media3 backend is only supported on Android.");
+                OnError?.Invoke("ExoPlayer backend is only supported on Android.");
 #endif
             }
             else
@@ -382,10 +382,10 @@ namespace AMZNGoDSDK.Runtime
             _isPreloaded = false;
             _preloadedUrl = url;
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Preload(url);
+                ExoPlayerPreload(url);
 #endif
             }
             else
@@ -416,23 +416,23 @@ namespace AMZNGoDSDK.Runtime
                 _isPreloaded = false;
                 _preloadedUrl = null;
 
-                if (_backend == VideoPlayerBackend.Media3)
+                if (_backend == VideoPlayerBackend.ExoPlayer)
                 {
 #if UNITY_ANDROID && !UNITY_EDITOR
                     ApplyTextureToTargets();
                     if (wasWarming)
                     {
-                        if (_media3Plugin != null)
+                        if (_exoPlayerPlugin != null)
                         {
-                            _media3Plugin.Call("setLooping", _loop);
-                            _media3Plugin.Call("seekTo", 0L);
-                            _media3Plugin.Call("setVolume", _volume);
+                            _exoPlayerPlugin.Call("setLooping", _loop);
+                            _exoPlayerPlugin.Call("seekTo", 0L);
+                            _exoPlayerPlugin.Call("setVolume", _volume);
                         }
-                        _media3Muted = false;
+                        _exoPlayerMuted = false;
                     }
                     else
                     {
-                        Media3Resume();
+                        ExoPlayerResume();
                         SetState(PlaybackState.Playing);
                     }
                     OnStarted?.Invoke();
@@ -486,10 +486,10 @@ namespace AMZNGoDSDK.Runtime
 
         public void Play()
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Resume();
+                ExoPlayerResume();
                 SetState(PlaybackState.Playing);
 #endif
                 return;
@@ -540,10 +540,10 @@ namespace AMZNGoDSDK.Runtime
         {
             CancelRetry();
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Stop();
+                ExoPlayerStop();
 #endif
             }
             else
@@ -557,13 +557,13 @@ namespace AMZNGoDSDK.Runtime
 
         public void Restart()
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                if (_media3Plugin != null && _media3Ready)
+                if (_exoPlayerPlugin != null && _exoPlayerReady)
                 {
-                    _media3Plugin.Call("seekTo", 0L);
-                    Media3Resume();
+                    _exoPlayerPlugin.Call("seekTo", 0L);
+                    ExoPlayerResume();
                     SetState(PlaybackState.Playing);
                 }
 #endif
@@ -581,10 +581,10 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrWhiteSpace(_videoUrl)) return;
             _retryCount = 0;
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Load(_videoUrl);
+                ExoPlayerLoad(_videoUrl);
 #endif
             }
             else
@@ -599,11 +599,11 @@ namespace AMZNGoDSDK.Runtime
 
         public void SeekTo(double seconds)
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                if (_media3Plugin != null && _media3Ready)
-                    _media3Plugin.Call("seekTo", (long)(seconds * 1000));
+                if (_exoPlayerPlugin != null && _exoPlayerReady)
+                    _exoPlayerPlugin.Call("seekTo", (long)(seconds * 1000));
 #endif
                 return;
             }
@@ -628,20 +628,20 @@ namespace AMZNGoDSDK.Runtime
 
         public void SetMute(bool mute)
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                _media3Muted = mute;
-                if (_media3Plugin != null)
+                _exoPlayerMuted = mute;
+                if (_exoPlayerPlugin != null)
                 {
                     if (mute)
                     {
-                        _media3SavedVolume = _volume;
-                        _media3Plugin.Call("setVolume", 0f);
+                        _exoPlayerSavedVolume = _volume;
+                        _exoPlayerPlugin.Call("setVolume", 0f);
                     }
                     else
                     {
-                        _media3Plugin.Call("setVolume", _media3SavedVolume);
+                        _exoPlayerPlugin.Call("setVolume", _exoPlayerSavedVolume);
                     }
                 }
 #endif
@@ -654,10 +654,10 @@ namespace AMZNGoDSDK.Runtime
 
         public bool IsMuted()
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                return _media3Muted;
+                return _exoPlayerMuted;
 #else
                 return false;
 #endif
@@ -756,10 +756,10 @@ namespace AMZNGoDSDK.Runtime
             yield return new WaitForSecondsRealtime(_retryDelay);
             _retryCoroutine = null;
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Load(_videoUrl);
+                ExoPlayerLoad(_videoUrl);
 #endif
             }
             else
@@ -898,10 +898,10 @@ namespace AMZNGoDSDK.Runtime
         {
             Texture texture;
 
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                texture = _media3Texture;
+                texture = _exoPlayerTexture;
 #else
                 texture = null;
 #endif
@@ -917,7 +917,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 _targetRawImage.texture = texture;
                 // Flip only video UVs; keep UI hierarchy transform unchanged.
-                _targetRawImage.uvRect = _backend == VideoPlayerBackend.Media3
+                _targetRawImage.uvRect = _backend == VideoPlayerBackend.ExoPlayer
                     ? new Rect(0f, 1f, 1f, -1f)
                     : new Rect(0f, 0f, 1f, 1f);
                 ApplyRawImageAspect(texture);
@@ -949,10 +949,10 @@ namespace AMZNGoDSDK.Runtime
 
         private void PauseInternal()
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Pause();
+                ExoPlayerPause();
 #endif
             }
             else
@@ -966,10 +966,10 @@ namespace AMZNGoDSDK.Runtime
 
         private void ResumeInternal()
         {
-            if (_backend == VideoPlayerBackend.Media3)
+            if (_backend == VideoPlayerBackend.ExoPlayer)
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                Media3Resume();
+                ExoPlayerResume();
 #endif
             }
             else
@@ -992,82 +992,82 @@ namespace AMZNGoDSDK.Runtime
 
         #endregion
 
-        #region Media3 — Android Implementation
+        #region ExoPlayer — Android Implementation
 
 #if UNITY_ANDROID && !UNITY_EDITOR
 
-        private void Media3Load(string url)
+        private void ExoPlayerLoad(string url)
         {
             SetState(PlaybackState.Loading);
-            Media3Cleanup();
+            ExoPlayerCleanup();
 
-            _media3Ready = false;
-            _media3Plugin = new AndroidJavaObject("com.amzngod.media3.Media3VideoPlugin");
-            _media3Plugin.Call("init", gameObject.name);
-            _media3Plugin.Call("setLooping", _loop);
-            _media3Plugin.Call("load", url);
+            _exoPlayerReady = false;
+            _exoPlayerPlugin = new AndroidJavaObject("com.amzngod.exoplayer.ExoPlayerVideoPlugin");
+            _exoPlayerPlugin.Call("init", gameObject.name);
+            _exoPlayerPlugin.Call("setLooping", _loop);
+            _exoPlayerPlugin.Call("load", url);
         }
 
-        private void Media3Preload(string url)
+        private void ExoPlayerPreload(string url)
         {
             SetState(PlaybackState.Loading);
-            Media3Cleanup();
+            ExoPlayerCleanup();
 
-            _media3Ready = false;
-            _media3Plugin = new AndroidJavaObject("com.amzngod.media3.Media3VideoPlugin");
-            _media3Plugin.Call("init", gameObject.name);
-            _media3Plugin.Call("setLooping", _loop);
-            _media3Plugin.Call("preload", url);
+            _exoPlayerReady = false;
+            _exoPlayerPlugin = new AndroidJavaObject("com.amzngod.exoplayer.ExoPlayerVideoPlugin");
+            _exoPlayerPlugin.Call("init", gameObject.name);
+            _exoPlayerPlugin.Call("setLooping", _loop);
+            _exoPlayerPlugin.Call("preload", url);
         }
 
-        private void Media3Resume()
+        private void ExoPlayerResume()
         {
-            if (_media3Plugin != null)
-                _media3Plugin.Call("play");
+            if (_exoPlayerPlugin != null)
+                _exoPlayerPlugin.Call("play");
         }
 
-        private void Media3Pause()
+        private void ExoPlayerPause()
         {
-            if (_media3Plugin != null)
-                _media3Plugin.Call("pause");
+            if (_exoPlayerPlugin != null)
+                _exoPlayerPlugin.Call("pause");
         }
 
-        private void Media3Stop()
+        private void ExoPlayerStop()
         {
-            if (_media3Plugin != null)
+            if (_exoPlayerPlugin != null)
             {
-                try { _media3Plugin.Call("release"); } catch (Exception) { }
+                try { _exoPlayerPlugin.Call("release"); } catch (Exception) { }
             }
-            _media3Ready = false;
+            _exoPlayerReady = false;
         }
 
-        private void Media3Cleanup()
+        private void ExoPlayerCleanup()
         {
-            if (_media3Plugin != null)
+            if (_exoPlayerPlugin != null)
             {
-                try { _media3Plugin.Call("release"); } catch (Exception) { }
-            }
-
-            if (_media3Texture != null)
-            {
-                Destroy(_media3Texture);
-                _media3Texture = null;
+                try { _exoPlayerPlugin.Call("release"); } catch (Exception) { }
             }
 
-            _media3Plugin = null;
-            _media3Ready = false;
+            if (_exoPlayerTexture != null)
+            {
+                Destroy(_exoPlayerTexture);
+                _exoPlayerTexture = null;
+            }
+
+            _exoPlayerPlugin = null;
+            _exoPlayerReady = false;
         }
 
 #endif
 
         /// <summary>Called from Java via UnitySendMessage with format "textureId|width|height".</summary>
-        private void OnMedia3Prepared(string mediaInfo)
+        private void OnExoPlayerPrepared(string mediaInfo)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            if (_media3Texture != null)
+            if (_exoPlayerTexture != null)
             {
-                Destroy(_media3Texture);
-                _media3Texture = null;
+                Destroy(_exoPlayerTexture);
+                _exoPlayerTexture = null;
             }
 
             if (string.IsNullOrEmpty(mediaInfo))
@@ -1076,7 +1076,7 @@ namespace AMZNGoDSDK.Runtime
             string[] parts = mediaInfo.Split('|');
             if (parts.Length < 3)
             {
-                Debug.LogError($"[CrossPromoVideoPlayer] OnMedia3Prepared: invalid data '{mediaInfo}'");
+                Debug.LogError($"[CrossPromoVideoPlayer] OnExoPlayerPrepared: invalid data '{mediaInfo}'");
                 return;
             }
 
@@ -1087,17 +1087,17 @@ namespace AMZNGoDSDK.Runtime
             Debug.Log($"{width}, {height}");
 
             IntPtr nativePtr = (IntPtr)textureId;
-            _media3Texture = Texture2D.CreateExternalTexture(width, height, TextureFormat.ARGB32, false, true, nativePtr);
+            _exoPlayerTexture = Texture2D.CreateExternalTexture(width, height, TextureFormat.ARGB32, false, true, nativePtr);
 
             ApplyTextureToTargets();
 
-            _media3Ready = true;
+            _exoPlayerReady = true;
             SetState(PlaybackState.Ready);
             OnReady?.Invoke();
 
             if (_autoPlay)
             {
-                Media3Resume();
+                ExoPlayerResume();
                 SetState(PlaybackState.Playing);
                 OnStarted?.Invoke();
             }
@@ -1108,24 +1108,24 @@ namespace AMZNGoDSDK.Runtime
                 if (WarmupOnReady)
                 {
                     _loop = true;
-                    if (_media3Plugin != null)
+                    if (_exoPlayerPlugin != null)
                     {
-                        _media3Plugin.Call("setLooping", true);
-                        _media3Plugin.Call("setVolume", 0f);
-                        _media3Plugin.Call("play");
+                        _exoPlayerPlugin.Call("setLooping", true);
+                        _exoPlayerPlugin.Call("setVolume", 0f);
+                        _exoPlayerPlugin.Call("play");
                     }
-                    _media3Muted = true;
-                    _media3SavedVolume = _volume;
+                    _exoPlayerMuted = true;
+                    _exoPlayerSavedVolume = _volume;
                     SetState(PlaybackState.Playing);
                 }
 
-                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl} (Media3, warmup={WarmupOnReady})");
+                Debug.Log($"[CrossPromoVideoPlayer] Preload ready for: {_preloadedUrl} (ExoPlayer, warmup={WarmupOnReady})");
             }
 #endif
         }
 
         /// <summary>Called from Java via UnitySendMessage when playback ends.</summary>
-        private void OnMedia3Completed(string unused)
+        private void OnExoPlayerCompleted(string unused)
         {
             OnLoopPointReached?.Invoke();
 
@@ -1137,9 +1137,9 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Called from Java via UnitySendMessage on playback error.</summary>
-        private void OnMedia3Error(string message)
+        private void OnExoPlayerError(string message)
         {
-            Debug.LogError($"[CrossPromoVideoPlayer] Media3 error: {message}");
+            Debug.LogError($"[CrossPromoVideoPlayer] ExoPlayer error: {message}");
 
             if (_retryCount < _maxRetries)
             {

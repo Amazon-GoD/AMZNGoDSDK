@@ -196,7 +196,7 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.CrossPromo.VideoBackend = (Runtime.VideoPlayerBackend)EditorGUILayout
                         .EnumPopup(
                             new GUIContent("Video Backend",
-                                "UnityVideoPlayer — стандартный плеер, работает на всех платформах.\nMedia3 — Android-only, AndroidX Media3 ExoPlayer (требует отключения Multithreaded Rendering, на других платформах видео не будет показываться)."),
+                                "UnityVideoPlayer — стандартный плеер, работает на всех платформах.\nExoPlayer — Android-only, нативный оверлей на базе Google ExoPlayer 2.19.1 (StyledPlayerView поверх игры; на других платформах видео не показывается)."),
                             _currentSettings.CrossPromo.VideoBackend);
                 });
         }

@@ -5,7 +5,7 @@ namespace AMZNGoDSDK.Runtime
     public enum VideoPlayerBackend
     {
         UnityVideoPlayer = 0,
-        Media3 = 1
+        ExoPlayer = 1
     }
 
     [Serializable]

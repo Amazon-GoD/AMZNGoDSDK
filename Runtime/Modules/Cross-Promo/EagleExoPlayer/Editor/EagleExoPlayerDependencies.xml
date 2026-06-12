@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <dependencies>
+    <!-- ExoPlayer dependency moved to
+         Assets/AMZNGoDSDK/Runtime/Modules/Cross-Promo/VideoPlayer/Editor/ExoPlayerDependencies.xml
+         (Google ExoPlayer 2.19.1). The legacy EagleExoPlayer asset ships its own
+         bundled jars (disabled for Android) and needs no Maven packages. -->
     <androidPackages>
-        <androidPackage spec="androidx.media3:media3-exoplayer:1.4.1">
-        </androidPackage>
-        <androidPackage spec="androidx.media3:media3-exoplayer-dash:1.4.1">
-        </androidPackage>
-        <androidPackage spec="androidx.media3:media3-ui:1.4.1">
-        </androidPackage>
     </androidPackages>
 </dependencies>

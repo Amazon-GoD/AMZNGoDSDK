@@ -243,13 +243,14 @@ namespace AMZNGoDSDK.Editor
         }
 
         /// <summary>
-        /// Отключает папку (добавляет суффикс ~)
-        /// Сначала пробуем AssetDatabase (папка видна Unity), если не работает - используем Directory.Move
+        /// Отключает папку (добавляет суффикс ~).
+        /// Использует ТОЛЬКО Directory.Move (симметрично EnableFolder): AssetDatabase.MoveAsset
+        /// на больших папках модулей нативно крашит редактор — см. комментарий внутри.
         /// </summary>
         private static bool DisableFolder(string folderPath)
         {
             string disabledPath = folderPath + "~";
-            
+
             if (Directory.Exists(folderPath))
             {
                 // Папка включена, отключаем её
@@ -260,47 +261,39 @@ namespace AMZNGoDSDK.Editor
                 }
 
                 Debug.Log($"[Module Folders] 🔄 Disabling folder: {folderPath} → {disabledPath}");
-                
-                // Пробуем через AssetDatabase (папка БЕЗ ~ видна Unity)
-                string moveError = AssetDatabase.MoveAsset(folderPath, disabledPath);
-                
-                if (!string.IsNullOrEmpty(moveError))
+
+                // ВАЖНО: НЕ используем AssetDatabase.MoveAsset. На больших папках модулей
+                // (сцены/префабы/нативные плагины) он нативно роняет редактор
+                // ("The file 'MemoryStream' is corrupted! / Position out of bounds") —
+                // это native-crash, а не C#-исключение, поэтому try/catch его не ловит.
+                // Переименовываем напрямую через файловую систему, как делает EnableFolder.
+                // AssetDatabase.Refresh() в конце UpdateModuleFolders* подхватит изменения.
+                try
                 {
-                    Debug.LogWarning($"[Module Folders] ⚠ AssetDatabase.MoveAsset failed: {moveError}");
-                    Debug.LogWarning($"[Module Folders] 🔄 Trying fallback: Directory.Move...");
-                    
-                    // Fallback: прямое переименование через файловую систему
-                    try
+                    Directory.Move(folderPath, disabledPath);
+
+                    // Переименовываем .meta файл
+                    string enabledMeta = folderPath + ".meta";
+                    string disabledMeta = disabledPath + ".meta";
+                    if (File.Exists(enabledMeta))
                     {
-                        Directory.Move(folderPath, disabledPath);
-                        
-                        // Переименовываем .meta файл
-                        string enabledMeta = folderPath + ".meta";
-                        string disabledMeta = disabledPath + ".meta";
-                        if (File.Exists(enabledMeta))
+                        if (File.Exists(disabledMeta))
                         {
-                            if (File.Exists(disabledMeta))
-                            {
-                                File.Delete(disabledMeta);
-                            }
-                            File.Move(enabledMeta, disabledMeta);
+                            File.Delete(disabledMeta);
                         }
-                        
-                        Debug.Log($"[Module Folders] ✅ Fallback successful");
-                        return true;
+                        File.Move(enabledMeta, disabledMeta);
+                        Debug.Log($"[Module Folders] ✓ Renamed .meta file");
                     }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"[Module Folders] ❌ Fallback also failed: {e.Message}");
-                        Debug.LogError($"[Module Folders] ❌ Exception: {e.GetType().Name}");
-                        return false;
-                    }
+
+                    Debug.Log($"[Module Folders] ✅ Successfully disabled folder");
+                    return true;
                 }
-                
-                // AssetDatabase успешно переименовал папку
-                // .meta файл уже должен быть обработан AssetDatabase
-                Debug.Log($"[Module Folders] ✅ Successfully disabled folder via AssetDatabase");
-                return true;
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[Module Folders] ❌ Failed to disable folder: {e.Message}");
+                    Debug.LogError($"[Module Folders] ❌ Exception: {e.GetType().Name}");
+                    return false;
+                }
             }
 
             return false; // Папка уже отключена
