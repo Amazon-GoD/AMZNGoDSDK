@@ -30,6 +30,10 @@ namespace AMZNGoDSDK.Runtime
         private bool _isVisible;
         private bool _ctaClicked;
 
+        // Универсальный мут звука игры на время показа рекламы.
+        private bool _gameAudioMuted;
+        private float _savedAudioVolume;
+
         public bool IsVisible => _isVisible;
 
         /// <summary>
@@ -68,6 +72,10 @@ namespace AMZNGoDSDK.Runtime
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
+                // Глушим звук игры до показа: ролик звучит через нативный ExoPlayer (мимо
+                // AudioListener), поэтому реклама слышна, а игра — нет.
+                MuteGameAudio();
+
                 _native = new AndroidJavaObject(NativeClass);
                 _native.Call("init", gameObject.name);
                 _native.Call("show", url, ctaText, ctaDelay, false);
@@ -75,6 +83,7 @@ namespace AMZNGoDSDK.Runtime
             catch (Exception e)
             {
                 Debug.LogError($"[CrossPromoExoNativeOverlay] Failed to show native overlay: {e}");
+                RestoreGameAudio();
                 _isVisible = false;
                 _onClose?.Invoke();
             }
@@ -99,6 +108,8 @@ namespace AMZNGoDSDK.Runtime
             if (!_isVisible) return;
             _isVisible = false;
 
+            RestoreGameAudio();
+
             var cb = _onClose;
             _onClose = null;
 
@@ -113,10 +124,34 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnDestroy()
         {
+            // Safety net: never leave the game muted if we're torn down without a clean Hide().
+            RestoreGameAudio();
 #if UNITY_ANDROID && !UNITY_EDITOR
             try { _native?.Call("dismiss"); } catch (Exception) { }
             _native = null;
 #endif
+        }
+
+        /// <summary>
+        /// Universal, engine-level game mute for the duration of the ad: silences everything the
+        /// Unity <see cref="AudioListener"/> hears, independent of how the host game manages its
+        /// own audio. The ad video keeps its sound (it plays through the native ExoPlayer, not the
+        /// Unity listener). Idempotent — the original volume is captured only on the first call.
+        /// </summary>
+        private void MuteGameAudio()
+        {
+            if (_gameAudioMuted) return;
+            _savedAudioVolume = AudioListener.volume;
+            AudioListener.volume = 0f;
+            _gameAudioMuted = true;
+        }
+
+        /// <summary>Restores the game volume saved by <see cref="MuteGameAudio"/>. Idempotent.</summary>
+        private void RestoreGameAudio()
+        {
+            if (!_gameAudioMuted) return;
+            AudioListener.volume = _savedAudioVolume;
+            _gameAudioMuted = false;
         }
 
         // Когда поверх плеера открывается внешнее приложение (Amazon-стор по клику), Unity
