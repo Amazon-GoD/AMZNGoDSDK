@@ -2,12 +2,15 @@ package com.amzngod.exoplayer;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -53,6 +56,18 @@ public class CrossPromoExoOverlay implements Player.Listener {
     private Runnable countdownTick;
 
     private boolean completed;
+
+    /** Parent the overlay is attached to (decor view, or content view on fallback). */
+    private ViewGroup overlayParent;
+    /** Keeps the overlay on top if the game re-adds / re-orders its own views. */
+    private ViewTreeObserver.OnGlobalLayoutListener keepOnTopListener;
+
+    /**
+     * Elevation (in px) applied to the overlay root. Elevation decides the draw order among
+     * sibling views on API 21+, so an intentionally huge value guarantees the overlay wins
+     * over the game's view regardless of insertion order.
+     */
+    private static final float OVERLAY_ELEVATION_PX = 1_000_000f;
 
     public void init(String objectName) {
         this.unityObjectName = objectName;
@@ -140,9 +155,7 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 });
                 root.addView(closeButton, closeLp);
 
-                activity.addContentView(root, new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
+                attachOnTop(activity, root);
 
                 player.setMediaItem(MediaItem.fromUri(url));
                 player.prepare();
@@ -161,6 +174,76 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 sendToUnity("OnExoOverlayError", e.getMessage() != null ? e.getMessage() : "Unknown error");
             }
         });
+    }
+
+    /**
+     * Attaches {@code overlay} so it is reliably drawn above the game (and any UI the game
+     * renders on top of it). The problem this solves: when the overlay is added as a plain
+     * sibling of Unity's view (e.g. via {@code addContentView}) there is no guaranteed draw
+     * order, so in many games the in-game UI ends up composited over the overlay.
+     *
+     * <p>The fix is intentionally universal and permission-free:</p>
+     * <ol>
+     *     <li>attach to the window's <b>decor view</b> — the top-most container, which sits
+     *     above the content view that hosts Unity (falls back to {@code addContentView} if the
+     *     decor view is unavailable);</li>
+     *     <li>push it to the front and give it a very large {@link View#setElevation elevation}
+     *     (elevation wins the z-order among siblings on API 21+);</li>
+     *     <li>keep it there: if the game later adds / re-orders its own views, re-assert the
+     *     overlay on top (see {@link #keepOnTopListener}).</li>
+     * </ol>
+     */
+    private void attachOnTop(Activity activity, View overlay) {
+        ViewGroup parent = null;
+        try {
+            View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
+            if (decor instanceof ViewGroup) parent = (ViewGroup) decor;
+        } catch (Exception ignored) {
+        }
+
+        if (parent != null) {
+            parent.addView(overlay, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            // Fallback: classic Unity attach point. Still benefits from elevation + bringToFront.
+            activity.addContentView(overlay, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            if (overlay.getParent() instanceof ViewGroup) parent = (ViewGroup) overlay.getParent();
+        }
+        overlayParent = parent;
+
+        bringOverlayToFront(overlay);
+
+        final ViewGroup attachParent = parent;
+        if (attachParent != null) {
+            // Re-assert on top only when we are not already the last (top-most) child. The guard
+            // makes this self-terminating: bringToFront() makes us the last child, so the next
+            // layout pass is a no-op and we don't spin in a layout loop.
+            keepOnTopListener = () -> {
+                if (root == null) return;
+                int count = attachParent.getChildCount();
+                if (count > 0 && attachParent.getChildAt(count - 1) != root) {
+                    bringOverlayToFront(root);
+                }
+            };
+            attachParent.getViewTreeObserver().addOnGlobalLayoutListener(keepOnTopListener);
+        }
+    }
+
+    /** Forces {@code overlay} to the top of its parent's draw order (front + max elevation). */
+    private void bringOverlayToFront(View overlay) {
+        if (overlay == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            overlay.setElevation(OVERLAY_ELEVATION_PX);
+        }
+        overlay.bringToFront();
+        ViewParent vp = overlay.getParent();
+        if (vp != null) {
+            vp.requestLayout();
+            if (vp instanceof View) ((View) vp).invalidate();
+        }
     }
 
     public void setMuted(boolean muted) {
@@ -225,6 +308,13 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 playerView.setPlayer(null);
                 playerView = null;
             }
+            if (overlayParent != null && keepOnTopListener != null) {
+                ViewTreeObserver vto = overlayParent.getViewTreeObserver();
+                if (vto.isAlive()) vto.removeOnGlobalLayoutListener(keepOnTopListener);
+            }
+            keepOnTopListener = null;
+            overlayParent = null;
+
             if (root != null && root.getParent() instanceof ViewGroup) {
                 ((ViewGroup) root.getParent()).removeView(root);
             }
