@@ -42,11 +42,15 @@ namespace AMZNGoDSDK.Runtime
             // S2S flag — required for server-side / non-browser requests
             parts.Add("s2s=1");
 
-            // Device identifier for attribution
+            // Device identifier for attribution. DeviceIdProvider живёт в Analytics
+            // модуле — при отключённом Analytics его нет в компиляции, атрибуция
+            // тогда идёт без device id (Adjust матчит по fingerprint/prob-match).
+#if AMZN_ANALYTICS_ENABLED
             string rawId = DeviceIdProvider.RawDeviceId;
             string paramName = DeviceIdProvider.DeviceIdParamName;
             if (!string.IsNullOrEmpty(rawId) && !string.IsNullOrEmpty(paramName))
                 AppendQuery(parts, paramName, rawId);
+#endif
 
             AppendQuery(parts, "campaign", campaign);
             AppendQuery(parts, "adgroup", adgroup);
