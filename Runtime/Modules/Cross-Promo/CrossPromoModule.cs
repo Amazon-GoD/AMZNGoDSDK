@@ -199,6 +199,31 @@ namespace AMZNGoDSDK.Runtime
             _initRunning = false;
         }
 
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            // Пользователь мог кликнуть промо, установить пейд и вернуться в донор —
+            // перепрогоняем фильтр, чтобы следующий показ не рекламировал уже
+            // установленное приложение и не оффер сам себя.
+            if (!hasFocus || !Enabled || _crossPromoConfig == null) return;
+
+            int before = _crossPromoConfig.Videos?.Count ?? 0;
+            _crossPromoConfig.RemoveInstalledOrSelfPromo(Application.identifier);
+            int after = _crossPromoConfig.Videos?.Count ?? 0;
+            if (before == after) return;
+
+            Debug.Log($"[CrossPromoModule] OnApplicationFocus: filtered installed/self promos, {before} → {after}");
+
+            // Если предзагруженное видео больше не разрешено, сбрасываем префилл и
+            // подтягиваем следующее допустимое.
+            if (_preloadedConfig != null && (_crossPromoConfig.Videos == null
+                || !_crossPromoConfig.Videos.Exists(v => v.Title == _preloadedConfig.Title)))
+            {
+                DisposePreloadPlayer();
+                _preloadedConfig = null;
+                PreloadNextVideo();
+            }
+        }
+
         private void DisposePreloadPlayer()
         {
             if (_preloadPlayer == null) return;
