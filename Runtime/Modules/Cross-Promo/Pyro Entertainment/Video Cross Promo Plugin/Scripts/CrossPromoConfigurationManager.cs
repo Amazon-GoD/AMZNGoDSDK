@@ -117,6 +117,33 @@ namespace AMZNGoDSDK.Runtime
             {
                 _masterVideos?.RemoveAll(v => v.Title == title);
             }
+
+            /// <summary>
+            /// Убирает из активного и master-списка видео, чей AppPackageName содержит
+            /// собственный bundle id донора либо установленный на устройстве пакет.
+            /// Безопасно вызывать повторно (например, при возврате в приложение после
+            /// установки промоутируемого пейда).
+            /// </summary>
+            public void RemoveInstalledOrSelfPromo(string ownPackageId)
+            {
+                bool Match(PromoConfiguration v)
+                {
+                    if (v?.AppPackageName == null) return false;
+                    foreach (var pkg in v.AppPackageName)
+                    {
+                        if (string.IsNullOrEmpty(pkg)) continue;
+                        if (!string.IsNullOrEmpty(ownPackageId)
+                            && string.Equals(pkg, ownPackageId, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                        if (AppChecker.CheckIfAppInstalled(pkg))
+                            return true;
+                    }
+                    return false;
+                }
+
+                _masterVideos?.RemoveAll(Match);
+                Videos?.RemoveAll(Match);
+            }
         }
 
         [Serializable]
@@ -218,7 +245,8 @@ namespace AMZNGoDSDK.Runtime
                     Debug.Log($"[CrossPromoConfig] Attempt {attempt} succeeded. Parsing response...");
                     configuration = ParseConfig(request.downloadHandler.text);
                     NormalizeWeights(configuration);
-                    RemoveInstalledApps(configuration);
+                    configuration.RemoveInstalledOrSelfPromo(Application.identifier);
+                    NormalizeWeights(configuration);
                     Debug.Log($"[CrossPromoConfig] Final config: Videos={configuration.Videos?.Count ?? 0}");
                     return configuration;
                 }
@@ -289,42 +317,6 @@ namespace AMZNGoDSDK.Runtime
             configuration.Videos[0].Weight += 1 - configuration.Videos.Sum(video => video.Weight);
         }
 
-        private static void RemoveInstalledApps(PromosConfigurationInfo configuration)
-        {
-            Debug.Log($"[CrossPromoConfig] RemoveInstalledApps called. Videos={configuration?.Videos?.Count ?? -1}");
-
-            if (configuration?.Videos == null || configuration.Videos.Count == 0)
-            {
-                Debug.Log("[CrossPromoConfig] RemoveInstalledApps: no videos to check");
-                return;
-            }
-
-            var videosToRemove = new List<PromoConfiguration>();
-            foreach (var video in configuration.Videos)
-            {
-                foreach (var packageName in video.AppPackageName)
-                {
-                    bool installed = AppChecker.CheckIfAppInstalled(packageName);
-                    Debug.Log($"[CrossPromoConfig] CheckIfAppInstalled('{packageName}') = {installed}  (video: '{video.Title}')");
-                    if (installed)
-                    {
-                        videosToRemove.Add(video);
-                        break;
-                    }
-                }
-            }
-
-            Debug.Log($"[CrossPromoConfig] Videos to remove (installed apps): {videosToRemove.Count}");
-
-#if !UNITY_EDITOR && UNITY_ANDROID
-            foreach (var video in videosToRemove)
-            {
-                Debug.Log($"[CrossPromoConfig] Removing video '{video.Title}' (app installed)");
-                configuration.Videos.Remove(video);
-            }
-#endif
-            Debug.Log($"[CrossPromoConfig] After RemoveInstalledApps: Videos={configuration.Videos.Count}");
-        }
     }
 }
 #endif
