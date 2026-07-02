@@ -126,19 +126,27 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public void RemoveInstalledOrSelfPromo(string ownPackageId)
             {
-                bool Match(PromoConfiguration v)
+                string MatchReason(PromoConfiguration v)
                 {
-                    if (v?.AppPackageName == null) return false;
+                    if (v?.AppPackageName == null) return null;
                     foreach (var pkg in v.AppPackageName)
                     {
                         if (string.IsNullOrEmpty(pkg)) continue;
                         if (!string.IsNullOrEmpty(ownPackageId)
                             && string.Equals(pkg, ownPackageId, StringComparison.OrdinalIgnoreCase))
-                            return true;
+                            return $"self ({pkg})";
                         if (AppChecker.CheckIfAppInstalled(pkg))
-                            return true;
+                            return $"installed ({pkg})";
                     }
-                    return false;
+                    return null;
+                }
+
+                bool Match(PromoConfiguration v)
+                {
+                    var reason = MatchReason(v);
+                    if (reason == null) return false;
+                    Debug.Log($"[CrossPromoFilter] drop '{v.Title}' — {reason}");
+                    return true;
                 }
 
                 _masterVideos?.RemoveAll(Match);
@@ -245,7 +253,11 @@ namespace AMZNGoDSDK.Runtime
                     Debug.Log($"[CrossPromoConfig] Attempt {attempt} succeeded. Parsing response...");
                     configuration = ParseConfig(request.downloadHandler.text);
                     NormalizeWeights(configuration);
+                    int filterBefore = configuration.Videos?.Count ?? 0;
+                    Debug.Log($"[CrossPromoFilter] fetch: running filter, ownPackage='{Application.identifier}', videos={filterBefore}");
                     configuration.RemoveInstalledOrSelfPromo(Application.identifier);
+                    int filterAfter = configuration.Videos?.Count ?? 0;
+                    Debug.Log($"[CrossPromoFilter] fetch: done, videos {filterBefore} → {filterAfter}");
                     NormalizeWeights(configuration);
                     Debug.Log($"[CrossPromoConfig] Final config: Videos={configuration.Videos?.Count ?? 0}");
                     return configuration;
