@@ -207,11 +207,11 @@ namespace AMZNGoDSDK.Runtime
             if (!hasFocus || !Enabled || _crossPromoConfig == null) return;
 
             int before = _crossPromoConfig.Videos?.Count ?? 0;
+            Debug.Log($"[CrossPromoFilter] focus: running filter, ownPackage='{Application.identifier}', videos={before}");
             _crossPromoConfig.RemoveInstalledOrSelfPromo(Application.identifier);
             int after = _crossPromoConfig.Videos?.Count ?? 0;
+            Debug.Log($"[CrossPromoFilter] focus: done, videos {before} → {after}");
             if (before == after) return;
-
-            Debug.Log($"[CrossPromoModule] OnApplicationFocus: filtered installed/self promos, {before} → {after}");
 
             // Если предзагруженное видео больше не разрешено, сбрасываем префилл и
             // подтягиваем следующее допустимое.
