@@ -1,18 +1,17 @@
 package com.amzngod.exoplayer;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
+import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -29,22 +28,29 @@ import com.unity3d.player.UnityPlayer;
 
 /**
  * Native full-screen cross-promo video overlay built on ExoPlayer rendering into a
- * {@link TextureView} (wrapped in an {@link AspectRatioFrameLayout} for letterboxing),
- * hosted in its own translucent full-screen {@link Dialog} window on top of the Unity activity.
+ * {@link TextureView} (wrapped in an {@link AspectRatioFrameLayout} for letterboxing), hosted in
+ * its own {@code TYPE_APPLICATION_PANEL} window layered above the Unity activity window.
  *
- * <p><b>Why a separate window.</b> The overlay lives in a dedicated sub-window (the {@code Dialog}),
- * NOT inside Unity's own view hierarchy. Unity renders into a {@code SurfaceView} whose surface is
- * destroyed and recreated when the app returns from the background (e.g. the user locks and unlocks
- * the screen mid-ad). If the overlay shared Unity's window it would lose the surface z-order fight
- * after such a recreation: the game would draw over the (now invisible) overlay, while the overlay's
- * transparent full-screen click target — still on top in the <i>view</i> hierarchy — kept catching
- * taps and opening the promo store. Touch dispatch follows the view tree; drawing follows surface
- * z-order, and the two diverged. A separate window is composited at a higher window layer than the
- * entire activity window, so it stays above Unity's surface no matter how Unity recreates or
- * re-orders its views — drawing and input stay consistent.</p>
+ * <p><b>Why a separate window.</b> Unity renders into a {@code SurfaceView} whose surface is
+ * destroyed and recreated when the app returns from the background (screen lock, Home, task switch).
+ * If the overlay shared Unity's window it would lose the surface z-order fight after such a
+ * recreation: the game would draw over the (now invisible) overlay, while the overlay's transparent
+ * full-screen click target — still on top in the <i>view</i> hierarchy — kept catching taps and
+ * opening the promo store (touch follows the view tree; drawing follows surface z-order, and the two
+ * diverged). A separate window is composited at a higher window layer than the whole activity window,
+ * so it stays above Unity's surface regardless of how Unity recreates or re-orders its views.</p>
  *
- * <p>Video uses a {@code TextureView} (composites like an ordinary view — no separate surface
- * layer, no first-frame composition race).</p>
+ * <p><b>Why {@code WindowManager.addView} and not a {@code Dialog}.</b> A {@code Dialog} tears down
+ * and recreates its {@code ViewRootImpl} when the activity is stopped (Home / task switch). On that
+ * detach→reattach the {@code TextureView}'s {@code SurfaceTexture} is destroyed but not reliably
+ * re-created, leaving the video permanently black. A window added via {@code WindowManager} is only
+ * hidden/shown across background — the view tree (and the {@code TextureView}) stays attached and its
+ * surface is destroyed/recreated on the normal path, exactly like an ordinary view in the activity
+ * window.</p>
+ *
+ * <p>Belt-and-suspenders against a stuck black screen: on resume the video surface is re-asserted,
+ * and a watchdog reveals the close button if no frame renders shortly after returning — so the user
+ * can never be trapped.</p>
  *
  * <p>All analytics / tracking / redirect / cooldown logic lives on the C# side; this class
  * only forwards user/playback events via {@code UnityPlayer.UnitySendMessage}:</p>
@@ -57,6 +63,9 @@ import com.unity3d.player.UnityPlayer;
  */
 public class CrossPromoExoOverlay implements Player.Listener {
 
+    /** How long after a resume we wait for a rendered frame before revealing the close fail-safe. */
+    private static final long RECOVERY_WATCHDOG_MS = 4000L;
+
     private String unityObjectName;
 
     private ExoPlayer player;
@@ -67,13 +76,16 @@ public class CrossPromoExoOverlay implements Player.Listener {
     private View ctaClickCatcher;
     private Button closeButton;
 
-    /** Dedicated window that hosts the overlay above the Unity activity window. */
-    private Dialog dialog;
+    /** Window that hosts the overlay above the Unity activity window (null if the fallback was used). */
+    private WindowManager windowManager;
+    private boolean windowAdded;
 
     private Handler handler;
     private Runnable countdownTick;
 
     private boolean completed;
+    /** Set by {@link #onRenderedFirstFrame()}; reset before a resume to detect surface recovery. */
+    private boolean frameRenderedSinceResume;
 
     public void init(String objectName) {
         this.unityObjectName = objectName;
@@ -95,6 +107,7 @@ public class CrossPromoExoOverlay implements Player.Listener {
         activity.runOnUiThread(() -> {
             try {
                 completed = false;
+                frameRenderedSinceResume = false;
                 handler = new Handler(Looper.getMainLooper());
 
                 player = new ExoPlayer.Builder(activity).build();
@@ -192,42 +205,50 @@ public class CrossPromoExoOverlay implements Player.Listener {
     }
 
     /**
-     * Hosts {@code content} in a dedicated translucent, full-screen {@link Dialog} window layered
-     * above the Unity activity window. See the class javadoc for why a separate window (rather than
-     * attaching into Unity's own view hierarchy) is required to stay reliably on top.
+     * Hosts {@code content} in a dedicated {@code TYPE_APPLICATION_PANEL} window layered above the
+     * Unity activity window. See the class javadoc for why a separate, persistent window (rather than
+     * a {@code Dialog} or an attach into Unity's own view hierarchy) is required.
+     *
+     * <p>If adding the panel window fails (e.g. an invalid window token on some OEM builds) we fall
+     * back to attaching into the activity's content view — this loses the separate-window z-order
+     * guarantee but still shows the ad rather than nothing.</p>
      */
     private void showInOwnWindow(Activity activity, View content) {
-        dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        dialog.setContentView(content, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        // Mirror the game's immersive system-UI state so the status / nav bars don't pop over the video.
+        View gameDecor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
+        if (gameDecor != null) content.setSystemUiVisibility(gameDecor.getSystemUiVisibility());
 
-        // The ad must be watched: no accidental dismissal via the Back button or an outside tap.
-        dialog.setCancelable(false);
-        dialog.setCanceledOnTouchOutside(false);
+        // The ad must be watched: swallow the Back key so it can't dismiss the overlay or leak to the game.
+        content.setFocusableInTouchMode(true);
+        content.setOnKeyListener((v, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK);
 
-        Window w = dialog.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            // Keep the screen on for the duration of the video so it doesn't dim / auto-lock mid-play.
-            w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        try {
+            windowManager = activity.getWindowManager();
 
-            // Mirror the game's system-UI (immersive) state so the status / nav bars don't pop over
-            // the video in a full-screen game.
-            View gameDecor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-            if (gameDecor != null && w.getDecorView() != null) {
-                w.getDecorView().setSystemUiVisibility(gameDecor.getSystemUiVisibility());
-            }
-
-            // Let the video extend into a display cutout (notch) instead of being letterboxed by it.
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_PANEL;
+            lp.token = gameDecor != null ? gameDecor.getWindowToken() : null;
+            lp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+            lp.format = PixelFormat.TRANSLUCENT;
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.flags = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                w.getAttributes().layoutInDisplayCutoutMode =
+                lp.layoutInDisplayCutoutMode =
                         WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             }
-        }
 
-        dialog.show();
+            windowManager.addView(content, lp);
+            windowAdded = true;
+            content.requestFocus();
+        } catch (Exception e) {
+            windowManager = null;
+            windowAdded = false;
+            activity.addContentView(content, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
     }
 
     public void setMuted(boolean muted) {
@@ -253,22 +274,45 @@ public class CrossPromoExoOverlay implements Player.Listener {
         if (activity == null || player == null) return;
         activity.runOnUiThread(() -> {
             if (player == null) return;
+
+            // Окно оверлея, пока приложение было в фоне, уничтожило свою поверхность и пересоздало
+            // её при возврате. Заново привязываем видеоповерхность, чтобы ExoPlayer рисовал в свежую
+            // SurfaceTexture, а не оставался чёрным.
+            if (textureView != null) player.setVideoTextureView(textureView);
+
             if (!completed) {
+                frameRenderedSinceResume = false;
                 player.play();
+                armRecoveryWatchdog();
                 return;
             }
-            // Ролик уже доигран. Пока шёл в фоне (блокировка экрана / открытие стора по CTA),
-            // TextureView мог потерять содержимое своей SurfaceTexture. ExoPlayer в состоянии
-            // STATE_ENDED новый кадр не отрисовывает, поэтому стоп-кадр пропадает (остаётся
-            // только чёрный фон и кнопка закрытия). Перематываем (с playWhenReady=false) к
-            // последнему кадру, чтобы плеер декодировал и заново показал его, не возобновляя
-            // проигрывание.
+            // Ролик уже доигран. ExoPlayer в состоянии STATE_ENDED новый кадр не отрисовывает,
+            // поэтому стоп-кадр пропадает (остаётся только чёрный фон и кнопка закрытия).
+            // Перематываем (с playWhenReady=false) к последнему кадру, чтобы плеер декодировал и
+            // заново показал его, не возобновляя проигрывание.
             long duration = player.getDuration();
             if (duration > 0) {
                 player.setPlayWhenReady(false);
                 player.seekTo(Math.max(0, duration - 1));
             }
         });
+    }
+
+    /**
+     * Fail-safe: if the video surface never recovers after returning to the app (no rendered frame
+     * within {@link #RECOVERY_WATCHDOG_MS}), reveal the close button so the user is never trapped on
+     * a black screen.
+     */
+    private void armRecoveryWatchdog() {
+        if (handler == null) return;
+        handler.postDelayed(() -> {
+            if (root == null || completed) return;
+            if (!frameRenderedSinceResume
+                    && closeButton != null && closeButton.getVisibility() != View.VISIBLE) {
+                closeButton.setVisibility(View.VISIBLE);
+                if (ctaClickCatcher != null) ctaClickCatcher.setVisibility(View.VISIBLE);
+            }
+        }, RECOVERY_WATCHDOG_MS);
     }
 
     public void dismiss() {
@@ -292,11 +336,17 @@ public class CrossPromoExoOverlay implements Player.Listener {
             textureView = null;
             videoFrame = null;
 
-            if (dialog != null) {
-                try { dialog.dismiss(); } catch (Exception ignored) {
+            if (root != null) {
+                if (windowAdded && windowManager != null) {
+                    try { windowManager.removeViewImmediate(root); } catch (Exception ignored) {
+                    }
+                } else if (root.getParent() instanceof ViewGroup) {
+                    // Fallback attach path.
+                    ((ViewGroup) root.getParent()).removeView(root);
                 }
-                dialog = null;
             }
+            windowAdded = false;
+            windowManager = null;
             root = null;
             countdownText = null;
             ctaClickCatcher = null;
@@ -348,6 +398,11 @@ public class CrossPromoExoOverlay implements Player.Listener {
         if (playbackState == Player.STATE_ENDED) {
             onPlaybackEnded();
         }
+    }
+
+    @Override
+    public void onRenderedFirstFrame() {
+        frameRenderedSinceResume = true;
     }
 
     @Override
