@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -20,13 +21,20 @@ import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
-import com.google.android.exoplayer2.ui.StyledPlayerView;
+import com.google.android.exoplayer2.video.VideoSize;
 
 import com.unity3d.player.UnityPlayer;
 
 /**
- * Native full-screen cross-promo video overlay built on ExoPlayer's own
- * {@link StyledPlayerView} (no custom rendering / SurfaceTexture bridge).
+ * Native full-screen cross-promo video overlay built on ExoPlayer rendering into a
+ * {@link TextureView} (wrapped in an {@link AspectRatioFrameLayout} for letterboxing).
+ *
+ * <p>A {@code TextureView} is used deliberately instead of {@code StyledPlayerView}'s default
+ * {@code SurfaceView}: the overlay is stacked on top of Unity's own {@code SurfaceView}, and a
+ * second {@code SurfaceView} added to the same window loses the first-frame composition race on
+ * the first show of a session (black screen until a touch forces a window traversal). A
+ * {@code TextureView} composites like an ordinary view — no separate surface layer, no
+ * hole-punch, no z-order race — so the first frame appears immediately.
  *
  * <p>The overlay is added on top of Unity's view via {@code addContentView}. It shows the
  * video, a CTA button (appears after {@code ctaDelaySeconds}), a close button (appears once
@@ -46,7 +54,8 @@ public class CrossPromoExoOverlay implements Player.Listener {
     private String unityObjectName;
 
     private ExoPlayer player;
-    private StyledPlayerView playerView;
+    private AspectRatioFrameLayout videoFrame;
+    private TextureView textureView;
     private FrameLayout root;
     private TextView countdownText;
     private View ctaClickCatcher;
@@ -102,17 +111,26 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 );
                 if (startMuted) player.setVolume(0f);
 
-                playerView = new StyledPlayerView(activity);
-                playerView.setUseController(false);
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                playerView.setPlayer(player);
-                playerView.setLayoutParams(new FrameLayout.LayoutParams(
+                // Video renders into a TextureView (letterboxed by an AspectRatioFrameLayout).
+                // See the class javadoc for why a TextureView is used instead of a SurfaceView.
+                videoFrame = new AspectRatioFrameLayout(activity);
+                videoFrame.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                videoFrame.setLayoutParams(new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        Gravity.CENTER));
+
+                textureView = new TextureView(activity);
+                textureView.setLayoutParams(new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        Gravity.CENTER));
+                videoFrame.addView(textureView);
+                player.setVideoTextureView(textureView);
 
                 root = new FrameLayout(activity);
                 root.setBackgroundColor(Color.BLACK);
-                root.addView(playerView);
+                root.addView(videoFrame);
 
                 // Full-screen transparent click target: a tap anywhere opens the promo link.
                 // Added directly above the video so the countdown label and the close button
@@ -274,11 +292,11 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 return;
             }
             // Ролик уже доигран. Пока шёл в фоне (блокировка экрана / открытие стора по CTA),
-            // SurfaceView внутри StyledPlayerView уничтожил свою поверхность и пересоздал её
-            // при возврате. ExoPlayer в состоянии STATE_ENDED новый кадр в поверхность не
-            // отрисовывает, поэтому стоп-кадр пропадает (остаётся только чёрный фон и кнопка
-            // закрытия). Перематываем (с playWhenReady=false) к последнему кадру, чтобы плеер
-            // декодировал и заново показал его в новой поверхности, не возобновляя проигрывание.
+            // TextureView мог потерять содержимое своей SurfaceTexture. ExoPlayer в состоянии
+            // STATE_ENDED новый кадр не отрисовывает, поэтому стоп-кадр пропадает (остаётся
+            // только чёрный фон и кнопка закрытия). Перематываем (с playWhenReady=false) к
+            // последнему кадру, чтобы плеер декодировал и заново показал его, не возобновляя
+            // проигрывание.
             long duration = player.getDuration();
             if (duration > 0) {
                 player.setPlayWhenReady(false);
@@ -301,13 +319,12 @@ public class CrossPromoExoOverlay implements Player.Listener {
             handler = null;
 
             if (player != null) {
+                if (textureView != null) player.clearVideoTextureView(textureView);
                 player.release();
                 player = null;
             }
-            if (playerView != null) {
-                playerView.setPlayer(null);
-                playerView = null;
-            }
+            textureView = null;
+            videoFrame = null;
             if (overlayParent != null && keepOnTopListener != null) {
                 ViewTreeObserver vto = overlayParent.getViewTreeObserver();
                 if (vto.isAlive()) vto.removeOnGlobalLayoutListener(keepOnTopListener);
@@ -365,6 +382,13 @@ public class CrossPromoExoOverlay implements Player.Listener {
         if (playbackState == Player.STATE_ENDED) {
             onPlaybackEnded();
         }
+    }
+
+    @Override
+    public void onVideoSizeChanged(VideoSize videoSize) {
+        if (videoFrame == null || videoSize.height == 0) return;
+        float ratio = (videoSize.width * videoSize.pixelWidthHeightRatio) / videoSize.height;
+        videoFrame.setAspectRatio(ratio);
     }
 
     @Override
