@@ -39,6 +39,47 @@ namespace AMZNGoDSDK.Editor
         [MenuItem("AMZN GoD/Export SDK Package", false, 50)]
         public static void ExportPackage()
         {
+            string savePath = EditorUtility.SaveFilePanel(
+                "Export AMZN GoD SDK",
+                "",
+                "AMZNGoDSDK",
+                "unitypackage");
+
+            if (string.IsNullOrEmpty(savePath))
+                return;
+
+            if (ExportPackageToPath(savePath, out string error))
+            {
+                Debug.Log($"[AMZN GoD SDK] Package exported to: {savePath}");
+                EditorUtility.DisplayDialog("Export Complete",
+                    "SDK exported successfully!\n\n" +
+                    "Config file: excluded\n" +
+                    "Module folders: all included\n\n" +
+                    "On import, the Setup Wizard will guide the user.",
+                    "OK");
+            }
+            else
+            {
+                Debug.LogError($"[AMZN GoD SDK] Export failed: {error}");
+                EditorUtility.DisplayDialog("Export Failed", error, "OK");
+            }
+        }
+
+        /// <summary>
+        /// Non-interactive export: writes .unitypackage to savePath, returns success.
+        /// Same preparation flow as ExportPackage() (unhides module ~ folders, hides
+        /// runtime config), but no dialogs — meant for scripted/CI deploy pipelines.
+        /// </summary>
+        public static bool ExportPackageToPath(string savePath, out string error)
+        {
+            error = null;
+
+            if (string.IsNullOrEmpty(savePath))
+            {
+                error = "Save path is empty.";
+                return false;
+            }
+
             var hiddenFolders = new List<string>();
             string backupConfigPath = null;
 
@@ -80,27 +121,21 @@ namespace AMZNGoDSDK.Editor
                 AssetDatabase.Refresh();
                 AssetDatabase.ImportAsset(SdkRoot, ImportAssetOptions.ImportRecursive);
 
-                // 4. Выбираем путь для сохранения
-                string savePath = EditorUtility.SaveFilePanel(
-                    "Export AMZN GoD SDK",
-                    "",
-                    "AMZNGoDSDK",
-                    "unitypackage");
-
-                if (string.IsNullOrEmpty(savePath))
-                    return;
-
-                // 5. Экспортируем SDK
+                // 4. Экспортируем SDK
                 AssetDatabase.ExportPackage(new[] { SdkRoot }, savePath, ExportPackageOptions.Recurse);
 
-                Debug.Log($"[AMZN GoD SDK] Package exported to: {savePath}");
+                if (!File.Exists(savePath))
+                {
+                    error = $"AssetDatabase.ExportPackage did not produce a file at {savePath}.";
+                    return false;
+                }
 
-                EditorUtility.DisplayDialog("Export Complete",
-                    "SDK exported successfully!\n\n" +
-                    "Config file: excluded\n" +
-                    "Module folders: all included\n\n" +
-                    "On import, the Setup Wizard will guide the user.",
-                    "OK");
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                error = e.Message;
+                return false;
             }
             finally
             {
@@ -109,7 +144,7 @@ namespace AMZNGoDSDK.Editor
                 // из-за чего Directory.Move падает с "Access denied" на Windows.
                 AssetDatabase.ReleaseCachedFileHandles();
 
-                // 6. Восстанавливаем скрытые папки модулей
+                // 5. Восстанавливаем скрытые папки модулей
                 foreach (var folder in hiddenFolders)
                 {
                     string hidden = folder + "~";
@@ -120,7 +155,7 @@ namespace AMZNGoDSDK.Editor
                     }
                 }
 
-                // 7. Восстанавливаем конфиг
+                // 6. Восстанавливаем конфиг
                 if (backupConfigPath != null && File.Exists(backupConfigPath))
                 {
                     if (File.Exists(ConfigPath)) File.Delete(ConfigPath);
