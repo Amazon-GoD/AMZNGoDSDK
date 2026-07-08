@@ -1,7 +1,9 @@
 package com.amzngod.exoplayer;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,8 +12,8 @@ import android.view.Gravity;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
-import android.view.ViewTreeObserver;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -27,18 +29,22 @@ import com.unity3d.player.UnityPlayer;
 
 /**
  * Native full-screen cross-promo video overlay built on ExoPlayer rendering into a
- * {@link TextureView} (wrapped in an {@link AspectRatioFrameLayout} for letterboxing).
+ * {@link TextureView} (wrapped in an {@link AspectRatioFrameLayout} for letterboxing),
+ * hosted in its own translucent full-screen {@link Dialog} window on top of the Unity activity.
  *
- * <p>A {@code TextureView} is used deliberately instead of {@code StyledPlayerView}'s default
- * {@code SurfaceView}: the overlay is stacked on top of Unity's own {@code SurfaceView}, and a
- * second {@code SurfaceView} added to the same window loses the first-frame composition race on
- * the first show of a session (black screen until a touch forces a window traversal). A
- * {@code TextureView} composites like an ordinary view — no separate surface layer, no
- * hole-punch, no z-order race — so the first frame appears immediately.
+ * <p><b>Why a separate window.</b> The overlay lives in a dedicated sub-window (the {@code Dialog}),
+ * NOT inside Unity's own view hierarchy. Unity renders into a {@code SurfaceView} whose surface is
+ * destroyed and recreated when the app returns from the background (e.g. the user locks and unlocks
+ * the screen mid-ad). If the overlay shared Unity's window it would lose the surface z-order fight
+ * after such a recreation: the game would draw over the (now invisible) overlay, while the overlay's
+ * transparent full-screen click target — still on top in the <i>view</i> hierarchy — kept catching
+ * taps and opening the promo store. Touch dispatch follows the view tree; drawing follows surface
+ * z-order, and the two diverged. A separate window is composited at a higher window layer than the
+ * entire activity window, so it stays above Unity's surface no matter how Unity recreates or
+ * re-orders its views — drawing and input stay consistent.</p>
  *
- * <p>The overlay is added on top of Unity's view via {@code addContentView}. It shows the
- * video, a CTA button (appears after {@code ctaDelaySeconds}), a close button (appears once
- * the video has finished) and a countdown of the remaining seconds.</p>
+ * <p>Video uses a {@code TextureView} (composites like an ordinary view — no separate surface
+ * layer, no first-frame composition race).</p>
  *
  * <p>All analytics / tracking / redirect / cooldown logic lives on the C# side; this class
  * only forwards user/playback events via {@code UnityPlayer.UnitySendMessage}:</p>
@@ -61,22 +67,13 @@ public class CrossPromoExoOverlay implements Player.Listener {
     private View ctaClickCatcher;
     private Button closeButton;
 
+    /** Dedicated window that hosts the overlay above the Unity activity window. */
+    private Dialog dialog;
+
     private Handler handler;
     private Runnable countdownTick;
 
     private boolean completed;
-
-    /** Parent the overlay is attached to (decor view, or content view on fallback). */
-    private ViewGroup overlayParent;
-    /** Keeps the overlay on top if the game re-adds / re-orders its own views. */
-    private ViewTreeObserver.OnGlobalLayoutListener keepOnTopListener;
-
-    /**
-     * Elevation (in px) applied to the overlay root. Elevation decides the draw order among
-     * sibling views on API 21+, so an intentionally huge value guarantees the overlay wins
-     * over the game's view regardless of insertion order.
-     */
-    private static final float OVERLAY_ELEVATION_PX = 1_000_000f;
 
     public void init(String objectName) {
         this.unityObjectName = objectName;
@@ -173,7 +170,7 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 });
                 root.addView(closeButton, closeLp);
 
-                attachOnTop(activity, root);
+                showInOwnWindow(activity, root);
 
                 player.setMediaItem(MediaItem.fromUri(url));
                 player.prepare();
@@ -195,73 +192,42 @@ public class CrossPromoExoOverlay implements Player.Listener {
     }
 
     /**
-     * Attaches {@code overlay} so it is reliably drawn above the game (and any UI the game
-     * renders on top of it). The problem this solves: when the overlay is added as a plain
-     * sibling of Unity's view (e.g. via {@code addContentView}) there is no guaranteed draw
-     * order, so in many games the in-game UI ends up composited over the overlay.
-     *
-     * <p>The fix is intentionally universal and permission-free:</p>
-     * <ol>
-     *     <li>attach to the window's <b>decor view</b> — the top-most container, which sits
-     *     above the content view that hosts Unity (falls back to {@code addContentView} if the
-     *     decor view is unavailable);</li>
-     *     <li>push it to the front and give it a very large {@link View#setElevation elevation}
-     *     (elevation wins the z-order among siblings on API 21+);</li>
-     *     <li>keep it there: if the game later adds / re-orders its own views, re-assert the
-     *     overlay on top (see {@link #keepOnTopListener}).</li>
-     * </ol>
+     * Hosts {@code content} in a dedicated translucent, full-screen {@link Dialog} window layered
+     * above the Unity activity window. See the class javadoc for why a separate window (rather than
+     * attaching into Unity's own view hierarchy) is required to stay reliably on top.
      */
-    private void attachOnTop(Activity activity, View overlay) {
-        ViewGroup parent = null;
-        try {
-            View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-            if (decor instanceof ViewGroup) parent = (ViewGroup) decor;
-        } catch (Exception ignored) {
+    private void showInOwnWindow(Activity activity, View content) {
+        dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        dialog.setContentView(content, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // The ad must be watched: no accidental dismissal via the Back button or an outside tap.
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            // Keep the screen on for the duration of the video so it doesn't dim / auto-lock mid-play.
+            w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+            // Mirror the game's system-UI (immersive) state so the status / nav bars don't pop over
+            // the video in a full-screen game.
+            View gameDecor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
+            if (gameDecor != null && w.getDecorView() != null) {
+                w.getDecorView().setSystemUiVisibility(gameDecor.getSystemUiVisibility());
+            }
+
+            // Let the video extend into a display cutout (notch) instead of being letterboxed by it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                w.getAttributes().layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            }
         }
 
-        if (parent != null) {
-            parent.addView(overlay, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-        } else {
-            // Fallback: classic Unity attach point. Still benefits from elevation + bringToFront.
-            activity.addContentView(overlay, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-            if (overlay.getParent() instanceof ViewGroup) parent = (ViewGroup) overlay.getParent();
-        }
-        overlayParent = parent;
-
-        bringOverlayToFront(overlay);
-
-        final ViewGroup attachParent = parent;
-        if (attachParent != null) {
-            // Re-assert on top only when we are not already the last (top-most) child. The guard
-            // makes this self-terminating: bringToFront() makes us the last child, so the next
-            // layout pass is a no-op and we don't spin in a layout loop.
-            keepOnTopListener = () -> {
-                if (root == null) return;
-                int count = attachParent.getChildCount();
-                if (count > 0 && attachParent.getChildAt(count - 1) != root) {
-                    bringOverlayToFront(root);
-                }
-            };
-            attachParent.getViewTreeObserver().addOnGlobalLayoutListener(keepOnTopListener);
-        }
-    }
-
-    /** Forces {@code overlay} to the top of its parent's draw order (front + max elevation). */
-    private void bringOverlayToFront(View overlay) {
-        if (overlay == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            overlay.setElevation(OVERLAY_ELEVATION_PX);
-        }
-        overlay.bringToFront();
-        ViewParent vp = overlay.getParent();
-        if (vp != null) {
-            vp.requestLayout();
-            if (vp instanceof View) ((View) vp).invalidate();
-        }
+        dialog.show();
     }
 
     public void setMuted(boolean muted) {
@@ -307,8 +273,8 @@ public class CrossPromoExoOverlay implements Player.Listener {
 
     public void dismiss() {
         final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
+
+        Runnable teardown = () -> {
             if (handler != null && countdownTick != null) {
                 handler.removeCallbacks(countdownTick);
             }
@@ -325,21 +291,21 @@ public class CrossPromoExoOverlay implements Player.Listener {
             }
             textureView = null;
             videoFrame = null;
-            if (overlayParent != null && keepOnTopListener != null) {
-                ViewTreeObserver vto = overlayParent.getViewTreeObserver();
-                if (vto.isAlive()) vto.removeOnGlobalLayoutListener(keepOnTopListener);
-            }
-            keepOnTopListener = null;
-            overlayParent = null;
 
-            if (root != null && root.getParent() instanceof ViewGroup) {
-                ((ViewGroup) root.getParent()).removeView(root);
+            if (dialog != null) {
+                try { dialog.dismiss(); } catch (Exception ignored) {
+                }
+                dialog = null;
             }
             root = null;
             countdownText = null;
             ctaClickCatcher = null;
             closeButton = null;
-        });
+        };
+
+        // Tear down on the main thread whether or not the Unity activity is still around.
+        if (activity != null) activity.runOnUiThread(teardown);
+        else new Handler(Looper.getMainLooper()).post(teardown);
     }
 
     private void startCountdown() {
