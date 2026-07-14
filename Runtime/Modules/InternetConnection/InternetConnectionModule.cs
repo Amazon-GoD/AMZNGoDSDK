@@ -7,14 +7,26 @@ namespace AMZNGoDSDK.Runtime
     [DisallowMultipleComponent]
     public sealed class InternetConnectionModule : ModuleBase
     {
+        private const string Tag = "[InternetConnection]";
         private const float MinCheckInterval = 1f;
+
+        /// <summary>Path (inside the module's own Resources folder) of the built-in offline banner prefab.</summary>
+        private const string BannerResourcePath = "AMZNGoDSDK/OfflineBanner";
 
         private InternetConnectionSettingData _settings = new();
         private Coroutine _monitorCoroutine;
         private bool _hasInternet = true;
         private bool _pausedByModule;
         private float _savedTimeScale = 1f;
-        [SerializeField] private GameObject _connectionBanner;
+
+        [Header("Banner")]
+        [Tooltip("Optional. Leave empty to spawn the built-in banner prefab from the module's Resources folder.")]
+        [SerializeField] private OfflineBannerView _bannerView;
+
+        [Tooltip("Optional override for the built-in banner prefab.")]
+        [SerializeField] private GameObject _bannerPrefab;
+
+        private bool _bannerResolved;
 
         public bool IsConnected => _hasInternet;
         public bool IsInitialized { get; private set; }
@@ -71,12 +83,14 @@ namespace AMZNGoDSDK.Runtime
 
             if (_hasInternet)
             {
+                Debug.Log($"{Tag} Connection available.");
                 HideBanner();
                 RestoreTimeScale();
                 OnInternetAvailable?.Invoke();
             }
             else
             {
+                Debug.Log($"{Tag} Connection lost.");
                 PauseGame();
                 ShowBanner();
                 OnInternetLost?.Invoke();
@@ -107,16 +121,70 @@ namespace AMZNGoDSDK.Runtime
 
         private void ShowBanner()
         {
-            if (!_settings.ShowBanner || _connectionBanner == null)
+            if (!_settings.ShowBanner)
                 return;
 
-            _connectionBanner.SetActive(true);
+            OfflineBannerView banner = EnsureBanner();
+            if (banner == null)
+                return;
+
+            banner.Show();
         }
 
         private void HideBanner()
         {
-            if (_connectionBanner != null)
-                _connectionBanner.SetActive(false);
+            if (_bannerView != null)
+                _bannerView.Hide();
+        }
+
+        /// <summary>
+        /// Resolves the banner once: uses the serialized reference if the integrator wired their own,
+        /// otherwise spawns the module's built-in prefab from Resources.
+        /// </summary>
+        private OfflineBannerView EnsureBanner()
+        {
+            if (_bannerResolved)
+                return _bannerView;
+
+            // Resolve only once — a failed lookup must not be retried on every connectivity check.
+            _bannerResolved = true;
+
+            if (_bannerView == null)
+            {
+                GameObject prefab = _bannerPrefab != null
+                    ? _bannerPrefab
+                    : Resources.Load<GameObject>(BannerResourcePath);
+
+                if (prefab == null)
+                {
+                    Debug.LogError($"{Tag} Offline banner prefab not found at Resources/{BannerResourcePath}. Banner will not be shown.");
+                    return null;
+                }
+
+                GameObject instance = Instantiate(prefab);
+                instance.name = "AMZNGoDSDK_OfflineBanner";
+                DontDestroyOnLoad(instance);
+
+                _bannerView = instance.GetComponent<OfflineBannerView>();
+                if (_bannerView == null)
+                {
+                    Debug.LogError($"{Tag} Offline banner prefab has no {nameof(OfflineBannerView)} component.");
+                    Destroy(instance);
+                    return null;
+                }
+            }
+
+            _bannerView.Configure(_settings);
+            _bannerView.OnRetry += HandleRetryRequested;
+            _bannerView.Hide(immediate: true);
+
+            return _bannerView;
+        }
+
+        private void HandleRetryRequested()
+        {
+            // Re-poll right away. If we are still offline nothing changes, so no event is raised.
+            CheckConnectivity();
         }
 
         public override void Cleanup()
@@ -127,7 +195,13 @@ namespace AMZNGoDSDK.Runtime
                 _monitorCoroutine = null;
             }
 
+            if (_bannerView != null)
+                _bannerView.OnRetry -= HandleRetryRequested;
+
             HideBanner();
+
+            // Never leave the game frozen if the SDK is torn down while offline.
+            RestoreTimeScale();
         }
     }
 }

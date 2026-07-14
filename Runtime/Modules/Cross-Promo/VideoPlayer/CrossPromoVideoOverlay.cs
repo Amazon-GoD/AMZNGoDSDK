@@ -14,6 +14,9 @@ namespace AMZNGoDSDK.Runtime
     /// </summary>
     public class CrossPromoVideoOverlay : MonoBehaviour
     {
+        /// <summary>Потолок ожидания отправки клика перед открытием стора.</summary>
+        private const float ClickTrackingTimeoutSeconds = 1.5f;
+
         #region Serialized References
 
         [Header("Video")]
@@ -538,19 +541,58 @@ namespace AMZNGoDSDK.Runtime
 
             ReportClick(_config);
 
-            // Open redirect FIRST, then send tracking as fire-and-forget on the module
-            // (which outlives the overlay). Otherwise the external OnCTAClick callback
-            // may Hide() the overlay, deactivating this GO and killing TrackAndRedirect
-            // before Application.OpenURL is reached — so the user's tap opens nothing.
-            if (!string.IsNullOrWhiteSpace(_config.RedirectUrl))
-                Application.OpenURL(_config.RedirectUrl);
-
+            var config = _config;
             var module = CrossPromoModule.Instance;
+
+            // И трекинг, и OpenURL уводим на модуль: он переживает Hide() оверлея, который
+            // может прилететь из внешнего OnCTAClick-колбэка ниже. Раньше из-за этого OpenURL
+            // приходилось звать первым — и клик уходил уже после того, как приложение
+            // свернулось в стор.
             if (module != null)
-                module.StartCoroutine(SendClickTracking(_config));
+            {
+                module.StartCoroutine(TrackThenOpen(config));
+            }
+            else if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+            {
+                // Модуля нет — тап всё равно не должен пропасть.
+                Application.OpenURL(config.RedirectUrl);
+            }
 
             OnCTAClick?.Invoke();
             _callbackOnCTA?.Invoke();
+        }
+
+        /// <summary>
+        /// Отправляет клик ДО перехода в стор (как это делает баннер): после OpenURL приложение
+        /// сворачивается, Unity встаёт на паузу, и незавершённый запрос доезжает в лучшем случае
+        /// при возврате. Ждём отправку, но не дольше <see cref="ClickTrackingTimeoutSeconds"/> —
+        /// иначе тап по CTA ощущается зависшим; недоехавшие ретраи продолжатся в фоне на модуле.
+        /// </summary>
+        private static IEnumerator TrackThenOpen(PromoConfiguration config)
+        {
+            var module = CrossPromoModule.Instance;
+            bool trackingDone = false;
+
+            if (module != null)
+                module.StartCoroutine(RunClickTracking(config, () => trackingDone = true));
+            else
+                trackingDone = true;
+
+            float deadline = Time.realtimeSinceStartup + ClickTrackingTimeoutSeconds;
+            while (!trackingDone && Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            if (!trackingDone)
+                Debug.LogWarning($"[CrossPromoVideoOverlay] Click tracking still in flight after {ClickTrackingTimeoutSeconds}s — opening store, tracking continues in background");
+
+            if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+                Application.OpenURL(config.RedirectUrl);
+        }
+
+        private static IEnumerator RunClickTracking(PromoConfiguration config, Action onDone)
+        {
+            yield return SendClickTracking(config);
+            onDone?.Invoke();
         }
 
         private static IEnumerator SendClickTracking(PromoConfiguration config)

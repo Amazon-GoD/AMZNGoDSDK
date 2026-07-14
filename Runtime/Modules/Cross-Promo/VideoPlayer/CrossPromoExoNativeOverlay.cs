@@ -19,6 +19,9 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string NativeClass = "com.amzngod.exoplayer.CrossPromoExoOverlay";
 
+        /// <summary>Потолок ожидания отправки клика перед открытием стора.</summary>
+        private const float ClickTrackingTimeoutSeconds = 1.5f;
+
 #if UNITY_ANDROID && !UNITY_EDITOR
         private AndroidJavaObject _native;
 #endif
@@ -243,14 +246,50 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoAnalytics.ReportVideoClick(data);
             CrossPromoModule.Instance?.TrackClick(paidAppId);
 
-            // Open the redirect first; tracking is fire-and-forget on the module (which
-            // outlives this bridge) so a close triggered by the CTA can't kill it.
-            if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
-                Application.OpenURL(config.RedirectUrl);
-
+            // Клик уходит ДО редиректа, а сам редирект — на модуле (он переживает закрытие
+            // оверлея по CTA). Открывать стор первым, как раньше, нельзя: приложение
+            // сворачивается, Unity встаёт на паузу и GET клика может не доехать никогда.
             var module = CrossPromoModule.Instance;
             if (module != null)
-                module.StartCoroutine(SendClickTracking(config));
+            {
+                module.StartCoroutine(TrackThenOpen(config));
+            }
+            else if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+            {
+                Application.OpenURL(config.RedirectUrl);
+            }
+        }
+
+        /// <summary>
+        /// Ждёт отправку клика (но не дольше <see cref="ClickTrackingTimeoutSeconds"/>, чтобы тап
+        /// по CTA не ощущался зависшим), затем открывает стор. Незавершённые ретраи продолжаются
+        /// в фоне на модуле.
+        /// </summary>
+        private static IEnumerator TrackThenOpen(PromoConfiguration config)
+        {
+            var module = CrossPromoModule.Instance;
+            bool trackingDone = false;
+
+            if (module != null)
+                module.StartCoroutine(RunClickTracking(config, () => trackingDone = true));
+            else
+                trackingDone = true;
+
+            float deadline = Time.realtimeSinceStartup + ClickTrackingTimeoutSeconds;
+            while (!trackingDone && Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            if (!trackingDone)
+                Debug.LogWarning($"[CrossPromoExoNativeOverlay] Click tracking still in flight after {ClickTrackingTimeoutSeconds}s — opening store, tracking continues in background");
+
+            if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+                Application.OpenURL(config.RedirectUrl);
+        }
+
+        private static IEnumerator RunClickTracking(PromoConfiguration config, Action onDone)
+        {
+            yield return SendClickTracking(config);
+            onDone?.Invoke();
         }
 
         private static IEnumerator SendClickTracking(PromoConfiguration config)

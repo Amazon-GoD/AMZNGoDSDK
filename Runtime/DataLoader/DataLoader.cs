@@ -16,7 +16,24 @@ namespace AMZNGoDSDK.Runtime
 
             var settings = JsonUtility.FromJson<SdkSettingsData>(jsonFile.text);
             MigrateLegacyAnalytics(settings);
+            ApplyAnalyticsDefaults(settings);
             return settings;
+        }
+
+        // Backend и API-ключ аналитики зашиты в SDK и больше не редактируются в окне настроек.
+        // Конфиг мог прийти из старой версии с пустыми полями — без этой подстановки
+        // аналитика молча перестала бы слать события, а починить её из GUI уже нельзя.
+        // Вызывается ПОСЛЕ миграции, чтобы значения из legacy-блоков имели приоритет.
+        private static void ApplyAnalyticsDefaults(SdkSettingsData s)
+        {
+            if (s?.Analytics == null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(s.Analytics.BaseUrl))
+                s.Analytics.BaseUrl = AnalyticsSettingData.DefaultBaseUrl;
+
+            if (string.IsNullOrWhiteSpace(s.Analytics.ApiKey))
+                s.Analytics.ApiKey = AnalyticsSettingData.DefaultApiKey;
         }
 
         // Переносит значения из устаревших мест (FirstOpenTracking-блок хотфикса
