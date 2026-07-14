@@ -149,6 +149,25 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Pause game when offline", _currentSettings.InternetConnection.PauseGameWhenOffline);
                     _currentSettings.InternetConnection.ShowBanner = EditorGUILayout
                         .Toggle("Show built-in banner", _currentSettings.InternetConnection.ShowBanner);
+
+                    if (_currentSettings.InternetConnection.ShowBanner)
+                    {
+                        EditorGUI.indentLevel++;
+                        _currentSettings.InternetConnection.BannerMessage = EditorGUILayout
+                            .TextField("Banner Message", _currentSettings.InternetConnection.BannerMessage);
+                        _currentSettings.InternetConnection.ShowRetryButton = EditorGUILayout
+                            .Toggle("Show retry button", _currentSettings.InternetConnection.ShowRetryButton);
+
+                        if (_currentSettings.InternetConnection.ShowRetryButton)
+                        {
+                            _currentSettings.InternetConnection.RetryButtonLabel = EditorGUILayout
+                                .TextField("Retry Button Label", _currentSettings.InternetConnection.RetryButtonLabel);
+                        }
+
+                        _currentSettings.InternetConnection.BannerSortingOrder = EditorGUILayout
+                            .IntField("Banner Sorting Order", _currentSettings.InternetConnection.BannerSortingOrder);
+                        EditorGUI.indentLevel--;
+                    }
                 });
         }
 
@@ -376,11 +395,10 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Analytics.Enabled,
                 () =>
                 {
-                    _currentSettings.Analytics.BaseUrl = EditorGUILayout
-                        .TextField("Backend URL", _currentSettings.Analytics.BaseUrl);
-                    _currentSettings.Analytics.ApiKey = EditorGUILayout
-                        .TextField("API Key", _currentSettings.Analytics.ApiKey);
+                    // Backend и ключ зашиты в SDK — правятся только в AnalyticsSettingData.
                     EditorGUI.BeginDisabledGroup(true);
+                    EditorGUILayout.TextField("Backend URL (fixed)", _currentSettings.Analytics.BaseUrl);
+                    EditorGUILayout.TextField("API Key (fixed)", _currentSettings.Analytics.ApiKey);
                     EditorGUILayout.TextField("App ID (auto)", UnityEditor.PlayerSettings.applicationIdentifier);
                     EditorGUI.EndDisabledGroup();
                     _currentSettings.Analytics.AppType = (AnalyticsAppType)EditorGUILayout

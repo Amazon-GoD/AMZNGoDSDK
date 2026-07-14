@@ -67,6 +67,18 @@ namespace AMZNGoDSDK.Editor
         public static readonly List<ModuleManifestFootprint> Footprints = new List<ModuleManifestFootprint>
         {
             // Добавляй новые модули по образцу: ModuleName + ComponentNamePrefixes/Permissions.
+            new ModuleManifestFootprint
+            {
+                // ResponseReceiver'ы Amazon Appstore SDK лежат в глобальном
+                // Assets/Plugins/Android/AndroidManifest.xml (переименование папки модуля
+                // в "~" их не убирает), поэтому с выключенным IAP их режет автоочистка.
+                ModuleName = "InAppPurchase",
+                ComponentNamePrefixes = new[]
+                {
+                    "com.amazon.device.iap.",
+                    "com.amazon.device.drm.",
+                },
+            },
         };
 
         /// <summary>

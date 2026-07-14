@@ -70,6 +70,14 @@ namespace AMZNGoDSDK.Runtime
             parts.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value.Trim())}");
         }
 
+        /// <summary>Задержки между попытками; их количество и задаёт число ретраев.</summary>
+        private static readonly float[] RetryDelaysSeconds = { 1f, 3f };
+
+        /// <summary>
+        /// Шлёт трекер-GET с ретраями. Раньше это был единственный выстрел без повторов:
+        /// любой транзиентный сбой (а он особенно вероятен ровно в момент клика, когда
+        /// приложение уходит в стор) молча терял конверсию.
+        /// </summary>
         internal static IEnumerator SendGet(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -81,11 +89,43 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            using var request = UnityWebRequest.Get(url);
-            yield return request.SendWebRequest();
+            int maxAttempts = RetryDelaysSeconds.Length + 1;
 
-            if (request.result != UnityWebRequest.Result.Success)
-                Debug.LogWarning($"[CrossPromoAdjust] GET failed ({request.responseCode}): {url} — {request.error}");
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                long code;
+                string error;
+
+                using (var request = UnityWebRequest.Get(url))
+                {
+                    yield return request.SendWebRequest();
+
+                    if (request.result == UnityWebRequest.Result.Success)
+                    {
+                        if (attempt > 1)
+                            Debug.Log($"[CrossPromoAdjust] GET succeeded on attempt {attempt}: {url}");
+                        yield break;
+                    }
+
+                    code = request.responseCode;
+                    error = request.error;
+                }
+
+                // 4xx (кроме таймаута и рейт-лимита) — трекер отверг ссылку по существу,
+                // повтор ничего не изменит.
+                if (code >= 400 && code < 500 && code != 408 && code != 429)
+                {
+                    Debug.LogWarning($"[CrossPromoAdjust] GET rejected ({code}), not retrying: {url} — {error}");
+                    yield break;
+                }
+
+                Debug.LogWarning($"[CrossPromoAdjust] GET failed (attempt {attempt}/{maxAttempts}, code={code}): {url} — {error}");
+
+                if (attempt < maxAttempts)
+                    yield return new WaitForSecondsRealtime(RetryDelaysSeconds[attempt - 1]);
+            }
+
+            Debug.LogWarning($"[CrossPromoAdjust] GET giving up after {maxAttempts} attempts: {url}");
         }
 
         internal static bool IsHttpUrl(string url)

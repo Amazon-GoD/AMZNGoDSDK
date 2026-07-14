@@ -153,6 +153,10 @@ namespace AMZNGoDSDK.Editor
                 CheckIntervalSeconds = runtimeSettings.CheckIntervalSeconds,
                 PauseGameWhenOffline = runtimeSettings.PauseGameWhenOffline,
                 ShowBanner = runtimeSettings.ShowBanner,
+                BannerMessage = runtimeSettings.BannerMessage,
+                ShowRetryButton = runtimeSettings.ShowRetryButton,
+                RetryButtonLabel = runtimeSettings.RetryButtonLabel,
+                BannerSortingOrder = runtimeSettings.BannerSortingOrder,
             };
         }
 
@@ -369,6 +373,10 @@ namespace AMZNGoDSDK.Editor
                 CheckIntervalSeconds = editorSettings.CheckIntervalSeconds,
                 PauseGameWhenOffline = editorSettings.PauseGameWhenOffline,
                 ShowBanner = editorSettings.ShowBanner,
+                BannerMessage = editorSettings.BannerMessage,
+                ShowRetryButton = editorSettings.ShowRetryButton,
+                RetryButtonLabel = editorSettings.RetryButtonLabel,
+                BannerSortingOrder = editorSettings.BannerSortingOrder,
             };
         }
 
@@ -391,11 +399,17 @@ namespace AMZNGoDSDK.Editor
                 ? AnalyticsAppType.Paid
                 : AnalyticsAppType.Free;
 
+            // Backend/ключ зашиты в SDK: если конфиг пришёл из старой версии с пустыми
+            // полями, подставляем дефолт — иначе окно сохранило бы пустоту обратно в JSON.
             return new AnalyticsSettingData
             {
                 Enabled = runtimeSettings.Enabled,
-                BaseUrl = runtimeSettings.BaseUrl,
-                ApiKey = runtimeSettings.ApiKey,
+                BaseUrl = string.IsNullOrWhiteSpace(runtimeSettings.BaseUrl)
+                    ? Runtime.AnalyticsSettingData.DefaultBaseUrl
+                    : runtimeSettings.BaseUrl,
+                ApiKey = string.IsNullOrWhiteSpace(runtimeSettings.ApiKey)
+                    ? Runtime.AnalyticsSettingData.DefaultApiKey
+                    : runtimeSettings.ApiKey,
                 AppType = appType
             };
         }

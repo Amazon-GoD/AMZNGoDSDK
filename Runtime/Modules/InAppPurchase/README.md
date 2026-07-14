@@ -11,6 +11,23 @@
 - **Восстановление покупок** - через GetPurchaseUpdates
 - **NotifyFulfillment** - автоматическое подтверждение выполнения покупки
 
+## Нативные зависимости (Plugins/Android)
+
+| Файл | Что это |
+|---|---|
+| `amazon-appstore-sdk-3.0.9.jar` | Amazon Appstore SDK — IAP + DRM + Simple Sign-in |
+| `AmazonIapV2Client.jar`, `AmazonIapV2JavaService-1.0.jar`, `AmazonCptPluginsUtils-1.0.jar`, `gson-2.2.4.jar`, `libs/*/libAmazonIapV2Bridge.so` | легаси Unity-плагин Amazon IAP V2 (JNI-мост, через который ходит C#) |
+| `AmazonIapV2Compat.jar` | шим: возвращает удалённый в 3.0.9 класс `com.amazon.android.CrossPlatformPluginUtils`, без него легаси-плагин падает с `NoClassDefFoundError` при инициализации. Исходник и обоснование — в `AmazonIapV2Compat~/` |
+
+Манифест: `com.amazon.device.iap.ResponseReceiver` (и DRM-аналог) объявлены в глобальном
+`Assets/Plugins/Android/AndroidManifest.xml` — без них Appstore не доставляет ответы
+`PurchasingListener`. С выключенным модулем их вырезает `DisabledModuleManifestCleaner`.
+
+**Ограничение:** `libAmazonIapV2Bridge.so` собран только под 32-бит (`armeabi-v7a`, `armeabi`, `x86`) —
+arm64-сборка с этим плагином работать не будет. Проект сейчас собирается под ARMv7
+(`AndroidTargetArchitectures: 1`). Для перехода на arm64 легаси-плагин надо заменить прямыми
+вызовами `com.amazon.device.iap.PurchasingService` через `AndroidJavaClass`/`AndroidJavaProxy`.
+
 ## Использование
 
 ### Проверка статуса подписки

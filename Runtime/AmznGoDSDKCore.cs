@@ -427,14 +427,16 @@ namespace AMZNGoDSDK.Runtime
 
         private static int GetModulePriority(ModuleBase module)
         {
-            // Lower = earlier. Analytics first so first_open уходит до того, как
-            // другие модули потратят время. Firebase следом — Crashlytics ловит init crashes остальных.
+            // Lower = earlier. Adjust первым: Analytics резолвит device_id через
+            // Adjust.GetAmazonAdId, и запрос к неподнятому SDK возвращает null. Adjust.InitSdk
+            // синхронный и дешёвый, так что first_open от этого не задерживается — Analytics
+            // идёт сразу следом. Firebase третьим — Crashlytics ловит init crashes остальных.
             switch (module.GetType().Name)
             {
-                case "AnalyticsModule": return 0;
-                case "FirebaseModule": return 1;
-                case "AppMetricaModule": return 2;
-                case "AdjustModule": return 3;
+                case "AdjustModule": return 0;
+                case "AnalyticsModule": return 1;
+                case "FirebaseModule": return 2;
+                case "AppMetricaModule": return 3;
                 case "CrossPromoModule": return 5;
                 case "InAppPurchaseModule": return 6;
                 default: return 100;

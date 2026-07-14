@@ -11,8 +11,9 @@ namespace AMZNGoDSDK.Editor
     [Serializable]
     public class AnalyticsSettingData : ModuleSettingData
     {
-        public string BaseUrl;
-        public string ApiKey;
+        // Единственный источник правды — константы в runtime-классе, чтобы зеркала не разъехались.
+        public string BaseUrl = Runtime.AnalyticsSettingData.DefaultBaseUrl;
+        public string ApiKey = Runtime.AnalyticsSettingData.DefaultApiKey;
         public AnalyticsAppType AppType;
     }
 }
