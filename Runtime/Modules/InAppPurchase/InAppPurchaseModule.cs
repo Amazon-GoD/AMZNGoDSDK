@@ -9,12 +9,25 @@ namespace AMZNGoDSDK.Runtime
 {
     public class InAppPurchaseModule : ModuleBase
     {
+        // Amazon GetProductData accepts at most 100 SKUs per request.
+        private const int ProductDataBatchSize = 100;
+
+        // Persistent set of receipts we have already granted + fulfilled.
+        // Guarantees idempotent grants and prevents re-notifying closed receipts.
+        private const string FulfilledReceiptsKey = "AMZN_FulfilledReceipts";
+        private const char FulfilledReceiptsSeparator = '\n';
+
         private InAppPurchaseSettingData settings;
 
         private IAmazonIapV2 iapService;
+        private bool _serviceReady;
         private readonly HashSet<string> registeredProductIds = new();
         private readonly Dictionary<string, ProductData> productDataCache = new();
         private readonly HashSet<string> ownedSkus = new();
+        private readonly HashSet<string> _fulfilledReceipts = new();
+
+        // SKUs registered during initialization, kept so RetryInitialize can re-request the catalog.
+        private readonly List<string> _pendingSkus = new();
 
         private readonly Dictionary<ConsumableRewardType, Action<string, int>> _rewardTypeHandlers =
             new();
@@ -29,6 +42,11 @@ namespace AMZNGoDSDK.Runtime
 
         private Action<bool> _restoreCallback;
         private bool _isRestoring;
+
+        // Cancellation resolution is deferred until the last page (HasMore == false) and evaluated
+        // against SKUs seen active across ALL pages, so it can never depend on receipt/page order.
+        private readonly HashSet<string> _restoreActiveSkus = new();
+        private readonly List<PurchaseReceipt> _restoreCancelledReceipts = new();
 
         private void Awake()
         {
@@ -47,66 +65,151 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled)
                 return;
 
+            LoadFulfilledReceipts();
             InitializeAmazonIAP();
         }
 
         private void InitializeAmazonIAP()
         {
+            if (IsInitialized)
+                return;
+
+            // Phase 1 (fatal, done once): acquire the service and register listeners. If it
+            // throws, the store stays down but retryable. Listeners are registered exactly once
+            // so a retry never double-subscribes.
+            if (!_serviceReady)
+            {
+                try
+                {
+                    iapService = AmazonIapV2Impl.Instance;
+
+                    iapService.AddGetProductDataResponseListener(OnGetProductDataResponse);
+                    iapService.AddPurchaseResponseListener(OnPurchaseResponseHandler);
+                    iapService.AddGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
+
+                    _serviceReady = true;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[AMZNGoDSDK] Amazon IAP service init error: {e.Message}");
+                    iapService = null;
+                    _serviceReady = false;
+                    IsInitialized = false;
+                    return;
+                }
+            }
+
+            // Phase 2 (non-fatal, retryable): catalog + restore. A failure here must never tear
+            // down the live service or leave IsInitialized out of sync — it just stays false so
+            // RetryInitialize() can re-run this phase (all steps below are idempotent).
             try
             {
-                iapService = AmazonIapV2Impl.Instance;
+                RegisterProducts();
+                RequestProductData();
+                RequestPurchaseUpdates();
+                CheckExpiredSubscriptions();
 
-                iapService.AddGetProductDataResponseListener(OnGetProductDataResponse);
-                iapService.AddPurchaseResponseListener(OnPurchaseResponseHandler);
-                iapService.AddGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
-
-                var allSkus = new List<string>();
-
-                foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
-                {
-                    if (string.IsNullOrWhiteSpace(subscription.ProductId))
-                        continue;
-
-                    if (!registeredProductIds.Add(subscription.ProductId))
-                        continue;
-
-                    allSkus.Add(subscription.ProductId);
-                    RegisterSubscriptionStatus(subscription);
-                }
-
-                foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
-                {
-                    if (string.IsNullOrWhiteSpace(consumable.ProductId))
-                        continue;
-
-                    if (!registeredProductIds.Add(consumable.ProductId))
-                        continue;
-
-                    if (string.IsNullOrWhiteSpace(consumable.RewardKey))
-                        consumable.RewardKey = consumable.ProductId;
-
-                    allSkus.Add(consumable.ProductId);
-                }
-
-                if (allSkus.Count > 0)
-                {
-                    iapService.GetProductData(new SkusInput { Skus = allSkus });
-                }
-
-                iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
-
-                Debug.Log("[AMZNGoDSDK] Amazon IAP initialized");
                 IsInitialized = true;
+                Debug.Log("[AMZNGoDSDK] Amazon IAP initialized");
             }
             catch (Exception e)
             {
-                Debug.LogError($"[AMZNGoDSDK] Amazon IAP initialization error: {e.Message}");
-                IsInitialized = false;
-                iapService = null;
+                Debug.LogError($"[AMZNGoDSDK] Amazon IAP catalog init error (retryable): {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Re-attempts initialization after a failure. If the service is already fully initialized
+        /// but the catalog failed to load asynchronously, only the product-data request is retried.
+        /// </summary>
+        public void RetryInitialize()
+        {
+            if (!Enabled)
+                return;
+
+            if (!IsInitialized)
+            {
+                InitializeAmazonIAP();
                 return;
             }
 
-            CheckExpiredSubscriptions();
+            RequestProductData();
+        }
+
+        private void RegisterProducts()
+        {
+            _pendingSkus.Clear();
+
+            foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
+            {
+                if (string.IsNullOrWhiteSpace(subscription.ProductId))
+                    continue;
+
+                RegisterSubscriptionStatus(subscription);
+
+                if (!registeredProductIds.Add(subscription.ProductId))
+                    continue;
+
+                _pendingSkus.Add(subscription.ProductId);
+            }
+
+            foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
+            {
+                if (string.IsNullOrWhiteSpace(consumable.ProductId))
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(consumable.RewardKey))
+                    consumable.RewardKey = consumable.ProductId;
+
+                if (!registeredProductIds.Add(consumable.ProductId))
+                    continue;
+
+                _pendingSkus.Add(consumable.ProductId);
+            }
+        }
+
+        private void RequestProductData()
+        {
+            if (iapService == null || _pendingSkus.Count == 0)
+                return;
+
+            // Chunk into batches of 100 — a single over-limit request fails as a whole,
+            // taking the entire catalog (prices/titles) down with it.
+            for (int i = 0; i < _pendingSkus.Count; i += ProductDataBatchSize)
+            {
+                var batch = _pendingSkus.GetRange(i, Math.Min(ProductDataBatchSize, _pendingSkus.Count - i));
+
+                try
+                {
+                    iapService.GetProductData(new SkusInput { Skus = batch });
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[AMZNGoDSDK] GetProductData batch [{i}..{i + batch.Count}) failed: {e.Message}");
+                }
+            }
+        }
+
+        private void RequestPurchaseUpdates()
+        {
+            if (iapService == null)
+                return;
+
+            try
+            {
+                BeginRestoreAccumulators();
+                iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AMZNGoDSDK] GetPurchaseUpdates failed: {e.Message}");
+            }
+        }
+
+        private void BeginRestoreAccumulators()
+        {
+            _restoreActiveSkus.Clear();
+            _restoreCancelledReceipts.Clear();
         }
 
         private void OnGetProductDataResponse(GetProductDataResponse response)
@@ -140,36 +243,10 @@ namespace AMZNGoDSDK.Runtime
                 string productId = receipt.Sku;
                 ownedSkus.Add(productId);
 
-                if (response.Status == "SUCCESSFUL")
-                {
-                    var subscriptionProduct = settings.SubscriptionProducts
-                        .FirstOrDefault(s => s.ProductId == productId);
+                Debug.Log($"[AMZNGoDSDK] Purchase {response.Status}: {productId}");
 
-                    if (subscriptionProduct != null)
-                    {
-                        Debug.Log($"[AMZNGoDSDK] Subscription purchased: {productId}");
-                        ExtendSubscription(subscriptionProduct);
-                        GiveSubscriptionReward(subscriptionProduct);
-                        GrantSubscriptionConsumables(subscriptionProduct);
-                    }
-                    else
-                    {
-                        var consumableProduct = settings.ConsumableProducts
-                            .FirstOrDefault(c => c.ProductId == productId);
-
-                        if (consumableProduct != null)
-                        {
-                            Debug.Log($"[AMZNGoDSDK] Product purchased: {productId}");
-                            GiveConsumableReward(consumableProduct);
-                        }
-                    }
-                }
-
-                iapService.NotifyFulfillment(new NotifyFulfillmentInput
-                {
-                    ReceiptId = receipt.ReceiptId,
-                    FulfillmentResult = "FULFILLED"
-                });
+                // Grant (idempotent by ReceiptId), persist, THEN notify fulfillment.
+                ProcessReceipt(receipt, isNewPurchase: response.Status == "SUCCESSFUL");
 
                 OnPurchaseComplete?.Invoke(productId);
             }
@@ -190,46 +267,154 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (response.Receipts != null)
+            if (response.Receipts != null && response.Receipts.Count > 0)
             {
                 foreach (var receipt in response.Receipts)
                 {
+                    if (receipt == null)
+                        continue;
+
                     if (receipt.CancelDate != 0)
                     {
-                        ownedSkus.Remove(receipt.Sku);
+                        // Defer: ownership loss is resolved after all pages, against active
+                        // terms seen anywhere in the history — never per-page/per-order.
+                        _restoreCancelledReceipts.Add(receipt);
                         continue;
                     }
 
+                    if (!string.IsNullOrEmpty(receipt.Sku))
+                        _restoreActiveSkus.Add(receipt.Sku);
+
                     ownedSkus.Add(receipt.Sku);
 
-                    if (receipt.ProductType == "SUBSCRIPTION")
-                    {
-                        var sub = settings.SubscriptionProducts
-                            .FirstOrDefault(s => s.ProductId == receipt.Sku);
-
-                        if (sub != null && !HasSubscription(sub.ProductId))
-                            ExtendSubscription(sub);
-                    }
-
-                    iapService.NotifyFulfillment(new NotifyFulfillmentInput
-                    {
-                        ReceiptId = receipt.ReceiptId,
-                        FulfillmentResult = "FULFILLED"
-                    });
+                    // Recovery path: grant unfulfilled consumables and restore subscription
+                    // entitlement. Idempotent by ReceiptId — never re-grants or re-notifies.
+                    ProcessReceipt(receipt, isNewPurchase: false);
                 }
             }
 
             if (response.HasMore)
             {
                 iapService.GetPurchaseUpdates(new ResetInput { Reset = false });
+                return;
+            }
+
+            // Last page: a cancelled SKU is dropped only if it has no active term anywhere.
+            foreach (var cancelled in _restoreCancelledReceipts)
+            {
+                if (!string.IsNullOrEmpty(cancelled.Sku) && !_restoreActiveSkus.Contains(cancelled.Sku))
+                    ownedSkus.Remove(cancelled.Sku);
+            }
+            _restoreCancelledReceipts.Clear();
+            _restoreActiveSkus.Clear();
+
+            CompleteRestore(true);
+
+            foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
+                Debug.Log($"[AMZNGoDSDK] Active subscription: {status.ProductId} (until {status.ExpiresAt.ToLocalTime():G})");
+        }
+
+        /// <summary>
+        /// Single grant + fulfillment path shared by the live purchase and recovery flows.
+        /// Idempotent: a receipt is granted and fulfilled at most once (tracked persistently),
+        /// which prevents lost rewards, double grants, and re-fulfillment of closed receipts.
+        ///
+        /// Ordering is deliberately grant → persist marker → NotifyFulfillment. The two persisted
+        /// writes (reward and fulfilled-marker) are separate PlayerPrefs saves and thus not atomic:
+        /// an app-kill in the sub-millisecond window between them can re-grant on the next launch.
+        /// This is an accepted trade-off — the priority is never losing a paid consumable, so on the
+        /// rare crash we favor a possible extra grant over a lost one. Marker-before-notify still
+        /// guarantees NotifyFulfillment is never spammed on an already-closed receipt.
+        /// </summary>
+        private void ProcessReceipt(PurchaseReceipt receipt, bool isNewPurchase)
+        {
+            if (receipt == null || string.IsNullOrEmpty(receipt.ReceiptId))
+                return;
+
+            if (_fulfilledReceipts.Contains(receipt.ReceiptId))
+                return;
+
+            string productId = receipt.Sku;
+            bool granted = false;
+
+            var subscriptionProduct = settings.SubscriptionProducts
+                .FirstOrDefault(s => s.ProductId == productId);
+
+            if (subscriptionProduct != null)
+            {
+                if (isNewPurchase)
+                {
+                    Debug.Log($"[AMZNGoDSDK] Subscription purchased: {productId}");
+                    ExtendSubscription(subscriptionProduct);
+                    GiveSubscriptionReward(subscriptionProduct);
+                    GrantSubscriptionConsumables(subscriptionProduct);
+                }
+                else if (!HasSubscription(subscriptionProduct.ProductId))
+                {
+                    // Restore entitlement only — do NOT replay historical rewards, otherwise
+                    // a reinstall (which returns the full receipt history) would stack terms
+                    // and re-grant coins for every past renewal.
+                    ExtendSubscription(subscriptionProduct);
+                }
+
+                granted = true;
             }
             else
             {
-                CompleteRestore(true);
+                var consumableProduct = settings.ConsumableProducts
+                    .FirstOrDefault(c => c.ProductId == productId);
 
-                foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
-                    Debug.Log($"[AMZNGoDSDK] Active subscription: {status.ProductId} (until {status.ExpiresAt.ToLocalTime():G})");
+                if (consumableProduct != null)
+                {
+                    Debug.Log($"[AMZNGoDSDK] Consumable granted: {productId}");
+                    GiveConsumableReward(consumableProduct);
+                    granted = true;
+                }
             }
+
+            if (!granted)
+                Debug.LogWarning($"[AMZNGoDSDK] Receipt for unregistered product '{productId}', fulfilling without grant");
+
+            // Persist BEFORE notifying so a crash between the two can never double-grant;
+            // the receipt simply re-appears and is skipped here next time.
+            MarkReceiptFulfilled(receipt.ReceiptId);
+            NotifyFulfillment(receipt.ReceiptId);
+        }
+
+        private void NotifyFulfillment(string receiptId)
+        {
+            if (iapService == null || string.IsNullOrEmpty(receiptId))
+                return;
+
+            iapService.NotifyFulfillment(new NotifyFulfillmentInput
+            {
+                ReceiptId = receiptId,
+                FulfillmentResult = "FULFILLED"
+            });
+        }
+
+        private void LoadFulfilledReceipts()
+        {
+            _fulfilledReceipts.Clear();
+
+            var raw = PlayerPrefs.GetString(FulfilledReceiptsKey, "");
+            if (string.IsNullOrEmpty(raw))
+                return;
+
+            foreach (var id in raw.Split(new[] { FulfilledReceiptsSeparator }, StringSplitOptions.RemoveEmptyEntries))
+                _fulfilledReceipts.Add(id);
+        }
+
+        private void MarkReceiptFulfilled(string receiptId)
+        {
+            if (string.IsNullOrEmpty(receiptId))
+                return;
+
+            if (!_fulfilledReceipts.Add(receiptId))
+                return;
+
+            PlayerPrefs.SetString(FulfilledReceiptsKey, string.Join(FulfilledReceiptsSeparator.ToString(), _fulfilledReceipts));
+            PlayerPrefs.Save();
         }
 
         private void CompleteRestore(bool success)
@@ -253,6 +438,7 @@ namespace AMZNGoDSDK.Runtime
 
             _restoreCallback = onComplete;
             _isRestoring = true;
+            BeginRestoreAccumulators();
             iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
         }
 
