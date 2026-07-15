@@ -3,7 +3,7 @@
 <!--Add this file to your Version Control System(Git, SVN etc.)-->
 <dependencies>
     <androidPackages>
-        <androidPackage spec="io.appmetrica.analytics:analytics:7.13.0"/>
+        <androidPackage spec="io.appmetrica.analytics:analytics:7.12.0"/>
     </androidPackages>
     <iosPods>
         <iosPod name="AppMetricaAnalytics" version="5.13.0" minTargetSdk="12.0"/>
