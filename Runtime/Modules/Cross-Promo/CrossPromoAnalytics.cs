@@ -11,6 +11,7 @@ namespace AMZNGoDSDK.Runtime
         private const string BannerClickEvent = "crosspromo_banner_click";
         private const string VideoShowEvent = "crosspromo_video_show";
         private const string VideoClickEvent = "crosspromo_video_click";
+        private const string RequestRejectedEvent = "cp_request_rejected";
 
         private const string InterRequestedEvent = "crosspromo_inter_requested";
         private const string InterDisplayedEvent = "crosspromo_inter_displayed";
@@ -28,6 +29,40 @@ namespace AMZNGoDSDK.Runtime
 
         public static void ReportVideoClick(BannerData data) =>
             Report(VideoClickEvent, data, "video_click");
+
+        /// <summary>
+        /// Проблема показа рекламного видео. В отличие от остальных событий уходит ТОЛЬКО в
+        /// AppMetrica (операционная метрика здоровья показов, не атрибуция) и, в отличие от
+        /// <see cref="Report"/>, не делает early-return при <paramref name="data"/> == null —
+        /// причина no_config приходит вообще без данных о креативе.
+        /// </summary>
+        /// <param name="reason">Ограниченный enum причины (io_network, decode, load_timeout, …).</param>
+        /// <param name="errorCode">Сырой errorCode ExoPlayer; заполняется только для ошибок плеера.</param>
+        /// <param name="data">Данные креатива, если известны на момент ошибки.</param>
+        public static void ReportVideoError(string reason, string errorCode, BannerData data)
+        {
+            var core = AmznGoDSDKCore.Instance;
+            if (core == null)
+                return;
+
+            var args = new Dictionary<string, string>
+            {
+                ["placement"] = "video_error",
+                ["reason"] = string.IsNullOrEmpty(reason) ? "unknown" : reason
+            };
+
+            if (data != null)
+            {
+                args["title"] = data.title ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(data.paidAppId))
+                    args["app_id"] = data.paidAppId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(errorCode))
+                args["error_code"] = errorCode;
+
+            SafeReportAppMetrica(core, RequestRejectedEvent, args);
+        }
 
         public static void ReportInterRequested(string placement) =>
             ReportSimple(InterRequestedEvent, placement);
@@ -86,6 +121,18 @@ namespace AMZNGoDSDK.Runtime
             };
 
             SafeReport(core, eventName, args);
+        }
+
+        private static void SafeReportAppMetrica(AmznGoDSDKCore core, string eventName, Dictionary<string, string> args)
+        {
+            try
+            {
+                core.ReportEventAppMetrica(eventName, args);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[CrossPromoAnalytics] AppMetrica report failed for '{eventName}': {ex.Message}");
+            }
         }
 
         private static void SafeReport(AmznGoDSDKCore core, string eventName, Dictionary<string, string> args)
