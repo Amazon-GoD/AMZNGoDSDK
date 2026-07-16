@@ -22,6 +22,13 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>Потолок ожидания отправки клика перед открытием стора.</summary>
         private const float ClickTrackingTimeoutSeconds = 1.5f;
 
+        /// <summary>
+        /// Сколько ждём первого кадра (нативный <c>OnExoOverlayStarted</c>) после запроса показа.
+        /// Не дождались — считаем показ провалившимся с reason=load_timeout. Плеер в этом случае
+        /// эксепшн не кидает (просто молчит), поэтому детектим только по таймеру.
+        /// </summary>
+        private const float LoadTimeoutSeconds = 10f;
+
 #if UNITY_ANDROID && !UNITY_EDITOR
         private AndroidJavaObject _native;
 #endif
@@ -32,6 +39,12 @@ namespace AMZNGoDSDK.Runtime
         private Action _onCompleted;
         private bool _isVisible;
         private bool _ctaClicked;
+
+        // Первый кадр отрисован (нативный OnExoOverlayStarted) — гасит load-таймаут.
+        private bool _started;
+        // Один error-ивент на показ: защита от гонки «таймаут vs onPlayerError» и повторных ошибок.
+        private bool _errorReported;
+        private Coroutine _loadTimeoutCo;
 
         // Универсальный мут звука игры на время показа рекламы.
         private bool _gameAudioMuted;
@@ -46,8 +59,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void Show(PromoConfiguration config, Action onClose, Action onCTA, Action onCompleted)
         {
+            _started = false;
+            _errorReported = false;
+
             if (config == null)
             {
+                ReportError("no_config", null, null);
                 onClose?.Invoke();
                 return;
             }
@@ -56,6 +73,7 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrWhiteSpace(url))
             {
                 Debug.LogWarning("[CrossPromoExoNativeOverlay] No video URL in config.");
+                ReportError("no_url", null, BuildBannerData(config));
                 onClose?.Invoke();
                 return;
             }
@@ -82,17 +100,22 @@ namespace AMZNGoDSDK.Runtime
                 _native = new AndroidJavaObject(NativeClass);
                 _native.Call("init", gameObject.name);
                 _native.Call("show", url, ctaText, ctaDelay, false);
+
+                // Сторож зависшего показа: ждём первого кадра, иначе load_timeout.
+                StartLoadTimeout();
             }
             catch (Exception e)
             {
                 Debug.LogError($"[CrossPromoExoNativeOverlay] Failed to show native overlay: {e}");
                 RestoreGameAudio();
                 _isVisible = false;
+                ReportError("native_init_exception", null, BuildBannerData(config));
                 _onClose?.Invoke();
             }
 #else
             Debug.LogWarning("[CrossPromoExoNativeOverlay] ExoPlayer backend is Android-only. Closing immediately.");
             _isVisible = false;
+            ReportError("unsupported_platform", null, BuildBannerData(config));
             _onClose?.Invoke();
 #endif
         }
@@ -111,6 +134,7 @@ namespace AMZNGoDSDK.Runtime
             if (!_isVisible) return;
             _isVisible = false;
 
+            CancelLoadTimeout();
             RestoreGameAudio();
 
             var cb = _onClose;
@@ -128,6 +152,7 @@ namespace AMZNGoDSDK.Runtime
         private void OnDestroy()
         {
             // Safety net: never leave the game muted if we're torn down without a clean Hide().
+            CancelLoadTimeout();
             RestoreGameAudio();
 #if UNITY_ANDROID && !UNITY_EDITOR
             try { _native?.Call("dismiss"); } catch (Exception) { }
@@ -186,8 +211,16 @@ namespace AMZNGoDSDK.Runtime
 
         // Invoked from CrossPromoExoOverlay.java via UnityPlayer.UnitySendMessage.
 
+        // Первый кадр отрисован — показ состоялся, load-таймаут больше не нужен.
+        private void OnExoOverlayStarted(string _)
+        {
+            _started = true;
+            CancelLoadTimeout();
+        }
+
         private void OnExoOverlayCompleted(string _)
         {
+            CancelLoadTimeout();
             _onCompleted?.Invoke();
         }
 
@@ -199,6 +232,9 @@ namespace AMZNGoDSDK.Runtime
             // (OnApplicationPause(false)), поэтому после возврата клик снова доступен.
             if (_ctaClicked) return;
             _ctaClicked = true;
+
+            // Пользователь тапнул по ролику — показ явно состоялся, таймаут снимаем.
+            CancelLoadTimeout();
 
             if (_config != null)
                 HandleCtaClick(_config);
@@ -216,7 +252,100 @@ namespace AMZNGoDSDK.Runtime
         private void OnExoOverlayError(string message)
         {
             Debug.LogError($"[CrossPromoExoNativeOverlay] Native overlay error: {message}");
+
+            ParseError(message, out string reason, out string errorCode);
+            ReportError(reason, errorCode, BuildBannerData(_config));
+
             Hide();
+        }
+
+        #endregion
+
+        #region Error reporting
+
+        /// <summary>
+        /// Единая точка отправки события проблемы показа. Идемпотентна в пределах одного показа
+        /// (<see cref="_errorReported"/>) и всегда снимает load-таймаут.
+        /// </summary>
+        private void ReportError(string reason, string errorCode, BannerData data)
+        {
+            if (_errorReported) return;
+            _errorReported = true;
+
+            CancelLoadTimeout();
+            CrossPromoAnalytics.ReportVideoError(reason, errorCode, data);
+        }
+
+        /// <summary>
+        /// Разбирает payload нативного OnExoOverlayError формата "errorCode|errorCodeName".
+        /// Непарсируемый payload (например "No current activity") трактуем как playback_other
+        /// без error_code.
+        /// </summary>
+        private static void ParseError(string payload, out string reason, out string errorCode)
+        {
+            errorCode = null;
+            reason = "playback_other";
+
+            if (string.IsNullOrEmpty(payload))
+                return;
+
+            string[] parts = payload.Split('|');
+            if (!int.TryParse(parts[0], out int code))
+                return;
+
+            errorCode = parts.Length > 1 && !string.IsNullOrEmpty(parts[1])
+                ? $"{code}:{parts[1]}"
+                : code.ToString();
+            reason = MapReason(code);
+        }
+
+        /// <summary>Маппинг диапазонов ExoPlayer <c>PlaybackException.errorCode</c> в ограниченный enum.</summary>
+        private static string MapReason(int code)
+        {
+            if (code == 1004) return "playback_timeout";
+            if (code == 2001 || code == 2002) return "io_network";
+            if (code == 2004 || code == 2005) return "io_not_found";
+            if (code >= 2000 && code < 3000) return "io_other";
+            if (code >= 3000 && code < 4000) return "parse";
+            if (code >= 4000 && code < 5000) return "decode";
+            return "playback_other";
+        }
+
+        private void StartLoadTimeout()
+        {
+            CancelLoadTimeout();
+            _loadTimeoutCo = StartCoroutine(LoadTimeoutRoutine());
+        }
+
+        private void CancelLoadTimeout()
+        {
+            if (_loadTimeoutCo != null)
+            {
+                StopCoroutine(_loadTimeoutCo);
+                _loadTimeoutCo = null;
+            }
+        }
+
+        private IEnumerator LoadTimeoutRoutine()
+        {
+            yield return new WaitForSecondsRealtime(LoadTimeoutSeconds);
+            _loadTimeoutCo = null;
+
+            if (_started || !_isVisible)
+                yield break;
+
+            Debug.LogWarning($"[CrossPromoExoNativeOverlay] Load timeout — no first frame after {LoadTimeoutSeconds}s");
+            ReportError("load_timeout", null, BuildBannerData(_config));
+            Hide();
+        }
+
+        private static BannerData BuildBannerData(PromoConfiguration config)
+        {
+            if (config == null)
+                return null;
+
+            string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
+            return new BannerData(config.Title, null, config.RedirectUrl, config.TrackingUrl, paidAppId);
         }
 
         #endregion

@@ -393,8 +393,16 @@ public class CrossPromoExoOverlay implements Player.Listener {
 
     @Override
     public void onPlayerError(PlaybackException error) {
-        String msg = error.getMessage() != null ? error.getMessage() : "Playback error";
-        sendToUnity("OnExoOverlayError", msg);
+        // Пробрасываем стабильный errorCode (+ его имя), а не getMessage(): сообщение содержит
+        // полный URL ролика и произвольный текст — как измерение аналитики оно бесполезно
+        // (неограниченная кардинальность, утечка CDN-ссылки). Маппинг кода в reason — на C#-стороне.
+        sendToUnity("OnExoOverlayError", error.errorCode + "|" + error.getErrorCodeName());
+    }
+
+    @Override
+    public void onRenderedFirstFrame() {
+        // Позитивный сигнал «видео реально отрисовалось» — по нему C# гасит load-таймаут.
+        sendToUnity("OnExoOverlayStarted", "");
     }
 
     private int dp(Activity activity, int value) {
