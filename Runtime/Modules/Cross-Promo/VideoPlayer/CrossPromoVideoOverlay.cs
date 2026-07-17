@@ -64,6 +64,7 @@ namespace AMZNGoDSDK.Runtime
         #region Private State
 
         private PromoConfiguration _config;
+        private string _placement;
         private Action _callbackOnClose;
         private Action _callbackOnCTA;
         private Coroutine _showCoroutine;
@@ -168,8 +169,10 @@ namespace AMZNGoDSDK.Runtime
         /// Shows the overlay with the given promo configuration.
         /// If the video was preloaded, playback starts instantly.
         /// </summary>
-        public void Show(PromoConfiguration config, Action onClose = null, Action onCTA = null)
+        public void Show(PromoConfiguration config, string placement = null, Action onClose = null, Action onCTA = null)
         {
+            _placement = placement;
+
             if (config == null)
             {
                 Debug.LogWarning("[CrossPromoVideoOverlay] Cannot show: config is null.");
@@ -631,23 +634,22 @@ namespace AMZNGoDSDK.Runtime
 
         private static void ReportImpression(PromoConfiguration config)
         {
-            var data = new BannerData(
-                config.Title, null, config.RedirectUrl, config.TrackingUrl,
-                config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null);
-
-            CrossPromoAnalytics.ReportVideoShow(data);
-
+            // Показ в AppMetrica (inter/reward_displayed) для Unity-пути репортит модуль в
+            // ShowVideoInternalCoroutine. Здесь остаётся только показ на наш бэкенд
+            // (cp_impression); отдельный crosspromo_video_show убран как дубль.
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
             CrossPromoModule.Instance?.TrackImpression(paidAppId);
         }
 
-        private static void ReportClick(PromoConfiguration config)
+        private void ReportClick(PromoConfiguration config)
         {
             var data = new BannerData(
                 config.Title, null, config.RedirectUrl, config.TrackingUrl,
                 config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null);
 
-            CrossPromoAnalytics.ReportVideoClick(data);
+            // Клик в AppMetrica + Adjust по плейсменту (inter/reward_clicked). Отдельный
+            // crosspromo_video_click заменён на них.
+            CrossPromoAnalytics.ReportClicked(_placement, data);
 
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
             CrossPromoModule.Instance?.TrackClick(paidAppId);

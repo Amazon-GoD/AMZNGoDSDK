@@ -139,13 +139,24 @@ namespace AMZNGoDSDK.Runtime
             foreach (var video in config.Videos)
                 yield return StartCoroutine(DownloadBannerSprite(video));
 
-            if (_rotationCoroutine != null)
-            {
-                StopCoroutine(_rotationCoroutine);
-            }
-
-            _rotationCoroutine = StartCoroutine(GifCor());
+            StopRotation();
+            // UpdateBannerUI сам запустит ротацию, если баннер виден (и не куплено no-ads).
             UpdateBannerUI();
+        }
+
+        private void StartRotationIfNeeded()
+        {
+            if (_rotationCoroutine != null) return;
+            if (bannerDataList.Count == 0) return;
+            if (!isActiveAndEnabled) return;
+            _rotationCoroutine = StartCoroutine(GifCor());
+        }
+
+        private void StopRotation()
+        {
+            if (_rotationCoroutine == null) return;
+            StopCoroutine(_rotationCoroutine);
+            _rotationCoroutine = null;
         }
 
         private IEnumerator GifCor()
@@ -160,18 +171,24 @@ namespace AMZNGoDSDK.Runtime
         private void ShowBanner()
         {
             if (bannerDataList.Count == 0 || adImage == null)
-            {
                 return;
-            }
+
+            // Баннера не видно на экране — показ не шлём.
+            if (bannerGO == null || !bannerGO.activeInHierarchy)
+                return;
+
+            // Куплено отключение рекламы — показ не шлём.
+            if (isNoAds?.Invoke() ?? false)
+                return;
 
             var index = _currentBannerIndex % bannerDataList.Count;
             var data = bannerDataList[index];
             adImage.sprite = data.sprite;
-            CrossPromoAnalytics.ReportBannerShow(data);
-            Debug.Log($"[CrossPromoBanner] Banner shown → sending cp_impression (paidAppId={data.paidAppId}, title={data.title})");
-            CrossPromoModule.Instance?.TrackImpression(data.paidAppId);
-            if (!string.IsNullOrWhiteSpace(data.adjustImpressionUrl))
-                StartCoroutine(CrossPromoAdjustTracking.SendGet(data.adjustImpressionUrl));
+
+            // Показ баннера НЕ шлём в аналитику вообще: баннер меняется каждые 8 секунд и это
+            // засоряло бы аналитику (раньше — 68% всех событий). Ни AppMetrica, ни бэкенд, ни
+            // Adjust. Привязку установки даёт только клик по баннеру — его шлём во все каналы
+            // (см. OnBannerClick).
             _lastShownIndex = index;
             _currentBannerIndex = (index + 1) % bannerDataList.Count;
         }
@@ -183,8 +200,6 @@ namespace AMZNGoDSDK.Runtime
 
             string title = string.IsNullOrWhiteSpace(video.Title) ? $"banner_{bannerDataList.Count}" : video.Title;
             string paidAppId = video.AppPackageName?.Count > 0 ? video.AppPackageName[0] : null;
-            string adjustImpression = CrossPromoAdjustTracking.BuildImpressionUrl(video);
-            string adjustClick = CrossPromoAdjustTracking.BuildClickUrl(video);
 
             using UnityWebRequest request = UnityWebRequestTexture.GetTexture(video.BannerUrl);
             yield return request.SendWebRequest();
@@ -193,14 +208,17 @@ namespace AMZNGoDSDK.Runtime
             {
                 var texture = DownloadHandlerTexture.GetContent(request);
                 var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
+                // Adjust-ссылки НЕ собираем здесь: device id ещё не готов на момент скачивания.
+                // Ссылку клика соберём в TrackAndOpenUrl, в момент клика (см. задачу про баннер).
                 bannerDataList.Add(new BannerData(
                     title,
                     sprite,
                     video.RedirectUrl,
                     video.TrackingUrl,
-                    paidAppId,
-                    adjustImpression,
-                    adjustClick));
+                    paidAppId)
+                {
+                    config = video
+                });
             }
             else
             {
@@ -233,7 +251,13 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator TrackAndOpenUrl(BannerData data)
         {
-            yield return CrossPromoAdjustTracking.SendGet(data.adjustClickUrl);
+            // Собираем ссылку Adjust В МОМЕНТ КЛИКА — когда device id уже готов. Раньше она
+            // собиралась заранее (при скачивании картинки) и уходила без device id.
+            string adjustClickUrl = data.config != null
+                ? CrossPromoAdjustTracking.BuildClickUrl(data.config)
+                : data.adjustClickUrl;
+
+            yield return CrossPromoAdjustTracking.SendGet(adjustClickUrl);
 
             if (CrossPromoAdjustTracking.IsHttpUrl(data.trackingUrl))
             {
@@ -264,13 +288,15 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (isNoAds == null)
-            {
-                bannerGO.SetActive(true);
-                return;
-            }
+            bool show = isNoAds == null || !isNoAds();
+            bannerGO.SetActive(show);
 
-            bannerGO.SetActive(!isNoAds());
+            // Скрытие баннера останавливает ротацию, показ — перезапускает. Раньше ротация
+            // крутилась всегда и слала показы даже за скрытым баннером.
+            if (show)
+                StartRotationIfNeeded();
+            else
+                StopRotation();
         }
 
         #endregion
@@ -285,6 +311,10 @@ namespace AMZNGoDSDK.Runtime
         public string paidAppId;
         public string adjustImpressionUrl;
         public string adjustClickUrl;
+
+        // Конфиг креатива (для баннера) — чтобы собрать Adjust-ссылку клика в момент клика,
+        // когда device id уже готов, а не заранее при скачивании картинки.
+        public PromoConfiguration config;
 
         public BannerData(
             string title,

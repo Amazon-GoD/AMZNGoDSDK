@@ -42,6 +42,50 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
+        /// <summary>Reads a snapshot of the queue WITHOUT clearing it. Callers remove each
+        /// event individually (<see cref="Remove"/> / <see cref="RemoveExact"/>) only after it is
+        /// confirmed delivered, so a crash mid-flush never loses the whole batch.</summary>
+        public static List<string> Peek()
+        {
+            lock (_lock)
+            {
+                return LoadQueue();
+            }
+        }
+
+        /// <summary>Removes every queued event whose JSON carries the given <c>event_id</c>.</summary>
+        public static void Remove(string eventId)
+        {
+            if (string.IsNullOrEmpty(eventId)) return;
+
+            string needle = "\"event_id\":\"" + eventId + "\"";
+            lock (_lock)
+            {
+                var events = LoadQueue();
+                int removed = events.RemoveAll(e => e != null && e.Contains(needle));
+                if (removed > 0)
+                    SaveQueueUnlocked(events);
+            }
+        }
+
+        /// <summary>Removes the first queued event exactly equal to <paramref name="json"/>.
+        /// Fallback for legacy entries that predate <c>event_id</c>.</summary>
+        public static void RemoveExact(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return;
+
+            lock (_lock)
+            {
+                var events = LoadQueue();
+                int idx = events.IndexOf(json);
+                if (idx >= 0)
+                {
+                    events.RemoveAt(idx);
+                    SaveQueueUnlocked(events);
+                }
+            }
+        }
+
         public static void SaveQueue(List<string> events)
         {
             lock (_lock)

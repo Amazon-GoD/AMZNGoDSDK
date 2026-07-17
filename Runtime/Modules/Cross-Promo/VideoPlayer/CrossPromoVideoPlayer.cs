@@ -1061,6 +1061,7 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
         /// <summary>Called from Java via UnitySendMessage with format "textureId|width|height".</summary>
+        [UnityEngine.Scripting.Preserve]
         private void OnExoPlayerPrepared(string mediaInfo)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -1125,6 +1126,7 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Called from Java via UnitySendMessage when playback ends.</summary>
+        [UnityEngine.Scripting.Preserve]
         private void OnExoPlayerCompleted(string unused)
         {
             OnLoopPointReached?.Invoke();
@@ -1137,6 +1139,7 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Called from Java via UnitySendMessage on playback error.</summary>
+        [UnityEngine.Scripting.Preserve]
         private void OnExoPlayerError(string message)
         {
             Debug.LogError($"[CrossPromoVideoPlayer] ExoPlayer error: {message}");

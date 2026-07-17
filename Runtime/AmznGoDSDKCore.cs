@@ -309,9 +309,16 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_ANALYTICS_ENABLED
         public void TrackAnalyticsImpression(string paidAppId) => _analyticsModule?.TrackImpression(paidAppId);
         public void TrackAnalyticsClick(string paidAppId) => _analyticsModule?.TrackClick(paidAppId);
+
+        public IEnumerator TrackAnalyticsClickRoutine(string paidAppId)
+        {
+            if (_analyticsModule != null)
+                yield return _analyticsModule.TrackClickRoutine(paidAppId);
+        }
 #else
         public void TrackAnalyticsImpression(string paidAppId) { }
         public void TrackAnalyticsClick(string paidAppId) { }
+        public IEnumerator TrackAnalyticsClickRoutine(string paidAppId) { yield break; }
 #endif
 
         #endregion
@@ -504,7 +511,10 @@ namespace AMZNGoDSDK.Runtime
 
                 if (!module.Enabled)
                 {
-                    module.gameObject.SetActive(false);
+                    // Выключаем ТОЛЬКО компонент модуля, а не весь GameObject. Модули (в т.ч.
+                    // Analytics) висят на общем host-объекте SDK на DontDestroyOnLoad; SetActive(false)
+                    // на нём погасил бы вместе с ним ВСЕ остальные модули и убил их корутины.
+                    module.enabled = false;
                     continue;
                 }
 

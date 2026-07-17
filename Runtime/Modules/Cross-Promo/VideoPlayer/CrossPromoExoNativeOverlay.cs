@@ -19,8 +19,10 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string NativeClass = "com.amzngod.exoplayer.CrossPromoExoOverlay";
 
-        /// <summary>Потолок ожидания отправки клика перед открытием стора.</summary>
-        private const float ClickTrackingTimeoutSeconds = 1.5f;
+        /// <summary>Потолок ожидания отправки клика перед открытием стора. 4с, а не 1.5с:
+        /// при 1.5с, если у креатива нет Adjust-ссылки, ожидание завершалось за пару кадров и
+        /// стор открывался раньше, чем запрос на бэкенд успевал подключиться к серверу.</summary>
+        private const float ClickTrackingTimeoutSeconds = 4f;
 
         /// <summary>
         /// Сколько ждём первого кадра (нативный <c>OnExoOverlayStarted</c>) после запроса показа.
@@ -34,11 +36,15 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
         private PromoConfiguration _config;
+        private string _placement;
         private Action _onClose;
         private Action _onCTA;
         private Action _onCompleted;
         private bool _isVisible;
         private bool _ctaClicked;
+
+        // Показ уже отрепорчен (на первом кадре) — защита от повторной отправки.
+        private bool _impressionReported;
 
         // Первый кадр отрисован (нативный OnExoOverlayStarted) — гасит load-таймаут.
         private bool _started;
@@ -57,14 +63,20 @@ namespace AMZNGoDSDK.Runtime
         /// the video reaches its end (used for rewarded). <paramref name="onClose"/> fires when the
         /// user closes the overlay (or on a non-recoverable error / unsupported platform).
         /// </summary>
-        public void Show(PromoConfiguration config, Action onClose, Action onCTA, Action onCompleted)
+        public void Show(PromoConfiguration config, string placement, Action onClose, Action onCTA, Action onCompleted)
         {
             _started = false;
             _errorReported = false;
+            _impressionReported = false;
+            _placement = placement;
 
+            // config == null и пустой URL сюда уже не доходят — модуль отсекает их раньше
+            // (см. ShowVideoInternalCoroutine). Оставляем только защитный выход без «ошибки
+            // показа»: reason'ы no_config/no_url убраны как недостижимые (см. задачу про
+            // переименование события).
             if (config == null)
             {
-                ReportError("no_config", null, null);
+                Debug.LogWarning("[CrossPromoExoNativeOverlay] Show called with null config — closing.");
                 onClose?.Invoke();
                 return;
             }
@@ -72,8 +84,7 @@ namespace AMZNGoDSDK.Runtime
             string url = ResolveUrl(config);
             if (string.IsNullOrWhiteSpace(url))
             {
-                Debug.LogWarning("[CrossPromoExoNativeOverlay] No video URL in config.");
-                ReportError("no_url", null, BuildBannerData(config));
+                Debug.LogWarning("[CrossPromoExoNativeOverlay] No video URL in config — closing.");
                 onClose?.Invoke();
                 return;
             }
@@ -85,7 +96,10 @@ namespace AMZNGoDSDK.Runtime
             _isVisible = true;
             _ctaClicked = false;
 
-            ReportImpression(config);
+            // ВНИМАНИЕ: показ (ReportImpression) больше НЕ шлётся здесь. Он уходит на первом
+            // отрисованном кадре (OnExoOverlayStarted). Иначе неудавшийся показ (нет сети,
+            // битая ссылка, таймаут) засчитывался бы как показ и СЖИГАЛ бы креатив —
+            // MaxShowCount увеличивался без единого кадра на экране.
 
             string ctaText = !string.IsNullOrWhiteSpace(config.ButtonText) ? config.ButtonText : "Install";
             int ctaDelay = Mathf.Max(0, config.OverlayShowDelayInSeconds);
@@ -211,19 +225,27 @@ namespace AMZNGoDSDK.Runtime
 
         // Invoked from CrossPromoExoOverlay.java via UnityPlayer.UnitySendMessage.
 
-        // Первый кадр отрисован — показ состоялся, load-таймаут больше не нужен.
+        // Первый кадр отрисован — показ реально состоялся, load-таймаут больше не нужен.
+        // Именно ЗДЕСЬ (а не в Show()) шлём показ: только теперь он настоящий.
+        [UnityEngine.Scripting.Preserve]
         private void OnExoOverlayStarted(string _)
         {
             _started = true;
             CancelLoadTimeout();
+
+            if (_impressionReported) return;   // чтобы не отправить показ дважды
+            _impressionReported = true;
+            ReportImpression(_config);
         }
 
+        [UnityEngine.Scripting.Preserve]
         private void OnExoOverlayCompleted(string _)
         {
             CancelLoadTimeout();
             _onCompleted?.Invoke();
         }
 
+        [UnityEngine.Scripting.Preserve]
         private void OnExoOverlayCta(string _)
         {
             // Полноэкранный клик-слой ловит повторные тапы — дедупим в пределах одного
@@ -242,6 +264,7 @@ namespace AMZNGoDSDK.Runtime
             _onCTA?.Invoke();
         }
 
+        [UnityEngine.Scripting.Preserve]
         private void OnExoOverlayClosed(string _)
         {
             // Native side already removed its views before sending this; Hide() just
@@ -249,6 +272,7 @@ namespace AMZNGoDSDK.Runtime
             Hide();
         }
 
+        [UnityEngine.Scripting.Preserve]
         private void OnExoOverlayError(string message)
         {
             Debug.LogError($"[CrossPromoExoNativeOverlay] Native overlay error: {message}");
@@ -273,7 +297,17 @@ namespace AMZNGoDSDK.Runtime
             _errorReported = true;
 
             CancelLoadTimeout();
-            CrossPromoAnalytics.ReportVideoError(reason, errorCode, data);
+
+            // Если показ уже состоялся (был первый кадр), это НЕ «ошибка показа», а сбой уже
+            // во время проигрывания. Не шлём display_failed — иначе сломался бы инвариант
+            // «запросов = показов + ошибок показа» (получилось бы и показ, и ошибка на один запрос).
+            if (_impressionReported)
+            {
+                Debug.LogWarning($"[CrossPromoExoNativeOverlay] Playback error AFTER show (reason={reason}, code={errorCode}) — не считаем как display_failed.");
+                return;
+            }
+
+            CrossPromoAnalytics.ReportDisplayFailed(_placement, reason, errorCode, data);
         }
 
         /// <summary>
@@ -354,17 +388,31 @@ namespace AMZNGoDSDK.Runtime
 
         private void ReportImpression(PromoConfiguration config)
         {
+            if (config == null) return;
+
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
-
             var data = new BannerData(config.Title, null, config.RedirectUrl, config.TrackingUrl, paidAppId);
-            CrossPromoAnalytics.ReportVideoShow(data);
-            CrossPromoModule.Instance?.TrackImpression(paidAppId);
 
+            // Показ в AppMetrica + Adjust по плейсменту (inter/reward_displayed). Отдельный
+            // crosspromo_video_show убран как дубль этих событий.
+            CrossPromoAnalytics.ReportDisplayed(_placement, data);
+            // Показ на наш бэкенд (cp_impression).
+            CrossPromoModule.Instance?.TrackImpression(paidAppId);
+            // Счётчик показов креатива (MaxShowCount) — только теперь, на реальном показе.
             IncrementShowCount(config);
 
+            // Adjust-impression (S2S GET) запускаем на МОДУЛЕ, а не на оверлее: оверлей могут
+            // уничтожить (CrossPromoModule делает это при выключении) — и запрос оборвётся на
+            // полпути. Модуль живёт всю сессию, на нём безопаснее.
             string impressionUrl = CrossPromoAdjustTracking.BuildImpressionUrl(config);
             if (!string.IsNullOrWhiteSpace(impressionUrl))
-                StartCoroutine(CrossPromoAdjustTracking.SendGet(impressionUrl));
+            {
+                var host = CrossPromoModule.Instance;
+                if (host != null)
+                    host.StartCoroutine(CrossPromoAdjustTracking.SendGet(impressionUrl));
+                else
+                    StartCoroutine(CrossPromoAdjustTracking.SendGet(impressionUrl));
+            }
         }
 
         private void HandleCtaClick(PromoConfiguration config)
@@ -372,20 +420,28 @@ namespace AMZNGoDSDK.Runtime
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
 
             var data = new BannerData(config.Title, null, config.RedirectUrl, config.TrackingUrl, paidAppId);
-            CrossPromoAnalytics.ReportVideoClick(data);
-            CrossPromoModule.Instance?.TrackClick(paidAppId);
+            // Клик в AppMetrica + Adjust по плейсменту (inter/reward_clicked). Отдельный
+            // crosspromo_video_click заменён на них.
+            CrossPromoAnalytics.ReportClicked(_placement, data);
 
-            // Клик уходит ДО редиректа, а сам редирект — на модуле (он переживает закрытие
-            // оверлея по CTA). Открывать стор первым, как раньше, нельзя: приложение
-            // сворачивается, Unity встаёт на паузу и GET клика может не доехать никогда.
+            // Бэкенд-клик (cp_click) больше НЕ уходит здесь «сам по себе»: он отправляется и
+            // ДОЖИДАЕТСЯ внутри SendClickTracking, перед открытием стора. Открывать стор
+            // первым нельзя: приложение сворачивается, Unity встаёт на паузу и GET клика
+            // может не доехать никогда.
             var module = CrossPromoModule.Instance;
             if (module != null)
             {
-                module.StartCoroutine(TrackThenOpen(config));
+                module.StartCoroutine(TrackThenOpen(config, paidAppId));
             }
-            else if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+            else
             {
-                Application.OpenURL(config.RedirectUrl);
+                // Instance == null — та самая молчаливая ветка, из-за которой клики терялись:
+                // магазин открывался, клик не отправлялся, в логе было пусто. Теперь ошибка
+                // громкая, а Adjust-клик всё же пытаемся отправить best-effort.
+                Debug.LogError("[CrossPromo] CrossPromoModule.Instance is null — клик НЕ отправлен на бэкенд! Открываю стор best-effort.");
+                StartCoroutine(SendClickTracking(config, paidAppId));
+                if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
+                    Application.OpenURL(config.RedirectUrl);
             }
         }
 
@@ -394,13 +450,13 @@ namespace AMZNGoDSDK.Runtime
         /// по CTA не ощущался зависшим), затем открывает стор. Незавершённые ретраи продолжаются
         /// в фоне на модуле.
         /// </summary>
-        private static IEnumerator TrackThenOpen(PromoConfiguration config)
+        private static IEnumerator TrackThenOpen(PromoConfiguration config, string paidAppId)
         {
             var module = CrossPromoModule.Instance;
             bool trackingDone = false;
 
             if (module != null)
-                module.StartCoroutine(RunClickTracking(config, () => trackingDone = true));
+                module.StartCoroutine(RunClickTracking(config, paidAppId, () => trackingDone = true));
             else
                 trackingDone = true;
 
@@ -415,19 +471,29 @@ namespace AMZNGoDSDK.Runtime
                 Application.OpenURL(config.RedirectUrl);
         }
 
-        private static IEnumerator RunClickTracking(PromoConfiguration config, Action onDone)
+        private static IEnumerator RunClickTracking(PromoConfiguration config, string paidAppId, Action onDone)
         {
-            yield return SendClickTracking(config);
+            yield return SendClickTracking(config, paidAppId);
             onDone?.Invoke();
         }
 
-        private static IEnumerator SendClickTracking(PromoConfiguration config)
+        private static IEnumerator SendClickTracking(PromoConfiguration config, string paidAppId)
         {
-            yield return CrossPromoAdjustTracking.SendGet(CrossPromoAdjustTracking.BuildClickUrl(config));
+            // Ждём КАЖДЫЙ канал клика: и Adjust-ссылку, и наш бэкенд (cp_click). Раньше
+            // бэкенд-клик уходил «сам по себе», его никто не ждал — стор открывался, приложение
+            // сворачивалось, и запрос умирал на полпути. TrackClickRoutine к тому же кладёт
+            // событие на диск (enqueue-first), поэтому даже недосланный клик долетит позже.
+            var adjust = CrossPromoAdjustTracking.SendGet(CrossPromoAdjustTracking.BuildClickUrl(config));
+            var backend = CrossPromoModule.Instance?.TrackClickRoutine(paidAppId);
+
+            yield return adjust;
+            if (backend != null)
+                yield return backend;
 
             if (CrossPromoAdjustTracking.IsHttpUrl(config.TrackingUrl))
             {
                 using var request = UnityEngine.Networking.UnityWebRequest.Get(config.TrackingUrl);
+                request.timeout = 15;   // не висеть вечно на зависшем сокете
                 yield return request.SendWebRequest();
             }
             else if (!string.IsNullOrWhiteSpace(config.TrackingUrl))
