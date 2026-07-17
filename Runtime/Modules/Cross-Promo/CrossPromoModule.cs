@@ -30,7 +30,6 @@ namespace AMZNGoDSDK.Runtime
         private CrossPromoExoNativeOverlay _exoOverlay;
         private PromoConfiguration _lastShownConfig;
         private string _lastShownTitleFromPrefs;
-        private bool _firstPreloadDone;
         private bool _firstWarmupTriggered;
         private Coroutine _initCoroutine;
         private Coroutine _showCoroutine;
@@ -56,6 +55,16 @@ namespace AMZNGoDSDK.Runtime
 
         private void Awake()
         {
+            // Если при загрузке сцены появился второй SDK-префаб, он НЕ должен захватывать
+            // static Instance: иначе, уничтожаясь (AmznGoDSDKCore рушит дубликат), он в своём
+            // OnDestroy занулит Instance у живого модуля — и весь трекинг молча умрёт до конца
+            // сессии (клики в Adjust, клики на бэкенд, показы видео на бэкенд).
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogWarning("[CrossPromoModule] Duplicate instance in Awake — keeping the live Instance, skipping takeover.");
+                return;
+            }
+
             Instance = this;
 
             // Подписка статичная — живёт всю сессию вне зависимости от того,
@@ -159,7 +168,6 @@ namespace AMZNGoDSDK.Runtime
             DisposePreloadPlayer();
             _crossPromoConfig = null;
             _preloadedConfig = null;
-            _firstPreloadDone = false;
             _firstWarmupTriggered = false;
             _initializeRequested = true;
             _lastShownTitleFromPrefs = VideoCooldownRegistry.GetLastShownTitle();
@@ -204,6 +212,11 @@ namespace AMZNGoDSDK.Runtime
             // Пользователь мог кликнуть промо, установить пейд и вернуться в донор —
             // перепрогоняем фильтр, чтобы следующий показ не рекламировал уже
             // установленное приложение и не оффер сам себя.
+            // Публичный IP мог не резолвиться на старте (не было сети) — пробуем снова при
+            // возврате фокуса, чтобы Adjust-ссылки получили ip_address.
+            if (hasFocus && Enabled && string.IsNullOrEmpty(CrossPromoPublicIp.Value))
+                StartCoroutine(CrossPromoPublicIp.Prefetch());
+
             if (!hasFocus || !Enabled || _crossPromoConfig == null) return;
 
             int before = _crossPromoConfig.Videos?.Count ?? 0;
@@ -275,6 +288,10 @@ namespace AMZNGoDSDK.Runtime
             Debug.Log("[CrossPromoModule] InitCrossPromoModulesCorAsync started");
             try
             {
+                // Резолвим публичный IP заранее (fire-and-forget), чтобы к первому показу/клику
+                // он уже был готов для ip_address в Adjust-ссылках.
+                StartCoroutine(CrossPromoPublicIp.Prefetch());
+
                 yield return LoadJson();
                 Debug.Log($"[CrossPromoModule] LoadJson finished. _crossPromoConfig is {(_crossPromoConfig == null ? "NULL" : "set")}, Videos count = {_crossPromoConfig?.Videos?.Count ?? -1}");
                 OnConfigLoaded?.Invoke(_crossPromoConfig);
@@ -320,6 +337,7 @@ namespace AMZNGoDSDK.Runtime
                     {
                         var v = _crossPromoConfig.Videos[i];
                         Debug.Log($"[CrossPromoModule]   Video[{i}]: Title='{v.Title}', URL='{v.VideoUrl}', Weight={v.Weight}, MaxShow={v.MaxShowCount}, Packages=[{string.Join(",", v.AppPackageName ?? new())}]");
+                        CrossPromoAdjustTracking.LogConfigWarnings(v);
                     }
                 }
             }
@@ -350,6 +368,21 @@ namespace AMZNGoDSDK.Runtime
             AmznGoDSDKCore.Instance?.TrackAnalyticsClick(resolved);
         }
 
+        /// <summary>
+        /// Awaitable-версия <see cref="TrackClick"/>: отправка клика на наш бэкенд, которую можно
+        /// дождаться перед открытием стора. Живёт на модуле (он переживает закрытие оверлея),
+        /// поэтому незавершённые ретраи не обрываются вместе с оверлеем.
+        /// </summary>
+        public IEnumerator TrackClickRoutine(string paidAppId)
+        {
+            var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
+            Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"} → delegating to Analytics (awaited)");
+            var core = AmznGoDSDKCore.Instance;
+            if (core == null)
+                yield break;
+            yield return core.TrackAnalyticsClickRoutine(resolved);
+        }
+
         #region Interstitial
 
         /// <summary>
@@ -365,11 +398,8 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            // ExoPlayer-бэкенд не использует Unity-preload (где шлётся inter_requested),
-            // поэтому для него считаем запрос здесь — при вызове. Unity-путь не трогаем.
-            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
-                CrossPromoAnalytics.ReportInterRequested("interstitial");
-
+            // Запрос считается внутри ShowVideoInternalCoroutine — уже ПОСЛЕ busy-проверки,
+            // когда вызов настоящий (см. задачу «request только когда он настоящий»).
             _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "interstitial", onRewarded: null));
         }
 
@@ -390,10 +420,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            // ExoPlayer-бэкенд: считаем запрос при вызове (Unity-preload, где это делалось, у него нет).
-            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
-                CrossPromoAnalytics.ReportRewardRequested("rewarded");
-
+            // Запрос считается внутри ShowVideoInternalCoroutine — уже ПОСЛЕ busy-проверки.
             _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "rewarded", onRewarded));
         }
 
@@ -442,9 +469,18 @@ namespace AMZNGoDSDK.Runtime
             if (IsVideoPromoVisible)
             {
                 Debug.LogWarning("[CrossPromoModule] ShowVideoInternal: another video promo is already visible, ignoring.");
+                // Реклама уже на экране — это НЕ ошибка показа и запрос для неё не считается.
+                if (placement == "interstitial" || placement == "rewarded")
+                    CrossPromoAnalytics.ReportRejectedBusy(placement);
                 onClose?.Invoke();
                 yield break;
             }
+
+            // Запрос считаем ЗДЕСЬ — вызов настоящий: busy-проверка пройдена, показ ещё
+            // не начат. Раньше «запрос» уходил до этой проверки, поэтому запросов в статистике
+            // было заметно больше, чем показов.
+            if (placement == "interstitial")   CrossPromoAnalytics.ReportInterRequested(placement);
+            else if (placement == "rewarded")  CrossPromoAnalytics.ReportRewardRequested(placement);
 
             _crossPromoConfig?.CheckVideosShowLimit();
             _crossPromoConfig?.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
@@ -452,6 +488,7 @@ namespace AMZNGoDSDK.Runtime
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
             {
                 Debug.LogWarning("[CrossPromoModule] No video promos available in config.");
+                CrossPromoAnalytics.ReportDisplayFailed(placement, "no_fill", null, null);
                 onClose?.Invoke();
                 yield break;
             }
@@ -463,6 +500,7 @@ namespace AMZNGoDSDK.Runtime
             if (config == null || (string.IsNullOrWhiteSpace(config.VideoUrl) && string.IsNullOrWhiteSpace(config.FileName)))
             {
                 Debug.LogWarning("[CrossPromoModule] Selected video promo has no URL or file name.");
+                CrossPromoAnalytics.ReportDisplayFailed(placement, "no_url", null, config != null ? BuildBannerData(config) : null);
                 onClose?.Invoke();
                 yield break;
             }
@@ -474,14 +512,14 @@ namespace AMZNGoDSDK.Runtime
             {
                 _lastShownConfig = config;
 
-                if (placement == "interstitial")
-                    CrossPromoAnalytics.ReportInterDisplayed(BuildBannerData(config), placement);
-                else if (placement == "rewarded")
-                    CrossPromoAnalytics.ReportRewardDisplayed(BuildBannerData(config), placement);
-
+                // «Показ» (inter/reward_displayed + cp_impression + Adjust-impression + счётчик
+                // показов) теперь репортит сам оверлей — на первом отрисованном кадре, а не здесь,
+                // ещё до фактического показа. Если видео не загрузится, показ не засчитается, а
+                // уйдёт crosspromo_*_display_failed.
                 EnsureExoOverlay();
                 _exoOverlay.Show(
                     config,
+                    placement,
                     onClose: () => onClose?.Invoke(),
                     onCTA: onCTAClick,
                     onCompleted: onRewarded);
@@ -546,7 +584,7 @@ namespace AMZNGoDSDK.Runtime
                 _videoOverlay.OnVideoCompleted += rewardHandler;
             }
 
-            _videoOverlay.Show(config, () =>
+            _videoOverlay.Show(config, placement, () =>
             {
                 onClose?.Invoke();
             }, onCTAClick);
@@ -672,17 +710,9 @@ namespace AMZNGoDSDK.Runtime
             player.Preload(url);
             Debug.Log($"[CrossPromoModule] Preloading next video on dedicated player: {next.Title} (warmup={player.WarmupOnReady})");
 
-            // Skip analytics for the very first preload after app launch (there's no
-            // corresponding Show event for it yet). Every subsequent preload follows a
-            // real Show, so 'requested' count stays 1:1 with actual displays.
-            if (_firstPreloadDone)
-            {
-                CrossPromoAnalytics.ReportInterRequested("interstitial");
-            }
-            else
-            {
-                _firstPreloadDone = true;
-            }
+            // Запрос («requested») больше НЕ шлётся из preload: preload — это внутренняя
+            // подготовка, а не запрос показа. Событие уходит из ShowVideoInternalCoroutine,
+            // когда пользователь реально запрашивает показ.
         }
 
         private static string ResolvePromoUrl(PromoConfiguration config)

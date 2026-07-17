@@ -16,6 +16,9 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string DonorAppPlaceholder = "{donor_app}";
 
+        // Потолок запроса: без него зависший сокет висит вечно.
+        private const int HttpTimeoutSeconds = 15;
+
         internal static string BuildImpressionUrl(PromoConfiguration config) =>
             config == null ? null : BuildAdjustUrl(config.adjust_impression_url, config.campaign, config.adgroup, config.creative);
 
@@ -52,6 +55,13 @@ namespace AMZNGoDSDK.Runtime
                 AppendQuery(parts, paramName, rawId);
 #endif
 
+            // Публичный IP устройства для атрибуции. При отправке через прокси (Infatica)
+            // Adjust видит IP прокси, поэтому передаём реальный IP явно. Если ещё не
+            // резолвился — параметр просто опускается, следующие показы/клики его подхватят.
+            string publicIp = CrossPromoPublicIp.Value;
+            if (!string.IsNullOrEmpty(publicIp))
+                AppendQuery(parts, "ip_address", publicIp);
+
             AppendQuery(parts, "campaign", campaign);
             AppendQuery(parts, "adgroup", adgroup);
             AppendQuery(parts, "creative", creative);
@@ -81,7 +91,12 @@ namespace AMZNGoDSDK.Runtime
         internal static IEnumerator SendGet(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
+            {
+                // НЕ тихий выход: иначе по логу невозможно отличить «ссылка не задана» от
+                // «ссылка успешно дёрнулась». На этом мы уже теряли неделю.
+                Debug.LogError("[CrossPromoAdjust] SendGet: tracker URL пуст — ничего не отправлено. Проверьте adjust_click_url / adjust_impression_url и поля campaign/adgroup/creative в конфиге.");
                 yield break;
+            }
 
             if (!IsHttpUrl(url))
             {
@@ -98,17 +113,23 @@ namespace AMZNGoDSDK.Runtime
 
                 using (var request = UnityWebRequest.Get(url))
                 {
+                    request.timeout = HttpTimeoutSeconds;
                     yield return request.SendWebRequest();
+
+                    // Логируем ТЕЛО ответа, а не только код: Adjust на отклонённый клик отвечает
+                    // HTTP 200 и пишет ошибку в тело. «200 OK» ещё не значит, что клик засчитан.
+                    string body = request.downloadHandler != null ? request.downloadHandler.text : null;
 
                     if (request.result == UnityWebRequest.Result.Success)
                     {
-                        if (attempt > 1)
-                            Debug.Log($"[CrossPromoAdjust] GET succeeded on attempt {attempt}: {url}");
+                        Debug.Log($"[CrossPromoAdjust] GET {request.responseCode} (attempt {attempt}): {url} — body: {body}");
                         yield break;
                     }
 
                     code = request.responseCode;
                     error = request.error;
+                    if (!string.IsNullOrEmpty(body))
+                        Debug.LogWarning($"[CrossPromoAdjust] GET error body: {body}");
                 }
 
                 // 4xx (кроме таймаута и рейт-лимита) — трекер отверг ссылку по существу,
@@ -126,6 +147,28 @@ namespace AMZNGoDSDK.Runtime
             }
 
             Debug.LogWarning($"[CrossPromoAdjust] GET giving up after {maxAttempts} attempts: {url}");
+        }
+
+        /// <summary>
+        /// Проверяет креатив на старте и громко пишет в лог, чего не хватает для атрибуции:
+        /// ссылок Adjust или полей campaign/adgroup/creative. Ничего не отправляет — только логи.
+        /// </summary>
+        internal static void LogConfigWarnings(PromoConfiguration config)
+        {
+            if (config == null) return;
+
+            string title = string.IsNullOrWhiteSpace(config.Title) ? "<no title>" : config.Title;
+
+            if (string.IsNullOrWhiteSpace(config.adjust_click_url))
+                Debug.LogError($"[CrossPromoAdjust] Config '{title}': НЕТ adjust_click_url — клики в Adjust не уйдут, установка припишется к органике.");
+            if (string.IsNullOrWhiteSpace(config.adjust_impression_url))
+                Debug.LogWarning($"[CrossPromoAdjust] Config '{title}': нет adjust_impression_url — показы в Adjust не уйдут.");
+            if (string.IsNullOrWhiteSpace(config.campaign))
+                Debug.LogWarning($"[CrossPromoAdjust] Config '{title}': пустое поле campaign.");
+            if (string.IsNullOrWhiteSpace(config.adgroup))
+                Debug.LogWarning($"[CrossPromoAdjust] Config '{title}': пустое поле adgroup.");
+            if (string.IsNullOrWhiteSpace(config.creative))
+                Debug.LogWarning($"[CrossPromoAdjust] Config '{title}': пустое поле creative.");
         }
 
         internal static bool IsHttpUrl(string url)

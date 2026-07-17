@@ -20,6 +20,14 @@ namespace AMZNGoDSDK.Runtime
         private const float DeviceIdRetryInterval = 2f;
         private const string Tag = "[Analytics]";
 
+        // Потолок HTTP-запроса. Без него зависший сокет висит вечно и держит корутину.
+        private const int HttpTimeoutSeconds = 15;
+
+        // Сколько ждём резолва device_id перед отправкой события, попавшего в первые
+        // мгновения после старта (до того как пришёл колбэк Fire ID). Обычно резолв
+        // происходит за десятки миллисекунд, поэтому клик по CTA этим не тормозится.
+        private const float DeviceIdWaitForEventSeconds = 6f;
+
         // Значение device_id_hash для устройств без Fire ID. Пустая строка на бэкенде
         // неотличима от потерянного поля, поэтому отсутствие идентификатора кодируется явно.
         private const string UnattributedDeviceId = "unattributed";
@@ -97,7 +105,10 @@ namespace AMZNGoDSDK.Runtime
                     yield break;
                 }
 
-                yield return new WaitForSeconds(DeviceIdRetryInterval);
+                // WaitForSecondsRealtime, а не WaitForSeconds: игра ставит timeScale=0 на
+                // интерстишеле, и обычный WaitForSeconds там встал бы навсегда — device_id
+                // не резолвился бы НИКОГДА, и все события молча выбрасывались.
+                yield return new WaitForSecondsRealtime(DeviceIdRetryInterval);
             }
 
             // Колбэк так и не пришёл за отведённые попытки — считаем Fire ID недоступным,
@@ -126,8 +137,9 @@ namespace AMZNGoDSDK.Runtime
             }
 
             string deviceIdHash = EventDeviceIdHash;
-            string json = BuildFirstOpenJson(eventName, AppId, _appType, deviceIdHash, ts);
-            Debug.Log($"{Tag} Sending {eventName}: app_id={AppId}, app_type={_appType}, device_id_hash={deviceIdHash}, ts={ts}");
+            string eventId = NewEventId();
+            string json = BuildFirstOpenJson(eventName, AppId, _appType, deviceIdHash, ts, eventId);
+            Debug.Log($"{Tag} Sending {eventName}: app_id={AppId}, app_type={_appType}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
             var outcome = SendOutcome.Retry;
             yield return SendEvent(json, o => outcome = o);
@@ -162,76 +174,103 @@ namespace AMZNGoDSDK.Runtime
 
         public void TrackImpression(string paidAppId)
         {
-            if (!IsReady)
-            {
-                Debug.LogWarning($"{Tag} TrackImpression skipped — module not ready (initialized={Initialized}, deviceIdResolved={_deviceIdResolved})");
-                return;
-            }
-
-            string resolvedPaidAppId = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            if (string.IsNullOrEmpty(resolvedPaidAppId))
-            {
-                Debug.LogWarning($"{Tag} TrackImpression skipped — no paid_app_id (param={paidAppId}, default={_defaultPromotedAppId})");
-                return;
-            }
-
+            // ts фиксируем СРАЗУ, в момент показа: если device_id ещё резолвится, отправка
+            // подождёт его пару кадров, но время события останется настоящим, а не поздним.
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
-
-            string deviceIdHash = EventDeviceIdHash;
-            Debug.Log($"{Tag} >>> cp_impression: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, device_id_hash={deviceIdHash}, ts={ts}");
-
-            string json = BuildCrossPromoEventJson("cp_impression", resolvedPaidAppId, AppId, deviceIdHash, ts);
-            StartCoroutine(SendEventWithRetry(json));
+            StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts));
         }
 
         public void TrackClick(string paidAppId)
         {
-            if (!IsReady)
-            {
-                Debug.LogWarning($"{Tag} TrackClick skipped — module not ready (initialized={Initialized}, deviceIdResolved={_deviceIdResolved})");
+            long ts = GetTimestampMs();
+            if (ts < MinTimestampMs)
                 return;
-            }
+            StartCoroutine(TrackCrossPromoEvent("cp_click", paidAppId, ts));
+        }
+
+        /// <summary>
+        /// Awaitable-версия отправки клика — её ждёт оверлей перед открытием стора, чтобы
+        /// GET клика успел уйти до сворачивания приложения.
+        /// </summary>
+        public IEnumerator TrackClickRoutine(string paidAppId)
+        {
+            long ts = GetTimestampMs();
+            if (ts < MinTimestampMs)
+                yield break;
+            yield return TrackCrossPromoEvent("cp_click", paidAppId, ts);
+        }
+
+        private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts)
+        {
+            // Раньше здесь был ранний return при !IsReady — событие пропадало навсегда,
+            // хотя device_id резолвился буквально десятки миллисекунд спустя. Теперь ждём
+            // резолва (ограниченно), не теряя событие.
+            yield return WaitUntilDeviceIdResolved();
 
             string resolvedPaidAppId = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             if (string.IsNullOrEmpty(resolvedPaidAppId))
             {
-                Debug.LogWarning($"{Tag} TrackClick skipped — no paid_app_id (param={paidAppId}, default={_defaultPromotedAppId})");
-                return;
+                Debug.LogWarning($"{Tag} {eventName} skipped — no paid_app_id (param={paidAppId}, default={_defaultPromotedAppId})");
+                yield break;
             }
 
-            long ts = GetTimestampMs();
-            if (ts < MinTimestampMs)
-                return;
-
             string deviceIdHash = EventDeviceIdHash;
-            Debug.Log($"{Tag} >>> cp_click: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, device_id_hash={deviceIdHash}, ts={ts}");
+            string eventId = NewEventId();
+            Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
-            string json = BuildCrossPromoEventJson("cp_click", resolvedPaidAppId, AppId, deviceIdHash, ts);
-            StartCoroutine(SendEventWithRetry(json));
+            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId);
+            yield return SendEventWithRetry(json, eventId);
         }
 
-        private IEnumerator SendEventWithRetry(string json)
+        /// <summary>
+        /// Ждёт резолва device_id (не дольше <see cref="DeviceIdWaitForEventSeconds"/>). Если так
+        /// и не резолвился — событие всё равно уйдёт, но с device_id_hash='unattributed': это
+        /// лучше, чем потерять его целиком.
+        /// </summary>
+        private IEnumerator WaitUntilDeviceIdResolved()
         {
+            if (_deviceIdResolved)
+                yield break;
+
+            float deadline = Time.realtimeSinceStartup + DeviceIdWaitForEventSeconds;
+            while (!_deviceIdResolved && Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            if (!_deviceIdResolved)
+                Debug.LogWarning($"{Tag} device_id not resolved after {DeviceIdWaitForEventSeconds}s — sending event with '{UnattributedDeviceId}'");
+        }
+
+        private IEnumerator SendEventWithRetry(string json, string eventId)
+        {
+            // Сначала кладём на диск, потом отправляем. Тогда, чем бы отправка ни закончилась
+            // — в том числе если приложение убьют на середине запроса (игрок ушёл в стор) —
+            // событие не пропадёт: оно уже в очереди и уйдёт при следующем запуске.
+            // Дубли на бэкенде отсекаются по event_id.
+            AnalyticsEventQueue.Enqueue(json);
+
             if (!IsInternetAvailable())
             {
-                Debug.LogWarning($"{Tag} No internet, queuing event");
-                AnalyticsEventQueue.Enqueue(json);
+                Debug.LogWarning($"{Tag} No internet, event kept in queue (event_id={eventId})");
                 yield break;
             }
 
             var outcome = SendOutcome.Retry;
             yield return SendEvent(json, o => outcome = o);
 
-            if (outcome == SendOutcome.Retry)
+            if (outcome == SendOutcome.Delivered || outcome == SendOutcome.Rejected)
             {
-                Debug.LogWarning($"{Tag} Send failed (transient), queuing event for retry");
-                AnalyticsEventQueue.Enqueue(json);
+                // Удаляем из очереди ТОЛЬКО когда точно решено: доставлено (2xx) или
+                // отвергнуто по существу (повтор не поможет). Транзиентный сбой оставляет
+                // событие в очереди для ретрая при следующем флаше.
+                AnalyticsEventQueue.Remove(eventId);
+                if (outcome == SendOutcome.Rejected)
+                    Debug.LogError($"{Tag} Event rejected by backend, dropped from queue (event_id={eventId}): {json}");
             }
-            else if (outcome == SendOutcome.Rejected)
+            else
             {
-                Debug.LogError($"{Tag} Event rejected by backend, dropping: {json}");
+                Debug.LogWarning($"{Tag} Send failed (transient), event stays in queue for retry (event_id={eventId})");
             }
         }
 
@@ -267,6 +306,7 @@ namespace AMZNGoDSDK.Runtime
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("x-api-key", _apiKey);
+                request.timeout = HttpTimeoutSeconds;   // иначе зависший сокет держит корутину вечно
 
                 yield return request.SendWebRequest();
 
@@ -308,7 +348,10 @@ namespace AMZNGoDSDK.Runtime
 
             _flushing = true;
 
-            var events = AnalyticsEventQueue.DequeueAll();
+            // Сначала ЧИТАЕМ очередь, не очищая её. Событие удаляется поштучно и только
+            // после подтверждённой доставки/отказа. Раньше очередь очищалась ДО отправки
+            // (DequeueAll) — если приложение убивали в середине флаша, пропадала вся пачка.
+            var events = AnalyticsEventQueue.Peek();
             if (events == null || events.Count == 0)
             {
                 _flushing = false;
@@ -318,49 +361,43 @@ namespace AMZNGoDSDK.Runtime
             if (!IsInternetAvailable())
             {
                 Debug.LogWarning($"{Tag} FlushQueue: no internet, {events.Count} events remain in queue");
-                AnalyticsEventQueue.Requeue(events);
                 _flushing = false;
                 yield break;
             }
 
             Debug.Log($"{Tag} FlushQueue: sending {events.Count} queued events...");
 
-            var remaining = new List<string>(events.Count);
             int delivered = 0;
             int rejected = 0;
-            bool stopped = false;
+            int remaining = 0;
 
             for (int i = 0; i < events.Count; i++)
             {
-                // Первый транзиентный сбой останавливает флаш: сеть/бэкенд лежат, остальные
-                // события возвращаются в очередь в исходном порядке.
-                if (stopped)
-                {
-                    remaining.Add(events[i]);
-                    continue;
-                }
-
                 var outcome = SendOutcome.Retry;
                 yield return SendEvent(events[i], o => outcome = o);
 
                 switch (outcome)
                 {
                     case SendOutcome.Delivered:
+                        AnalyticsEventQueue.RemoveExact(events[i]);
                         delivered++;
                         break;
                     case SendOutcome.Rejected:
-                        // Отвергнутое событие выкидываем, иначе оно навсегда заблокирует очередь.
+                        // Отвергнутое по существу выкидываем, иначе навсегда заблокирует очередь.
+                        AnalyticsEventQueue.RemoveExact(events[i]);
                         rejected++;
                         break;
                     default:
-                        stopped = true;
-                        remaining.Add(events[i]);
-                        break;
+                        // Первый транзиентный сбой останавливает флаш: сеть/бэкенд лежат.
+                        // Остальные события остаются в очереди нетронутыми.
+                        remaining = events.Count - i;
+                        Debug.Log($"{Tag} FlushQueue stopped (transient): {delivered} sent, {rejected} rejected, {remaining} remaining");
+                        _flushing = false;
+                        yield break;
                 }
             }
 
-            Debug.Log($"{Tag} FlushQueue complete: {delivered} sent, {rejected} rejected, {remaining.Count} remaining");
-            AnalyticsEventQueue.Requeue(remaining);
+            Debug.Log($"{Tag} FlushQueue complete: {delivered} sent, {rejected} rejected, 0 remaining");
             _flushing = false;
         }
 
@@ -370,6 +407,19 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.Log($"{Tag} App focused — retrying pending events");
                 StartCoroutine(RetryPending());
+            }
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            // Игрок уходит в стор → Android шлёт OnApplicationPause(true). Пробуем дослать
+            // очередь прямо сейчас: возврата (focus) можно не дождаться — ушедший в стор
+            // часто не возвращается. Даже если запрос не успеет — событие уже на диске
+            // (enqueue-first), так что не потеряется.
+            if (pauseStatus && IsReady && IsInternetAvailable())
+            {
+                Debug.Log($"{Tag} App paused — flushing queued events");
+                StartCoroutine(FlushQueue());
             }
         }
 
@@ -394,11 +444,16 @@ namespace AMZNGoDSDK.Runtime
         private static long GetTimestampMs() =>
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        /// <summary>Случайный идентификатор события: и для удаления из очереди, и для дедупа
+        /// на бэкенде (в т.ч. чтобы enqueue-first не породил дубли при повторной отправке).</summary>
+        private static string NewEventId() => Guid.NewGuid().ToString("N");
+
         private static string BuildFirstOpenJson(
-            string eventName, string appId, string appType, string deviceIdHash, long ts)
+            string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId)
         {
             return "{" +
                    $"\"event_name\":\"{EscapeJson(eventName)}\"," +
+                   $"\"event_id\":\"{EscapeJson(eventId)}\"," +
                    $"\"app_id\":\"{EscapeJson(appId)}\"," +
                    $"\"app_type\":\"{EscapeJson(appType)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
@@ -407,10 +462,11 @@ namespace AMZNGoDSDK.Runtime
         }
 
         private static string BuildCrossPromoEventJson(
-            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts)
+            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId)
         {
             return "{" +
                    $"\"event_name\":\"{EscapeJson(eventName)}\"," +
+                   $"\"event_id\":\"{EscapeJson(eventId)}\"," +
                    $"\"paid_app_id\":\"{EscapeJson(paidAppId)}\"," +
                    $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
