@@ -204,19 +204,19 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
                         .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
 
-                    _currentSettings.CrossPromo.DefaultPromotedAppId = EditorGUILayout
-                        .TextField(
-                            new GUIContent("Default Promoted App ID",
-                                "Fallback promoted app ID for tracking when a specific promo doesn't provide its own AppPackageName."),
-                            _currentSettings.CrossPromo.DefaultPromotedAppId);
+                    // Video-бэкенд всегда ExoPlayer — выбор из настроек убран (UnityVideoPlayer
+                    // больше не предлагается). Значение форсится при сохранении настроек.
+                    _currentSettings.CrossPromo.VideoBackend = Runtime.VideoPlayerBackend.ExoPlayer;
 
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Video Player", EditorStyles.miniBoldLabel);
-                    _currentSettings.CrossPromo.VideoBackend = (Runtime.VideoPlayerBackend)EditorGUILayout
-                        .EnumPopup(
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        EditorGUILayout.LabelField(
                             new GUIContent("Video Backend",
-                                "UnityVideoPlayer — стандартный плеер, работает на всех платформах.\nExoPlayer — Android-only, нативный оверлей на базе Google ExoPlayer 2.19.1 (StyledPlayerView поверх игры; на других платформах видео не показывается)."),
-                            _currentSettings.CrossPromo.VideoBackend);
+                                "Всегда ExoPlayer (Android-only, нативный оверлей на Google ExoPlayer 2.19.1). Выбор бэкенда убран из настроек."),
+                            new GUIContent("ExoPlayer (Android)"));
+                    }
                 });
         }
         
