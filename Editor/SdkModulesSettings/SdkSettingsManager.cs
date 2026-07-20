@@ -92,8 +92,8 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 ConfigUrl = runtimeSettings.ConfigUrl,
-                DefaultPromotedAppId = runtimeSettings.DefaultPromotedAppId,
-                VideoBackend = runtimeSettings.VideoBackend
+                // DefaultPromotedAppId убран из настроек; VideoBackend всегда ExoPlayer.
+                VideoBackend = Runtime.VideoPlayerBackend.ExoPlayer
             };
         }
 
@@ -293,8 +293,10 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 ConfigUrl = editorSettings.ConfigUrl,
-                DefaultPromotedAppId = editorSettings.DefaultPromotedAppId,
-                VideoBackend = editorSettings.VideoBackend
+                // DefaultPromotedAppId всегда дефолтный (пустой) — из настроек убран.
+                DefaultPromotedAppId = string.Empty,
+                // Video-бэкенд всегда ExoPlayer — выбор из настроек убран.
+                VideoBackend = Runtime.VideoPlayerBackend.ExoPlayer
             };
         }
 

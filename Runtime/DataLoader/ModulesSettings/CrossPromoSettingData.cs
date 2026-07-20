@@ -16,6 +16,8 @@ namespace AMZNGoDSDK.Runtime
         [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName.")]
         public string DefaultPromotedAppId;
 
-        public VideoPlayerBackend VideoBackend;
+        // Бэкенд плеера больше не выбирается в настройках — всегда ExoPlayer (Android).
+        // UnityVideoPlayer-путь оставлен в коде как fallback, но из UI убран.
+        public VideoPlayerBackend VideoBackend = VideoPlayerBackend.ExoPlayer;
     }
 }
