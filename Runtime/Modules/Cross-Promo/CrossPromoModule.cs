@@ -40,6 +40,11 @@ namespace AMZNGoDSDK.Runtime
         private float _lastSceneReloadRefreshTime = -10f;
         private const float SceneReloadRefreshThrottleSeconds = 5f;
 
+        // Плейсменты аналитики. ShowVideoPromo() намеренно ходит под InterstitialPlacement:
+        // отдельной воронки у него нет, а без плейсмента события не отправлялись бы вообще.
+        private const string InterstitialPlacement = "interstitial";
+        private const string RewardedPlacement = "rewarded";
+
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
         /// <summary>True when a video is ready to play. For the UnityVideoPlayer backend this
@@ -400,7 +405,7 @@ namespace AMZNGoDSDK.Runtime
 
             // Запрос считается внутри ShowVideoInternalCoroutine — уже ПОСЛЕ busy-проверки,
             // когда вызов настоящий (см. задачу «request только когда он настоящий»).
-            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "interstitial", onRewarded: null));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, InterstitialPlacement, onRewarded: null));
         }
 
         #endregion
@@ -421,7 +426,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             // Запрос считается внутри ShowVideoInternalCoroutine — уже ПОСЛЕ busy-проверки.
-            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, "rewarded", onRewarded));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, RewardedPlacement, onRewarded));
         }
 
         #endregion
@@ -431,15 +436,20 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>
         /// Shows a weighted-random video promo from the loaded configuration.
         /// Falls back to invoking <paramref name="onClose"/> immediately if no videos are available.
+        ///
+        /// <para>Аналитически это АЛИАС интерстишела: показ/клик/ошибка уходят в воронку
+        /// <c>crosspromo_inter_*</c>. Отдельной воронки у этого API нет — без плейсмента события
+        /// вообще никуда бы не отправлялись.</para>
         /// </summary>
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
         {
-            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, InterstitialPlacement, onRewarded: null));
         }
 
         /// <summary>Shows a specific video promo by <see cref="PromoConfiguration"/>.
         /// Routed through the same preload-aware path as the parameterless overload, so if the
-        /// preloaded player happens to hold this config's URL, playback starts instantly.</summary>
+        /// preloaded player happens to hold this config's URL, playback starts instantly.
+        /// Аналитически — тоже алиас интерстишела (см. перегрузку без config).</summary>
         public void ShowVideoPromo(PromoConfiguration config, Action onClose = null, Action onCTAClick = null)
         {
             if (config == null)
@@ -449,7 +459,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, placement: null, onRewarded: null, forcedConfig: config));
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, InterstitialPlacement, onRewarded: null, forcedConfig: config));
         }
 
         /// <summary>Returns true if a video overlay is currently being shown.</summary>
@@ -470,7 +480,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning("[CrossPromoModule] ShowVideoInternal: another video promo is already visible, ignoring.");
                 // Реклама уже на экране — это НЕ ошибка показа и запрос для неё не считается.
-                if (placement == "interstitial" || placement == "rewarded")
+                if (placement == InterstitialPlacement || placement == RewardedPlacement)
                     CrossPromoAnalytics.ReportRejectedBusy(placement);
                 onClose?.Invoke();
                 yield break;
@@ -479,8 +489,8 @@ namespace AMZNGoDSDK.Runtime
             // Запрос считаем ЗДЕСЬ — вызов настоящий: busy-проверка пройдена, показ ещё
             // не начат. Раньше «запрос» уходил до этой проверки, поэтому запросов в статистике
             // было заметно больше, чем показов.
-            if (placement == "interstitial")   CrossPromoAnalytics.ReportInterRequested(placement);
-            else if (placement == "rewarded")  CrossPromoAnalytics.ReportRewardRequested(placement);
+            if (placement == InterstitialPlacement)   CrossPromoAnalytics.ReportInterRequested(placement);
+            else if (placement == RewardedPlacement)  CrossPromoAnalytics.ReportRewardRequested(placement);
 
             _crossPromoConfig?.CheckVideosShowLimit();
             _crossPromoConfig?.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
@@ -562,12 +572,12 @@ namespace AMZNGoDSDK.Runtime
 
             _lastShownConfig = config;
 
-            if (placement == "interstitial")
+            if (placement == InterstitialPlacement)
             {
                 var data = BuildBannerData(config);
                 CrossPromoAnalytics.ReportInterDisplayed(data, placement);
             }
-            else if (placement == "rewarded")
+            else if (placement == RewardedPlacement)
             {
                 var data = BuildBannerData(config);
                 CrossPromoAnalytics.ReportRewardDisplayed(data, placement);
