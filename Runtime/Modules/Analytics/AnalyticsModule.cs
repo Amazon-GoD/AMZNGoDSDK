@@ -56,8 +56,19 @@ namespace AMZNGoDSDK.Runtime
             Enabled = enable;
             _baseUrl = baseUrl?.TrimEnd('/');
             _apiKey = apiKey;
-            _appType = appType == AnalyticsAppType.Free ? "free" : "paid";
+            _appType = appType == AnalyticsAppType.Paid ? "paid" : "free";
             _defaultPromotedAppId = defaultPromotedAppId;
+
+            // В билд None попасть не может — его отсекает AnalyticsAppTypeBuildGuard. Остаётся
+            // Play mode после старта редактора, когда тип ещё сброшен: слать события с
+            // додуманным free/paid нельзя, они навсегда испортят разбивку на бэкенде.
+            if (Enabled && appType == AnalyticsAppType.None)
+            {
+                Enabled = false;
+                Debug.LogError($"{Tag} App Type не выбран — аналитика отключена для этого запуска. " +
+                               "Выставь App Type в AMZN GoD/SDK Settings → Analytics.");
+                return;
+            }
 
             if (Enabled && string.IsNullOrWhiteSpace(_baseUrl))
                 Debug.LogWarning($"{Tag} Construct: baseUrl is empty — events will not be sent");
