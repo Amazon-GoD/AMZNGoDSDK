@@ -36,6 +36,10 @@ namespace AMZNGoDSDK.Runtime
         public Action<string> OnPurchaseComplete;
         public Action<string> OnPurchaseFailedCallback;
 
+        // SKU текущей покупки, запомненный в момент BuyProduct. Нужен ветке отказа: на реальном
+        // фейле Amazon возвращает PurchaseReceipt == null, и SKU иначе теряется ("unknown").
+        private string _pendingPurchaseSku;
+
         public bool IsInitialized { get; private set; } = false;
 
         private Dictionary<string, SubscriptionStatus> subscriptionStatuses = new();
@@ -92,6 +96,7 @@ namespace AMZNGoDSDK.Runtime
                 catch (Exception e)
                 {
                     Debug.LogError($"[AMZNGoDSDK] Amazon IAP service init error: {e.Message}");
+                    ReportCatalogFailed("init_error");   // сервис не поднялся — покупки невозможны
                     iapService = null;
                     _serviceReady = false;
                     IsInitialized = false;
@@ -115,6 +120,7 @@ namespace AMZNGoDSDK.Runtime
             catch (Exception e)
             {
                 Debug.LogError($"[AMZNGoDSDK] Amazon IAP catalog init error (retryable): {e.Message}");
+                ReportCatalogFailed("catalog_failed");
             }
         }
 
@@ -186,6 +192,7 @@ namespace AMZNGoDSDK.Runtime
                 catch (Exception e)
                 {
                     Debug.LogError($"[AMZNGoDSDK] GetProductData batch [{i}..{i + batch.Count}) failed: {e.Message}");
+                    ReportCatalogFailed("catalog_failed");
                 }
             }
         }
@@ -217,6 +224,7 @@ namespace AMZNGoDSDK.Runtime
             if (response.Status != "SUCCESSFUL")
             {
                 Debug.LogWarning($"[AMZNGoDSDK] GetProductData failed: {response.Status}");
+                ReportCatalogFailed("catalog_failed");   // реальная точка отказа запроса каталога (асинхронный ответ)
                 return;
             }
 
@@ -227,7 +235,12 @@ namespace AMZNGoDSDK.Runtime
             }
 
             if (response.UnavailableSkus != null && response.UnavailableSkus.Count > 0)
+            {
+                // Приходит ВНУТРИ SUCCESSFUL — это частичная недоступность части SKU,
+                // а не отказ запроса каталога. Отдельная причина уровня 1.
                 Debug.LogWarning($"[AMZNGoDSDK] Unavailable SKUs: {string.Join(", ", response.UnavailableSkus)}");
+                ReportCatalogFailed("sku_unavailable");
+            }
 
             Debug.Log($"[AMZNGoDSDK] Product data loaded: {productDataCache.Count} products");
         }
@@ -238,7 +251,18 @@ namespace AMZNGoDSDK.Runtime
             {
                 var receipt = response.PurchaseReceipt;
                 if (receipt == null)
+                {
+                    // Колбэк пришёл (значит это НЕ класс C), но чека нет. Молчаливый return
+                    // сломал бы инвариант: started ушёл, а ни success, ни failed — нет.
+                    string failedSku = _pendingPurchaseSku;
+                    ReportPurchaseFailed(failedSku, "no_receipt");
+                    _pendingPurchaseSku = null;                  // обнуляем ДО внешнего колбэка (ре-энтрантный BuyProduct не затрёт pending)
+                    OnPurchaseFailedCallback?.Invoke(failedSku); // как и else-ветка: игровой код должен узнать об отказе (иначе UI зависает)
                     return;
+                }
+
+                ReportPurchaseSuccess(receipt.Sku);
+                _pendingPurchaseSku = null;
 
                 string productId = receipt.Sku;
                 ownedSkus.Add(productId);
@@ -252,8 +276,10 @@ namespace AMZNGoDSDK.Runtime
             }
             else
             {
-                string productId = response.PurchaseReceipt?.Sku ?? "unknown";
+                string productId = response.PurchaseReceipt?.Sku ?? _pendingPurchaseSku ?? "unknown";
                 Debug.LogWarning($"[AMZNGoDSDK] Purchase failed: {productId} - {response.Status}");
+                ReportPurchaseFailed(productId, MapAmazonStatus(response.Status));
+                _pendingPurchaseSku = null;                  // обнуляем ДО внешнего колбэка (консистентно с success/no_receipt)
                 OnPurchaseFailedCallback?.Invoke(productId);
             }
         }
@@ -442,21 +468,79 @@ namespace AMZNGoDSDK.Runtime
             iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
         }
 
+        // --- Воронка покупок в AppMetrica (started / success / failed), разрез по SKU ---
+        // Дерево вложенных параметров: started/success = {"<sku>":""};
+        // failed = {"<sku>":{"<reason>":{"<online|offline>":""}}}. SKU всегда уровень 1.
+
+        // Escape строки для вставки в сырой JSON (ключи sku/reason приходят из конфига).
+        private static string J(string s) =>
+            (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        private static string Net() =>
+            Application.internetReachability != NetworkReachability.NotReachable ? "online" : "offline";
+
+        private void ReportPurchaseStarted(string sku) =>
+            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
+                "iap_purchase_started", $"{{\"{J(sku)}\":\"\"}}");
+
+        private void ReportPurchaseSuccess(string sku) =>
+            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
+                "iap_purchase_success", $"{{\"{J(sku)}\":\"\"}}");
+
+        private void ReportPurchaseFailed(string sku, string reason) =>
+            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica("iap_purchase_failed",
+                $"{{\"{J(sku ?? "unknown")}\":{{\"{J(reason)}\":{{\"{Net()}\":\"\"}}}}}}");
+
+        // Отказы каталога (init/цены/доступность) — это НЕ покупки: у большинства точек нет
+        // одного SKU, слать их под iap_purchase_failed нельзя (испортит воронку). Отдельное
+        // событие с плоским {"<reason>":""}: ур.1 = причина отказа каталога.
+        private void ReportCatalogFailed(string reason) =>
+            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
+                "iap_catalog_failed", $"{{\"{J(reason)}\":\"\"}}");
+
+        // Amazon отдаёт ограниченный набор статусов отказа — маппим в стабильный enum причин.
+        private static string MapAmazonStatus(string status) => status switch
+        {
+            "FAILED" => "failed",
+            "INVALID_SKU" => "invalid_sku",
+            "NOT_SUPPORTED" => "not_supported",
+            _ => "unknown",
+        };
+
         public void BuyProduct(string productId)
         {
+            productId ??= "unknown";                     // единая нормализация: started/success/failed уходят под одним ключом SKU
+
+            ReportPurchaseStarted(productId);            // ПЕРВОЙ строкой, до пре-чеков — держим инвариант started ≈ success + failed
+
             if (iapService == null)
             {
                 Debug.LogError("[AMZNGoDSDK] Store not initialized. Purchase impossible.");
-                return;
+                ReportPurchaseFailed(productId, "not_initialized");
+                return;                                  // return обязателен: иначе провал в Purchase() с null-сервисом (NRE)
             }
 
             if (!registeredProductIds.Contains(productId))
             {
                 Debug.LogError($"[AMZNGoDSDK] Product not registered: {productId}");
+                ReportPurchaseFailed(productId, "product_not_registered");
                 return;
             }
 
-            iapService.Purchase(new SkuInput { Sku = productId });
+            _pendingPurchaseSku = productId;
+
+            try
+            {
+                iapService.Purchase(new SkuInput { Sku = productId });
+            }
+            catch (Exception e)                          // класс B: исключение из нативки Amazon
+            {
+                // Тип исключения залогировать можно, но e.Message в событие НЕ кладём:
+                // там урлы/id аккаунта → рост кардинальности параметра и утечка PII.
+                Debug.LogError($"[AMZNGoDSDK] Purchase threw for {productId}: {e.Message}");
+                ReportPurchaseFailed(productId, "exception");
+                _pendingPurchaseSku = null;
+            }
         }
 
         public bool HasSubscription(string productId)
