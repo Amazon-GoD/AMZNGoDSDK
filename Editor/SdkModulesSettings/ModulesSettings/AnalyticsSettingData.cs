@@ -2,10 +2,12 @@ using System;
 
 namespace AMZNGoDSDK.Editor
 {
+    // Зеркало Runtime.AnalyticsAppType — числовые значения обязаны совпадать.
     public enum AnalyticsAppType
     {
-        Free = 0,
-        Paid = 1
+        None = 0,
+        Free = 1,
+        Paid = 2
     }
 
     [Serializable]

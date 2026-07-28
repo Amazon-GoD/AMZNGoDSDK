@@ -4,8 +4,13 @@ namespace AMZNGoDSDK.Runtime
 {
     public enum AnalyticsAppType
     {
-        Free = 0,
-        Paid = 1
+        // None — значение по умолчанию (буквально 0), означающее «тип не выбран».
+        // Сбрасывается в него при каждом старте Unity Editor, и билд с ним не собирается
+        // (см. AnalyticsAppTypeSessionReset / AnalyticsAppTypeBuildGuard в Editor-сборке),
+        // чтобы free/paid никогда не уезжал в аналитику по умолчанию.
+        None = 0,
+        Free = 1,
+        Paid = 2
     }
 
     [Serializable]

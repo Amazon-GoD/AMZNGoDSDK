@@ -53,7 +53,11 @@ namespace AMZNGoDSDK.Runtime
             {
                 s.Analytics.BaseUrl = s.FirstOpenTracking.BaseUrl;
                 s.Analytics.ApiKey = s.FirstOpenTracking.ApiKey;
-                s.Analytics.AppType = (AnalyticsAppType)(int)s.FirstOpenTracking.AppType;
+                // Явный маппинг, а не каст: у FirstOpenAppType своя нумерация (Free=0),
+                // а в AnalyticsAppType 0 — это уже None.
+                s.Analytics.AppType = s.FirstOpenTracking.AppType == FirstOpenAppType.Paid
+                    ? AnalyticsAppType.Paid
+                    : AnalyticsAppType.Free;
                 Debug.Log("[DataLoader] Migrated Analytics settings from legacy FirstOpenTracking block.");
             }
 

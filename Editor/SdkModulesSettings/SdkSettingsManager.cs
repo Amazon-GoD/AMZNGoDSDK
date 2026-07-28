@@ -35,14 +35,52 @@ namespace AMZNGoDSDK.Editor
 
         public static SdkSettingsData LoadSettings()
         {
-            TextAsset jsonFile = Resources.Load<TextAsset>(ConfigFileName.Split('.')[0]);
+            var runtimeSettings = LoadRuntimeSettings();
 
-            if (jsonFile == null)
+            if (runtimeSettings == null)
                 return new SdkSettingsData();
 
             // Load runtime settings and convert to editor settings
-            var runtimeSettings = JsonUtility.FromJson<Runtime.SdkSettingsData>(jsonFile.text);
             return ConvertToEditorSettings(runtimeSettings);
+        }
+
+        /// <summary>Путь к конфигу в проекте (asset path, а не абсолютный).</summary>
+        internal static string ConfigAssetPath => Path.Combine(ResourcesPath, ConfigFileName).Replace('\\', '/');
+
+        /// <summary>
+        /// Читает конфиг «как есть», без конвертации в editor-представление.
+        /// Возвращает null, если конфига ещё нет — вызывающий сам решает, ошибка это или нет.
+        ///
+        /// Читаем с диска, а не через Resources.Load: TextAsset кэшируется, и сразу после
+        /// WriteRuntimeSettings (сброс App Type на старте редактора) Resources отдал бы
+        /// старое значение, пока Unity не доимпортирует ассет.
+        /// </summary>
+        internal static Runtime.SdkSettingsData LoadRuntimeSettings()
+        {
+            string fullPath = Path.Combine(ResourcesPath, ConfigFileName);
+
+            if (!File.Exists(fullPath))
+                return null;
+
+            return JsonUtility.FromJson<Runtime.SdkSettingsData>(File.ReadAllText(fullPath));
+        }
+
+        /// <summary>
+        /// Пишет runtime-конфиг напрямую, без валидации нативных зависимостей, обновления
+        /// define-символов и перекладывания папок модулей. Для служебных правок отдельных
+        /// полей (см. AnalyticsAppTypeSessionReset): полный SaveSettings на старте редактора
+        /// дёргал бы диалоги и рекомпиляцию.
+        /// </summary>
+        internal static void WriteRuntimeSettings(Runtime.SdkSettingsData runtimeSettings)
+        {
+            if (runtimeSettings == null)
+                return;
+
+            if (!Directory.Exists(ResourcesPath))
+                Directory.CreateDirectory(ResourcesPath);
+
+            File.WriteAllText(Path.Combine(ResourcesPath, ConfigFileName), JsonUtility.ToJson(runtimeSettings, true));
+            AssetDatabase.ImportAsset(ConfigAssetPath, ImportAssetOptions.ForceUpdate);
         }
 
         private static SdkSettingsData ConvertToEditorSettings(Runtime.SdkSettingsData runtimeSettings)
@@ -442,9 +480,14 @@ namespace AMZNGoDSDK.Editor
         {
             runtimeSettings ??= new Runtime.AnalyticsSettingData();
 
-            var appType = runtimeSettings.AppType == Runtime.AnalyticsAppType.Paid
-                ? AnalyticsAppType.Paid
-                : AnalyticsAppType.Free;
+            // None обязан доезжать до окна как None: подстановка Free тут вернула бы
+            // «молчаливый дефолт», который вся эта механика и убирает.
+            var appType = runtimeSettings.AppType switch
+            {
+                Runtime.AnalyticsAppType.Free => AnalyticsAppType.Free,
+                Runtime.AnalyticsAppType.Paid => AnalyticsAppType.Paid,
+                _ => AnalyticsAppType.None
+            };
 
             // Backend/ключ зашиты в SDK: если конфиг пришёл из старой версии с пустыми
             // полями, подставляем дефолт — иначе окно сохранило бы пустоту обратно в JSON.
@@ -465,9 +508,12 @@ namespace AMZNGoDSDK.Editor
         {
             editorSettings ??= new AnalyticsSettingData();
 
-            var appType = editorSettings.AppType == AnalyticsAppType.Paid
-                ? Runtime.AnalyticsAppType.Paid
-                : Runtime.AnalyticsAppType.Free;
+            var appType = editorSettings.AppType switch
+            {
+                AnalyticsAppType.Free => Runtime.AnalyticsAppType.Free,
+                AnalyticsAppType.Paid => Runtime.AnalyticsAppType.Paid,
+                _ => Runtime.AnalyticsAppType.None
+            };
 
             return new Runtime.AnalyticsSettingData
             {

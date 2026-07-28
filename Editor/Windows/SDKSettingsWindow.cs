@@ -33,6 +33,28 @@ namespace AMZNGoDSDK.Editor
         {
             ShowWindow();
         }
+
+        // _currentSettings не сериализуется, поэтому после domain reload (рекомпиляция,
+        // вход в Play mode) окно осталось бы с null и падало в OnGUI.
+        private void OnEnable()
+        {
+            _currentSettings ??= SdkSettingsManager.LoadSettings();
+        }
+
+        /// <summary>
+        /// Перечитывает конфиг во всех открытых окнах настроек. Нужен, когда конфиг правится
+        /// в обход окна — например при сбросе App Type на старте редактора
+        /// (<see cref="AnalyticsAppTypeSessionReset"/>): иначе окно показывало бы старый тип
+        /// и по Save Settings вернуло бы его обратно в конфиг.
+        /// </summary>
+        public static void ReloadOpenWindows()
+        {
+            foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>())
+            {
+                window._currentSettings = SdkSettingsManager.LoadSettings();
+                window.Repaint();
+            }
+        }
         
         private static async void LoadDependenciesAsync()
         {
@@ -425,6 +447,16 @@ namespace AMZNGoDSDK.Editor
                     EditorGUI.EndDisabledGroup();
                     _currentSettings.Analytics.AppType = (AnalyticsAppType)EditorGUILayout
                         .EnumPopup("App Type", _currentSettings.Analytics.AppType);
+
+                    // Тип сбрасывается при каждом запуске редактора — подсказываем, почему
+                    // поле снова пустое и чем это грозит, пока его не выставили.
+                    if (_currentSettings.Analytics.AppType == AnalyticsAppType.None)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "App Type не выбран. Значение сбрасывается при каждом запуске Unity Editor — " +
+                            "выбери Free или Paid и нажми Save Settings, иначе билд не соберётся.",
+                            MessageType.Error);
+                    }
                 });
         }
 
