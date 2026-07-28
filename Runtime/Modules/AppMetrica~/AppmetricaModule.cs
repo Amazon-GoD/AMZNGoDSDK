@@ -33,6 +33,17 @@ namespace AMZNGoDSDK.Runtime
             AppMetrica.ReportEvent(eventName, SerializeToJson(args));
         }
 
+        // Отправка сырого (в т.ч. вложенного) JSON как есть. Обёртка ReportEvent(Dictionary)
+        // строит только ПЛОСКИЙ JSON через SerializeToJson — деревом параметров (воронка IAP,
+        // sku → reason → network) её отправить нельзя. Плагин же принимает произвольный JSON.
+        public void ReportEventRaw(string eventName, string jsonValue)
+        {
+            if (string.IsNullOrWhiteSpace(eventName))
+                return;
+
+            AppMetrica.ReportEvent(eventName, jsonValue);
+        }
+
         private static string SerializeToJson(Dictionary<string, string> args)
         {
             var sb = new StringBuilder("{");

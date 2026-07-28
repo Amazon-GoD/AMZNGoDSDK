@@ -231,8 +231,17 @@ namespace AMZNGoDSDK.Runtime
             
             _appMetricaModule.ReportEvent(eventName, args);
         }
+
+        public void ReportEventRawAppMetrica(string eventName, string jsonValue)
+        {
+            if (!_appMetricaModule.Enabled)
+                return;
+
+            _appMetricaModule.ReportEventRaw(eventName, jsonValue);
+        }
 #else
         public void ReportEventAppMetrica(string eventName, Dictionary<string, string> args) { }
+        public void ReportEventRawAppMetrica(string eventName, string jsonValue) { }
 #endif
         
         #endregion
