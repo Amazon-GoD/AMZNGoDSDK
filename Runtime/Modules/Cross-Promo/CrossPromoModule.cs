@@ -206,6 +206,7 @@ namespace AMZNGoDSDK.Runtime
             _configFetchReturnedVideos = false;
             _preloadedConfig = null;
             _firstWarmupTriggered = false;
+            LastPreloadRequestedRealtime = -1f;
             _initializeRequested = true;
             _lastShownTitleFromPrefs = VideoCooldownRegistry.GetLastShownTitle();
             StartInitCoroutine();
@@ -844,6 +845,7 @@ namespace AMZNGoDSDK.Runtime
 
             if (_videoBackend == VideoPlayerBackend.ExoPlayer)
             {
+                LastPreloadRequestedRealtime = Time.realtimeSinceStartup;
                 NativePreload(url, next.Title);
                 return;
             }
@@ -931,6 +933,18 @@ namespace AMZNGoDSDK.Runtime
         /// Предназначен для отладочных и тестовых сборок.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// <see cref="Time.realtimeSinceStartup"/> на момент, когда докачка следующего креатива
+        /// была ЗАПРОШЕНА, либо -1, если в этой сессии её ещё не запрашивали.
+        /// <para>
+        /// Нужен, чтобы измерить именно длительность докачки. Считать её от момента, когда
+        /// предыдущий креатив был потреблён показом, нельзя: докачка стартует не тогда, а на
+        /// конце ролика (OnExoOverlayCompleted), поэтому в такой интервал попадает всё
+        /// проигрывание рекламы — и «2 секунды качалось» превращается в «18 секунд».
+        /// </para>
+        /// </summary>
+        public float LastPreloadRequestedRealtime { get; private set; } = -1f;
+
         public bool IsPreloadedVideoCached
         {
             get
