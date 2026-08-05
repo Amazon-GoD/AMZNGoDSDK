@@ -504,7 +504,23 @@ namespace AMZNGoDSDK.Runtime
             }
 
             Debug.Log($"[CrossPromoModule] Show: forcedConfig='{forcedConfig?.Title}', _preloadedConfig='{_preloadedConfig?.Title}', _lastShownConfig='{_lastShownConfig?.Title}'");
-            var config = forcedConfig ?? _preloadedConfig ?? SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
+            // Прелоаженный креатив ищем в актуальном списке по Title, а НЕ сравниваем ссылку:
+            // ApplyCooldownFilter каждый показ пересобирает Videos свежими Copy()-объектами,
+            // поэтому ссылка, сохранённая при прелоаде, в текущем списке отсутствует ВСЕГДА.
+            // Заодно берём актуальный объект, а не сохранённый снимок.
+            PromoConfiguration config = forcedConfig;
+            if (config == null && _preloadedConfig != null)
+                config = _crossPromoConfig.Videos.Find(v => v.Title == _preloadedConfig.Title);
+
+            // Прелоад потреблён — либо отброшен, если креатив успел выпасть из пула (юзер
+            // поставил рекламируемый пейд / кулдаун / лимит показов). Чистим в обоих случаях:
+            // иначе следующий показ повторил бы тот же ролик в обход кулдауна, а докачка
+            // следующего креатива не запустилась бы из-за дедупа.
+            _preloadedConfig = null;
+
+            if (config == null)
+                config = SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
+
             Debug.Log($"[CrossPromoModule] Show: selected config='{config?.Title}'");
 
             if (config == null || (string.IsNullOrWhiteSpace(config.VideoUrl) && string.IsNullOrWhiteSpace(config.FileName)))
@@ -680,14 +696,25 @@ namespace AMZNGoDSDK.Runtime
             return _preloadPlayer;
         }
 
-        private void PreloadNextVideo()
+        /// <summary>
+        /// Готовит следующий креатив к показу. Для ExoPlayer-бэкенда это фоновая докачка
+        /// ролика в дисковый кэш ExoPlayer (нативный <c>CrossPromoExoCache</c>), для
+        /// Unity-бэкенда — прогрев выделенного <see cref="CrossPromoVideoPlayer"/>.
+        /// Вызывается на старте (после загрузки конфига) и на каждом конце показа —
+        /// см. <see cref="CrossPromoExoNativeOverlay"/>.
+        /// </summary>
+        internal void PreloadNextVideo()
         {
-            // ExoPlayer backend uses the native overlay, which buffers on show — there is no
-            // Unity preload/warmup pipeline for it.
-            if (_videoBackend != VideoPlayerBackend.UnityVideoPlayer)
-                return;
+            if (!Enabled) return;
 
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
+                return;
+
+            // Дедуп только для Exo: нативная докачка уходит в фон и о своём завершении не
+            // сообщает, поэтому единственный признак «уже готов / уже качается» —
+            // непустой _preloadedConfig. Unity-путь опирается на состояние _preloadPlayer и
+            // обязан уметь перезапускаться (RefreshPreloadIfStale) — его guard не касается.
+            if (_videoBackend == VideoPlayerBackend.ExoPlayer && _preloadedConfig != null)
                 return;
 
             _crossPromoConfig.CheckVideosShowLimit();
@@ -700,11 +727,19 @@ namespace AMZNGoDSDK.Runtime
             if (next == null || (string.IsNullOrWhiteSpace(next.VideoUrl) && string.IsNullOrWhiteSpace(next.FileName)))
                 return;
 
-            _preloadedConfig = next;
-
+            // Резолвим URL ДО того, как занять _preloadedConfig: иначе креатив с пустой
+            // ссылкой навсегда залипал бы в дедупе и глушил всю дальнейшую докачку.
             string url = ResolvePromoUrl(next);
             if (string.IsNullOrWhiteSpace(url))
                 return;
+
+            _preloadedConfig = next;
+
+            if (_videoBackend == VideoPlayerBackend.ExoPlayer)
+            {
+                NativePreload(url, next.Title);
+                return;
+            }
 
             var player = EnsurePreloadPlayer();
             player.SetBackend(_videoBackend);
@@ -723,6 +758,34 @@ namespace AMZNGoDSDK.Runtime
             // Запрос («requested») больше НЕ шлётся из preload: preload — это внутренняя
             // подготовка, а не запрос показа. Событие уходит из ShowVideoInternalCoroutine,
             // когда пользователь реально запрашивает показ.
+        }
+
+        /// <summary>
+        /// Фоновая докачка ролика в дисковый кэш нативного ExoPlayer. Fire-and-forget:
+        /// нативная сторона качает на своём потоке и о результате не сообщает. Любой сбой
+        /// здесь безвреден — показ просто отработает как раньше, стримом.
+        /// </summary>
+        private static void NativePreload(string url, string title)
+        {
+            // streamingAssets / локальный файл кэшировать незачем — он и так на устройстве.
+            if (!CrossPromoAdjustTracking.IsHttpUrl(url))
+                return;
+
+            // Платформенный guard обязателен: PreloadNextVideo зовётся из Initialize, где
+            // try/finally без catch — в Editor непойманный AndroidJavaException оборвал бы
+            // инициализацию модуля целиком.
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var cls = new AndroidJavaClass("com.amzngod.exoplayer.CrossPromoExoCache"))
+                    cls.CallStatic("preload", url);
+                Debug.Log($"[CrossPromoModule] Native preload requested: '{title}'");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[CrossPromoModule] Native preload call failed: {e.Message}");
+            }
+#endif
         }
 
         private static string ResolvePromoUrl(PromoConfiguration config)

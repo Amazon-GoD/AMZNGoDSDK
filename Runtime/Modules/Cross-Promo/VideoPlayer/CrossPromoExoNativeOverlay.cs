@@ -160,6 +160,14 @@ namespace AMZNGoDSDK.Runtime
             _native = null;
 #endif
 
+            // Показ закончился — тянем следующий креатив в кэш, чтобы он стартовал мгновенно.
+            // Хук стоит именно здесь, а не в трёх нативных колбэках: Hide() — единая воронка
+            // для закрытия, ошибки воспроизведения И load_timeout (LoadTimeoutRoutine зовёт
+            // Hide() напрямую, минуя нативные колбэки). Иначе цепочка прелоада обрывалась бы
+            // ровно там, где он нужнее всего — на плохой сети.
+            // Зовём ДО коллбэка игры: если тот бросит, докачка всё равно уже запущена.
+            CrossPromoModule.Instance?.PreloadNextVideo();
+
             cb?.Invoke();
         }
 
@@ -243,6 +251,11 @@ namespace AMZNGoDSDK.Runtime
         {
             CancelLoadTimeout();
             _onCompleted?.Invoke();
+
+            // Ролик доигран — тянем следующий в кэш, пока юзер смотрит энд-карту и ищет
+            // кнопку закрытия. Hide() тут ещё не звучал (оверлей на экране), поэтому нужен
+            // отдельный хук; последующий Closed → Hide() погасится дедупом в PreloadNextVideo.
+            CrossPromoModule.Instance?.PreloadNextVideo();
         }
 
         [UnityEngine.Scripting.Preserve]
