@@ -9,7 +9,9 @@ import com.google.android.exoplayer2.database.StandaloneDatabaseProvider;
 import com.google.android.exoplayer2.upstream.DataSpec;
 import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.cache.CacheDataSource;
+import com.google.android.exoplayer2.upstream.cache.CacheKeyFactory;
 import com.google.android.exoplayer2.upstream.cache.CacheWriter;
+import com.google.android.exoplayer2.upstream.cache.ContentMetadata;
 import com.google.android.exoplayer2.upstream.cache.LeastRecentlyUsedCacheEvictor;
 import com.google.android.exoplayer2.upstream.cache.SimpleCache;
 
@@ -49,8 +51,12 @@ public final class CrossPromoExoCache {
     /** Одна фоновая нить: докачки сериализованы и никогда не трогают main-поток. */
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
 
-    /** ОДИН на процесс: второй SimpleCache на ту же директорию кидает исключение. */
-    private static SimpleCache cache;
+    /**
+     * ОДИН на процесс: второй SimpleCache на ту же директорию кидает исключение.
+     * volatile — чтобы {@link #isCached} мог прочитать поле без {@code synchronized} и не
+     * ждать фоновую инициализацию (см. там же).
+     */
+    private static volatile SimpleCache cache;
 
     /** Кэш поднять не удалось — повторно не долбимся (конструктор SimpleCache недешёвый). */
     private static boolean cacheUnavailable;
@@ -123,5 +129,33 @@ public final class CrossPromoExoCache {
                 }
             }
         });
+    }
+
+    /**
+     * Лежит ли ролик в кэше целиком. Предназначено для опроса с main-потока (тестовые сборки
+     * гейтят по нему кнопку показа), поэтому здесь два намеренных ограничения:
+     *
+     * <ul>
+     *   <li>кэш НЕ поднимается — если он ещё не инициализирован, честно отвечаем {@code false}.
+     *       Иначе первый же опрос повесил бы main-поток на восстановлении индекса SimpleCache;</li>
+     *   <li>поле читается без {@code synchronized} — иначе опрос вставал бы в очередь за
+     *       фоновым потоком, который в этот момент как раз конструирует кэш.</li>
+     * </ul>
+     *
+     * <p>Ключ считаем тем же {@link CacheKeyFactory#DEFAULT}, что и фабрика в {@link #factory}:
+     * разойдись они — и ответ был бы стабильно ложным.
+     */
+    public static boolean isCached(String url) {
+        SimpleCache c = cache;
+        if (c == null || url == null) return false;
+
+        try {
+            DataSpec spec = new DataSpec.Builder().setUri(Uri.parse(url)).build();
+            String key = CacheKeyFactory.DEFAULT.buildCacheKey(spec);
+            long length = ContentMetadata.getContentLength(c.getContentMetadata(key));
+            return length != C.LENGTH_UNSET && c.isCached(key, 0, length);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }
