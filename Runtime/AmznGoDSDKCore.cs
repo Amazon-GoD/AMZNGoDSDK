@@ -180,6 +180,15 @@ namespace AMZNGoDSDK.Runtime
         public bool IsPreloadedVideoCached => _crossPromoModule.IsPreloadedVideoCached;
 
         /// <summary>
+        /// Time.realtimeSinceStartup when the next creative's download was requested, or -1 if
+        /// it hasn't been requested this session. Pair it with <see cref="IsPreloadedVideoCached"/>
+        /// to measure how long the download actually took: the preload starts when the previous
+        /// ad's video ENDS, not when the user closes it, so timing from the close (or from the
+        /// moment the previous creative was consumed) also counts the whole playback.
+        /// </summary>
+        public float LastPreloadRequestedRealtime => _crossPromoModule.LastPreloadRequestedRealtime;
+
+        /// <summary>
         /// Shows a cross-promo video as an interstitial.
         /// </summary>
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
@@ -223,6 +232,7 @@ namespace AMZNGoDSDK.Runtime
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
         public bool IsPreloadedVideoCached => false;
+        public float LastPreloadRequestedRealtime => -1f;
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
         public void RefreshPreloadIfStale() { }
