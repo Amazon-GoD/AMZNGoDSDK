@@ -33,12 +33,22 @@ namespace AMZNGoDSDK.Runtime
         private bool _firstWarmupTriggered;
         private Coroutine _initCoroutine;
         private Coroutine _showCoroutine;
+        private Coroutine _configRetryCoroutine;
+        private bool _configRetryRunning;
 
         // На смене сцены дёргаем подстраховочный re-warmup preload-плеера (на случай
         // если прогретое видео потерялось / отвалилось между показами). Throttle, чтобы
         // быстрые цепочки переходов (Menu→Level→Menu) не плодили лишнюю работу.
         private float _lastSceneReloadRefreshTime = -10f;
         private const float SceneReloadRefreshThrottleSeconds = 5f;
+
+        // Ленивая дозагрузка конфига. Первый фетч может вернуться ПУСТЫМ, а не упасть:
+        // FetchRemoteConfigAsync после всех своих попыток отдаёт пустой PromosConfigurationInfo,
+        // поэтому таск завершается успешно, _crossPromoConfig становится не-null — и модуль
+        // до конца сессии отвечает no_fill, хотя проблема была лишь в сети на старте.
+        // Разброс интервала — чтобы клиенты не долбили CDN синхронно.
+        private const float ConfigRetryMinSeconds = 10f;
+        private const float ConfigRetryMaxSeconds = 15f;
 
         // Плейсменты аналитики. ShowVideoPromo() намеренно ходит под InterstitialPlacement:
         // отдельной воронки у него нет, а без плейсмента события не отправлялись бы вообще.
@@ -54,6 +64,19 @@ namespace AMZNGoDSDK.Runtime
             _videoBackend == VideoPlayerBackend.ExoPlayer
                 ? (_crossPromoConfig?.Videos != null && _crossPromoConfig.Videos.Count > 0)
                 : (_preloadPlayer != null && _preloadPlayer.IsPreloaded);
+
+        /// <summary>
+        /// Последний фетч конфига вернул хотя бы одно видео.
+        /// <para>
+        /// Проверять надо именно это, а не <c>_crossPromoConfig == null</c>: провалившийся
+        /// фетч возвращает ПУСТОЙ конфиг, а не null и не ошибку, так что по null «не
+        /// загружен» не отличить. И не текущий <c>Videos.Count</c>: его прореживают
+        /// CheckVideosShowLimit / ApplyCooldownFilter / RemoveInstalledOrSelfPromo прямо
+        /// по ходу сессии, а это уже «конфиг есть, но показывать нечего» — случай, который
+        /// дозагрузкой не лечится.
+        /// </para>
+        /// </summary>
+        private bool _configFetchReturnedVideos;
 
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
@@ -101,6 +124,8 @@ namespace AMZNGoDSDK.Runtime
             SceneManager.sceneLoaded -= OnSceneLoadedRefreshPreload;
             if (_initCoroutine != null) { StopCoroutine(_initCoroutine); _initCoroutine = null; }
             if (_showCoroutine != null) { StopCoroutine(_showCoroutine); _showCoroutine = null; }
+            if (_configRetryCoroutine != null) { StopCoroutine(_configRetryCoroutine); _configRetryCoroutine = null; }
+            _configRetryRunning = false;
             DisposePreloadPlayer();
             if (_exoOverlay != null)
             {
@@ -171,7 +196,14 @@ namespace AMZNGoDSDK.Runtime
             Debug.Log($"[CrossPromoModule] Initialize() called. Enabled={Enabled}, configUrl='{_configUrl}', videoBackend={_videoBackend}");
             WarnIfUnityAudioDisabled();
             DisposePreloadPlayer();
+
+            // Повторный Initialize() начинает всё заново — старая дозагрузка не должна
+            // пережить сброс и параллелить фетчи с новым init'ом.
+            if (_configRetryCoroutine != null) { StopCoroutine(_configRetryCoroutine); _configRetryCoroutine = null; }
+            _configRetryRunning = false;
+
             _crossPromoConfig = null;
+            _configFetchReturnedVideos = false;
             _preloadedConfig = null;
             _firstWarmupTriggered = false;
             _initializeRequested = true;
@@ -202,6 +234,10 @@ namespace AMZNGoDSDK.Runtime
                 // Show can swap instantly instead of loading from scratch.
                 PreloadNextVideo();
             }
+
+            // Дозагрузку конфига тоже могло погасить деактивацией. No-op, если конфиг уже есть
+            // или если init выше перезапустился — он догрузит сам.
+            EnsureConfigRetryRunning("host re-enabled");
         }
 
         private void OnDisable()
@@ -210,6 +246,11 @@ namespace AMZNGoDSDK.Runtime
             // block in InitCrossPromoModulesCorAsync may not run in that path. Reset the
             // guard here so OnEnable can legitimately restart the init.
             _initRunning = false;
+
+            // Дозагрузка конфига гаснет вместе с host-объектом по той же причине — сбрасываем
+            // флаг, иначе EnsureConfigRetryRunning навсегда счёл бы её живой.
+            _configRetryRunning = false;
+            _configRetryCoroutine = null;
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -307,6 +348,62 @@ namespace AMZNGoDSDK.Runtime
             {
                 _initRunning = false;
             }
+
+            // Стартовый фетч мог вернуться пустым (сеть легла) — тогда без этого модуль до
+            // конца сессии отвечал бы no_fill. Вызов после finally: _initRunning уже сброшен,
+            // иначе guard внутри отбил бы запуск.
+            EnsureConfigRetryRunning("стартовый фетч не дал ни одного видео");
+        }
+
+        /// <summary>
+        /// Запускает фоновую дозагрузку конфига, если тот так и не доехал. Идемпотентно:
+        /// no_fill может прилетать на каждый запрос показа, но параллельные корутины не
+        /// плодятся и частота запросов от этого не растёт.
+        /// </summary>
+        private void EnsureConfigRetryRunning(string reason)
+        {
+            if (!Enabled) return;
+            if (_configRetryRunning) return;
+            if (_configFetchReturnedVideos) return;            // конфиг доехал; пусто — значит отфильтровано
+            if (_initRunning) return;                          // основной init сам всё догрузит
+            if (string.IsNullOrWhiteSpace(_configUrl)) return; // грузить неоткуда — ретрай бессмыслен
+            if (!isActiveAndEnabled) return;                   // OnEnable перезапустит
+
+            Debug.Log($"[CrossPromoModule] Config retry: старт (причина: {reason}).");
+            _configRetryRunning = true;
+            _configRetryCoroutine = StartCoroutine(RetryConfigLoadCoroutine());
+        }
+
+        private IEnumerator RetryConfigLoadCoroutine()
+        {
+            int attempt = 0;
+
+            while (!_configFetchReturnedVideos)
+            {
+                // Пауза ПЕРЕД запросом, а не после: no_fill прилетает пачками, и без этого
+                // первый же залп ушёл бы в сеть немедленно — то есть без троттлинга вовсе.
+                float delay = UnityEngine.Random.Range(ConfigRetryMinSeconds, ConfigRetryMaxSeconds);
+                yield return new WaitForSecondsRealtime(delay);
+
+                if (!Enabled) break;
+
+                attempt++;
+                Debug.Log($"[CrossPromoModule] Config retry: попытка {attempt} (пауза была {delay:F1}s).");
+
+                // LoadJson перезапишет _crossPromoConfig в любом случае, в том числе пустым
+                // конфигом при неудаче. Здесь это безопасно: терять нечего — корутина крутится
+                // только пока конфиг ни разу не доехал, и на первом же успехе выходит.
+                yield return LoadJson();
+
+                if (!_configFetchReturnedVideos) continue;
+
+                Debug.Log($"[CrossPromoModule] Config retry: конфиг добран с попытки {attempt}, videos={_crossPromoConfig.Videos.Count}.");
+                OnConfigLoaded?.Invoke(_crossPromoConfig);
+                PreloadNextVideo();
+            }
+
+            _configRetryRunning = false;
+            _configRetryCoroutine = null;
         }
 
         private IEnumerator LoadJson()
@@ -334,6 +431,13 @@ namespace AMZNGoDSDK.Runtime
             if (operation.IsCompletedSuccessfully)
             {
                 _crossPromoConfig = operation.Result;
+
+                // Успешный таск ещё не значит успешный фетч: исчерпав свои попытки,
+                // FetchRemoteConfigAsync отдаёт пустой конфиг обычным return'ом. Наличие
+                // видео — единственный надёжный признак, что конфиг реально доехал.
+                _configFetchReturnedVideos = _crossPromoConfig?.Videos != null
+                                             && _crossPromoConfig.Videos.Count > 0;
+
                 Debug.Log($"[CrossPromoModule] Config loaded OK. Videos={_crossPromoConfig?.Videos?.Count ?? 0}");
 
                 if (_crossPromoConfig?.Videos != null)
@@ -499,6 +603,9 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning("[CrossPromoModule] No video promos available in config.");
                 CrossPromoAnalytics.ReportDisplayFailed(placement, "no_fill", null, null);
+                // Показывать нечего — возможно, конфиг просто не доехал на старте. Заводим
+                // фоновую дозагрузку, чтобы сессия не осталась без рекламы навсегда.
+                EnsureConfigRetryRunning("no_fill");
                 onClose?.Invoke();
                 yield break;
             }
