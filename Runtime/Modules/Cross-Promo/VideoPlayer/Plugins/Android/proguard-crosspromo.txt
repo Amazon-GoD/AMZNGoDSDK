@@ -10,6 +10,11 @@
 # содержимое этого файла в Assets/Plugins/Android/proguard-user.txt (либо смёржить в gradle).
 -keep class com.amzngod.exoplayer.CrossPromoExoOverlay { *; }
 
+# Дисковый кэш/прелоад роликов: зовётся из C# как AndroidJavaClass(...).CallStatic("preload", url),
+# то есть тоже по строковому имени. Без keep прелоад молча перестаёт работать — показ при этом
+# продолжает жить (стримом), поэтому поломка незаметна до анализа логов.
+-keep class com.amzngod.exoplayer.CrossPromoExoCache { *; }
+
 # Callback-мост Unity, если R8 включён и в проекте (обычно и так keep, но на всякий случай).
 -keepclassmembers class * {
     @com.unity3d.player.* <methods>;

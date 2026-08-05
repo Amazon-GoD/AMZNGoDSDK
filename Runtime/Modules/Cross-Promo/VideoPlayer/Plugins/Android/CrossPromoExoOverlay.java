@@ -20,7 +20,9 @@ import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource;
 import com.google.android.exoplayer2.video.VideoSize;
 
 import com.unity3d.player.UnityPlayer;
@@ -100,7 +102,28 @@ public class CrossPromoExoOverlay implements Player.Listener {
                 completed = false;
                 handler = new Handler(Looper.getMainLooper());
 
-                player = new ExoPlayer.Builder(activity).build();
+                // Плеер читает через общий дисковый кэш: если ролик уже докачан прелоадом —
+                // старт с диска, без буферизации; если нет — стримит и попутно кэширует.
+                // Кэш подключаем только для http(s): локальный креатив из streamingAssets
+                // класть на диск второй раз незачем.
+                // Любой сбой кэша НЕ должен ронять показ — тогда строим плеер как раньше.
+                ExoPlayer.Builder builder = new ExoPlayer.Builder(activity);
+                boolean cacheable = url != null
+                        && (url.startsWith("http://") || url.startsWith("https://"));
+                if (cacheable) {
+                    try {
+                        CacheDataSource.Factory cacheFactory = CrossPromoExoCache.factory(activity);
+                        if (cacheFactory != null) {
+                            builder.setMediaSourceFactory(
+                                    new DefaultMediaSourceFactory(activity)
+                                            .setDataSourceFactory(cacheFactory));
+                        }
+                    } catch (Throwable t) {
+                        android.util.Log.w("CrossPromoExoOverlay",
+                                "cache-backed media source unavailable, using default: " + t);
+                    }
+                }
+                player = builder.build();
                 player.addListener(CrossPromoExoOverlay.this);
                 player.setRepeatMode(Player.REPEAT_MODE_OFF);
                 player.setTrackSelectionParameters(
