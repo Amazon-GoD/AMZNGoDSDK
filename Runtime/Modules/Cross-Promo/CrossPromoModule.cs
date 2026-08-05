@@ -777,8 +777,7 @@ namespace AMZNGoDSDK.Runtime
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
-                using (var cls = new AndroidJavaClass("com.amzngod.exoplayer.CrossPromoExoCache"))
-                    cls.CallStatic("preload", url);
+                ExoCacheClass?.CallStatic("preload", url);
                 Debug.Log($"[CrossPromoModule] Native preload requested: '{title}'");
             }
             catch (System.Exception e)
@@ -786,6 +785,78 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"[CrossPromoModule] Native preload call failed: {e.Message}");
             }
 #endif
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static AndroidJavaClass _exoCacheClass;
+
+        /// <summary>
+        /// Ленивая ссылка на нативный класс кэша, живущая весь процесс. Пересоздавать
+        /// AndroidJavaClass на каждое обращение нельзя: <see cref="IsPreloadedVideoCached"/>
+        /// опрашивают из Update.
+        /// </summary>
+        private static AndroidJavaClass ExoCacheClass
+        {
+            get
+            {
+                if (_exoCacheClass != null) return _exoCacheClass;
+                try
+                {
+                    _exoCacheClass = new AndroidJavaClass("com.amzngod.exoplayer.CrossPromoExoCache");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[CrossPromoModule] CrossPromoExoCache is unavailable: {e.Message}");
+                }
+                return _exoCacheClass;
+            }
+        }
+#endif
+
+        /// <summary>
+        /// True, когда следующий креатив реально лежит в дисковом кэше и стартует без
+        /// буферизации.
+        /// <para>
+        /// В отличие от <see cref="IsVideoReady"/> (который для ExoPlayer-бэкенда лишь
+        /// сообщает, что конфиг не пуст) это честный признак готовности. Именно поэтому он
+        /// НЕ годится как условие показа рекламы: если кэш на устройстве недоступен или
+        /// докачка не прошла, он останется false навсегда — и показы прекратились бы совсем.
+        /// Предназначен для отладочных и тестовых сборок.
+        /// </para>
+        /// </summary>
+        public bool IsPreloadedVideoCached
+        {
+            get
+            {
+#if !UNITY_ANDROID || UNITY_EDITOR
+                // Нативного кэша здесь нет — не блокируем отладку в Editor.
+                return IsVideoReady;
+#else
+                if (_videoBackend != VideoPlayerBackend.ExoPlayer)
+                    return IsVideoReady;   // Unity-бэкенд: готовность = прогретый preload-плеер
+
+                if (_preloadedConfig == null)
+                    return false;          // докачка ещё не выбрала креатив либо уже потреблена
+
+                try
+                {
+                    string url = ResolvePromoUrl(_preloadedConfig);
+                    if (string.IsNullOrWhiteSpace(url))
+                        return false;
+
+                    // Локальный креатив кэшировать нечего — он и так на устройстве.
+                    if (!CrossPromoAdjustTracking.IsHttpUrl(url))
+                        return true;
+
+                    return ExoCacheClass != null && ExoCacheClass.CallStatic<bool>("isCached", url);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[CrossPromoModule] isCached call failed: {e.Message}");
+                    return false;
+                }
+#endif
+            }
         }
 
         private static string ResolvePromoUrl(PromoConfiguration config)

@@ -172,6 +172,14 @@ namespace AMZNGoDSDK.Runtime
         public bool IsVideoReady => _crossPromoModule.IsVideoReady;
 
         /// <summary>
+        /// True when the next creative is actually sitting in the on-disk cache, so the show
+        /// starts without buffering. Diagnostic signal for debug / QA builds — do NOT gate ad
+        /// display on it: if the device cache is unavailable it stays false forever and ads
+        /// would stop entirely. Use <see cref="IsVideoReady"/> for that.
+        /// </summary>
+        public bool IsPreloadedVideoCached => _crossPromoModule.IsPreloadedVideoCached;
+
+        /// <summary>
         /// Shows a cross-promo video as an interstitial.
         /// </summary>
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
@@ -214,6 +222,7 @@ namespace AMZNGoDSDK.Runtime
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
+        public bool IsPreloadedVideoCached => false;
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
         public void RefreshPreloadIfStale() { }
