@@ -136,7 +136,7 @@ namespace AMZNGoDSDK.Runtime
             if (_reconciledThisSession)
                 return revoked;
             if (_reconciledAtUtc == DateTime.MinValue)
-                return revoked;   // E без отметки сверки не бывает: миграция пишет их вместе
+                return revoked;   // E без отметки не бывает: миграция и живая выдача пишут якорь вместе с ним
             if ((nowUtc - _reconciledAtUtc).TotalDays <= GraceDays)
                 return revoked;
 
@@ -180,23 +180,38 @@ namespace AMZNGoDSDK.Runtime
             var diff = new SnapshotDiff();
 
             foreach (var sku in configuredLongLived)
-            {
-                bool active = result.ActiveSkus.Contains(sku);
-                bool hadAccess = GetEffectiveAccess(sku);
+                ApplySnapshotSku(sku, result.ActiveSkus.Contains(sku), diff);
 
-                _stored[sku] = active ? 'E' : 'N';
+            // Сохранённые права по SKU, которых в конфиге уже нет (продукт удалили, а не
+            // выключили): без переоценки такое 'E' жило бы вечно, включая после рефанда.
+            // Критерий тот же — есть действующий чек в полном ответе (без фильтра по
+            // конфигу): заплатившим доступ сохраняется, рефанд снимает.
+            List<string> unconfigured = null;
+            foreach (var sku in _stored.Keys)
+                if (!configuredLongLived.Contains(sku))
+                    (unconfigured ??= new List<string>()).Add(sku);
 
-                if (active)
-                    diff.Entitled.Add(sku);
-                else if (hadAccess)
-                    diff.Revoked.Add(sku);
-            }
+            if (unconfigured != null)
+                foreach (var sku in unconfigured)
+                    ApplySnapshotSku(sku, result.ActiveAnySkus.Contains(sku), diff);
 
             _reconciledAtUtc = nowUtc;
             _reconciledThisSession = true;
             _dirty = true;
             SaveIfDirty();
             return diff;
+        }
+
+        private void ApplySnapshotSku(string sku, bool active, SnapshotDiff diff)
+        {
+            bool hadAccess = GetEffectiveAccess(sku);
+
+            _stored[sku] = active ? 'E' : 'N';
+
+            if (active)
+                diff.Entitled.Add(sku);
+            else if (hadAccess)
+                diff.Revoked.Add(sku);
         }
 
         /// <summary>
@@ -208,6 +223,17 @@ namespace AMZNGoDSDK.Runtime
         {
             if (string.IsNullOrEmpty(sku))
                 return;
+
+            // Якорь для грейса: если сверки не было ещё ни разу (свежая установка, купил при
+            // падающей сети), без отметки времени EvaluateGrace никогда бы не сработал и
+            // право зависло бы включённым. Это НЕ отметка сверки — ReconciledThisSession
+            // остаётся false.
+            if (_reconciledAtUtc == DateTime.MinValue)
+            {
+                _reconciledAtUtc = DateTime.UtcNow;
+                _dirty = true;
+            }
+
             if (_stored.TryGetValue(sku, out var c) && c == 'E')
                 return;
             _stored[sku] = 'E';

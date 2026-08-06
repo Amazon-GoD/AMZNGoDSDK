@@ -68,7 +68,9 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public void CatalogFailed(string reason, string status = null)
         {
-            if (!_reportedCatalogReasons.Add(reason))
+            // Статус входит в ключ дедупа: второй ОТЛИЧНЫЙ статус той же причины за сессию —
+            // новая информация, а не дубль батча.
+            if (!_reportedCatalogReasons.Add($"{reason}|{status}"))
                 return;
 
             string json = string.IsNullOrEmpty(status)

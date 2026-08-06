@@ -36,17 +36,22 @@ namespace AMZNGoDSDK.Runtime
         public IapReconcileResult Complete(ISet<string> longLivedSkus)
         {
             var active = new HashSet<string>();
+            var activeAny = new HashSet<string>();
 
             foreach (var receipt in _receipts)
             {
                 // cancelDate пуст (в C#-обёртке — 0), пока подписка активна; для разовой
                 // покупки непустой CancelDate означает возврат денег. Установленный факт
                 // из ТЗ, раздел G: сравнение с текущей датой не требуется.
-                if (receipt.CancelDate == 0 && longLivedSkus.Contains(receipt.Sku))
+                if (receipt.CancelDate != 0)
+                    continue;
+
+                activeAny.Add(receipt.Sku);
+                if (longLivedSkus.Contains(receipt.Sku))
                     active.Add(receipt.Sku);
             }
 
-            return new IapReconcileResult(active, _receipts);
+            return new IapReconcileResult(active, activeAny, _receipts);
         }
     }
 
@@ -55,12 +60,18 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>Долгоживущие SKU с действующим чеком в полном ответе.</summary>
         public readonly HashSet<string> ActiveSkus;
 
+        /// <summary>Все SKU с действующим чеком, без фильтра по конфигу — для переоценки
+        /// сохранённых прав по SKU, которые из настроек уже удалили (рефанд должен снимать
+        /// доступ и у них).</summary>
+        public readonly HashSet<string> ActiveAnySkus;
+
         /// <summary>Все валидные чеки полного ответа — для выдачи расходуемых, периодов и подтверждений.</summary>
         public readonly IReadOnlyList<PurchaseReceipt> Receipts;
 
-        public IapReconcileResult(HashSet<string> activeSkus, IReadOnlyList<PurchaseReceipt> receipts)
+        public IapReconcileResult(HashSet<string> activeSkus, HashSet<string> activeAnySkus, IReadOnlyList<PurchaseReceipt> receipts)
         {
             ActiveSkus = activeSkus;
+            ActiveAnySkus = activeAnySkus;
             Receipts = receipts;
         }
     }

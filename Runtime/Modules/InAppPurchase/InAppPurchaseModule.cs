@@ -93,7 +93,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             _reconcileRetry = new IapRetryScheduler(this, RetryReconcile, OnReconcileExhausted);
-            _catalogRetry = new IapRetryScheduler(this, RetryInitialize, null);
+            _catalogRetry = new IapRetryScheduler(this, RetryCatalog, null);
 
             _catalog.Configure(settings);
 
@@ -158,6 +158,20 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             InitializeAmazonIAP();
+        }
+
+        /// <summary>Автоповтор ТОЛЬКО каталога: полный InitializeAmazonIAP при каждой
+        /// неудачной волне заодно гонял бы сверку и NotifyFulfillment в сторону Amazon.</summary>
+        private void RetryCatalog()
+        {
+            if (!_serviceReady)
+            {
+                InitializeAmazonIAP();
+                return;
+            }
+
+            _catalog.Configure(settings);
+            RequestProductData();
         }
 
         private void RequestProductData()
@@ -273,14 +287,28 @@ namespace AMZNGoDSDK.Runtime
                 var receipt = response.PurchaseReceipt;
                 if (receipt == null)
                 {
-                    // Колбэк пришёл, а чека нет — деньги могли списаться. Чек почти
-                    // наверняка приедет в истории: перезапрашиваем её прямо здесь (IAP-20).
-                    string failedSku = pendingSku ?? "unknown";
-                    Debug.LogWarning($"[AMZNGoDSDK] Purchase {response.Status} without receipt: {failedSku}");
+                    string noReceiptSku = pendingSku ?? "unknown";
+
+                    if (response.Status == "ALREADY_PURCHASED")
+                    {
+                        // Повторное нажатие «купить»: ALREADY_PURCHASED часто приходит БЕЗ
+                        // чека. Это не отказ и не продажа — в воронке already_owned (IAP-16),
+                        // право подтвердит сверка. Игре — failed: ничего не выдано.
+                        Debug.Log($"[AMZNGoDSDK] Purchase ALREADY_PURCHASED without receipt: {noReceiptSku}");
+                        if (!terminalAlreadySent)
+                            _analytics.PurchaseSuccess(noReceiptSku, alreadyOwned: true);
+                        StartReconcile(null);
+                        SafeInvokePurchaseFailed(noReceiptSku);
+                        return;
+                    }
+
+                    // SUCCESSFUL, а чека нет — деньги могли списаться. Чек почти наверняка
+                    // приедет в истории: перезапрашиваем её прямо здесь (IAP-20).
+                    Debug.LogWarning($"[AMZNGoDSDK] Purchase {response.Status} without receipt: {noReceiptSku}");
                     if (!terminalAlreadySent)
-                        _analytics.PurchaseFailed(failedSku, "no_receipt");
+                        _analytics.PurchaseFailed(noReceiptSku, "no_receipt");
                     StartReconcile(null);
-                    OnPurchaseFailedCallback?.Invoke(failedSku);
+                    SafeInvokePurchaseFailed(noReceiptSku);
                     return;
                 }
 
@@ -289,15 +317,34 @@ namespace AMZNGoDSDK.Runtime
 
                 Debug.Log($"[AMZNGoDSDK] Purchase {response.Status}: {sku}");
 
-                ProcessLiveReceipt(receipt);
-                _journal.SaveIfDirty();
+                // Исключение из обработки (журнал, PlayerPrefs) не должно всплыть в FireEvent
+                // плагина и оставить игру без терминального колбэка — класс проблемы IAP-01.
+                bool grantedNow;
+                try
+                {
+                    grantedNow = ProcessLiveReceipt(receipt);
+                    _journal.SaveIfDirty();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[AMZNGoDSDK] Live receipt processing threw for {sku}: {e}");
+                    if (!terminalAlreadySent)
+                        _analytics.PurchaseFailed(sku, "exception");
+                    StartReconcile(null);   // чек не подтверждён — вернётся в истории
+                    SafeInvokePurchaseFailed(sku);
+                    return;
+                }
 
                 // Аналитика ПОСЛЕ выдачи (IAP-01) и с разрезом new/already_owned (IAP-16):
                 // повторная покупка того, чем игрок уже владеет, — не продажа.
                 if (!terminalAlreadySent)
                     _analytics.PurchaseSuccess(sku, alreadyOwned);
 
-                OnPurchaseComplete?.Invoke(sku);
+                // grantedNow=false — чек ничего нового не дал (повторный чек расходуемого,
+                // неизвестный продукт, расхождение типа): OnPurchaseComplete не зовём, иначе
+                // игра начислила бы второй раз («ровно один раз на чек», README §3).
+                if (grantedNow)
+                    SafeInvokePurchaseComplete(sku);
 
                 // Живая покупка применила только-добавляющее обновление; полная сверка
                 // следом подтверждает его штатным снапшотом.
@@ -309,35 +356,40 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"[AMZNGoDSDK] Purchase failed: {sku} - {response.Status}");
                 if (!terminalAlreadySent)
                     _analytics.PurchaseFailed(sku, IapAnalytics.MapAmazonStatus(response.Status));
-                OnPurchaseFailedCallback?.Invoke(sku);
+                SafeInvokePurchaseFailed(sku);
             }
         }
 
         /// <summary>
         /// Чек живой покупки. Только добавление: свежий SUCCESSFUL-чек может дать право или
         /// товар, но никогда ничего не снимает — снятие исключительно снапшотом сверки.
+        /// Возвращает true, если чек дал что-то новое (и игре положен OnPurchaseComplete):
+        /// повторный чек расходуемого, неизвестный продукт и расхождение типа — false.
         /// </summary>
-        private void ProcessLiveReceipt(PurchaseReceipt receipt)
+        private bool ProcessLiveReceipt(PurchaseReceipt receipt)
         {
             if (string.IsNullOrEmpty(receipt.ReceiptId) || string.IsNullOrEmpty(receipt.Sku))
-                return;
+                return false;
 
             if (!_catalog.TryResolve(receipt.Sku, out var product))
             {
                 LogUnknownReceipt(receipt);
-                return;
+                return false;
             }
 
             if (!ValidateProductType(receipt, product))
-                return;
+                return false;
 
             _entitlements.MarkEverPurchased(receipt.Sku);
+            bool grantedNow = true;
 
             switch (product.Kind)
             {
                 case IapProductKind.Consumable:
                     // Идемпотентность по ReceiptId — ранний return старого кода, который
-                    // гасил переоценку подписок (IAP-02), переехал ровно сюда.
+                    // гасил переоценку подписок (IAP-02), переехал ровно сюда. Повторный
+                    // чек (дублированный ответ нативки) не даёт второго начисления.
+                    grantedNow = !_journal.IsGranted(receipt.ReceiptId);
                     _journal.MarkGranted(receipt.ReceiptId);
                     break;
 
@@ -354,6 +406,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             NotifyFulfillmentSafe(receipt.ReceiptId);
+            return grantedNow;
         }
 
         #endregion
@@ -416,6 +469,11 @@ namespace AMZNGoDSDK.Runtime
         {
             _reconcileSession = null;    // частичный ответ выбрасывается целиком
             _reconcileRetry.OnFailure(); // бэкофф 2/8/30 с; состояние остаётся Unknown
+
+            // Ручной Restore не должен держать экран «Восстановление…» весь цикл бэкоффа
+            // (~40 с): колбэк отпускаем по первому сбою, ретраи продолжаются фоном — если
+            // поздний прогон успеет, игра узнает штатными событиями прав.
+            CompleteRestoreCallbacks(false);
         }
 
         private void OnReconcileExhausted()
@@ -462,8 +520,13 @@ namespace AMZNGoDSDK.Runtime
         {
             // 1. Чеки: выдача расходуемых (однократно), периоды подписок, подтверждения.
             //    Упавший NotifyFulfillment кладёт чек в очередь и НЕ рвёт цикл (IAP-03).
+            //    try/catch на каждый чек: исключение (из игрового колбэка в том числе) не
+            //    должно оставить снапшот неприменённым, а single-flight — залипшим.
             foreach (var receipt in result.Receipts)
-                ProcessRestoredReceipt(receipt);
+            {
+                try { ProcessRestoredReceipt(receipt); }
+                catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] Restored receipt {receipt.ReceiptId} processing threw: {e}"); }
+            }
 
             // 2. Права — снапшотом целиком: единственное место, где право может стать NotEntitled.
             var diff = _entitlements.ApplySnapshot(result, _catalog.LongLivedSkus, DateTime.UtcNow);
@@ -514,7 +577,7 @@ namespace AMZNGoDSDK.Runtime
                     {
                         _journal.MarkGranted(receipt.ReceiptId);
                         _analytics.PurchaseRestored(receipt.Sku);
-                        OnPurchaseComplete?.Invoke(receipt.Sku);   // начисляет игра (IAP-13)
+                        SafeInvokePurchaseComplete(receipt.Sku);   // начисляет игра (IAP-13)
                     }
                     break;
 
@@ -666,8 +729,10 @@ namespace AMZNGoDSDK.Runtime
             if (_lastReceipts == null)
                 return;
 
+            // Тот же фильтр, что и в основном пути: расхождение типа продукта не должно
+            // обходиться через отложенное доначисление (старт без сети).
             foreach (var receipt in _lastReceipts)
-                if (_catalog.TryResolve(receipt.Sku, out var product))
+                if (_catalog.TryResolve(receipt.Sku, out var product) && ValidateProductType(receipt, product))
                     FirePeriods(receipt, product);
 
             _journal.SaveIfDirty();
@@ -703,8 +768,13 @@ namespace AMZNGoDSDK.Runtime
             if (!_serviceReady)
                 return;
 
-            // Брошенный диалог покупки не должен блокировать магазин (IAP-21).
-            _pendingPurchaseSku = null;
+            // Брошенный диалог покупки не должен блокировать магазин (IAP-21), но сам
+            // диалог Amazon — оверлей: возврат из него тоже даёт pause/focus. Сбрасываем
+            // только протухший лок — безусловный сброс терял бы SKU для атрибуции отказа
+            // (почти каждая реальная отмена уходила бы как sku=unknown) и выключал лок.
+            if (_pendingPurchaseSku != null
+                && Time.realtimeSinceStartup - _pendingPurchaseStartedRealtime >= PendingPurchaseWindowSeconds)
+                _pendingPurchaseSku = null;
 
             foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow))
             {
@@ -844,6 +914,21 @@ namespace AMZNGoDSDK.Runtime
         {
             try { listener(entitlement); }
             catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] Entitlement listener threw: {e}"); }
+        }
+
+        // Игровой обработчик — чужой код: его исключение не должно рвать обработку чеков,
+        // применение снапшота и single-flight сверки (тот же принцип, что IAP-01 для аналитики).
+
+        private void SafeInvokePurchaseComplete(string sku)
+        {
+            try { OnPurchaseComplete?.Invoke(sku); }
+            catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] OnPurchaseComplete handler threw: {e}"); }
+        }
+
+        private void SafeInvokePurchaseFailed(string sku)
+        {
+            try { OnPurchaseFailedCallback?.Invoke(sku); }
+            catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] OnPurchaseFailed handler threw: {e}"); }
         }
 
         // --- Legacy-колбэки покупок (контракт сохранён) ---

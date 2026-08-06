@@ -279,6 +279,16 @@ namespace AMZNGoDSDK.Editor
 
         public static bool SaveSettings(SdkSettingsData settings)
         {
+            // Барьер IAP-15 живёт здесь, а не только в кнопке окна: SaveSettings публичный,
+            // и обходной вызов (визард, тулинг модулей) не должен сохранять подписку без
+            // срока. Окно валидирует то же самое раньше — ради диалога с текстом.
+            if (settings?.InAppPurchase != null
+                && !ValidateInAppPurchaseProductIds(settings.InAppPurchase, out var iapError))
+            {
+                Debug.LogError($"[SdkSettingsManager] Save rejected: {iapError}");
+                return false;
+            }
+
             if (!NativeDependencyValidator.ValidateAndPrompt(settings))
             {
                 Debug.Log("[SdkSettingsManager] Save cancelled by user due to native dependency conflicts.");

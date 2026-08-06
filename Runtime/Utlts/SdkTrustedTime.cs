@@ -25,6 +25,17 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string PrefsKey = "AMZN_TrustedTimeUtc";
 
+        // Предохранитель храповика: одно аномальное «будущее» Date (мисконфиг сервера)
+        // навсегда отравило бы максимум — все будущие периоды всех подписок выдались бы
+        // разом, и отката нет. Значение, опережающее И прежний максимум, И часы устройства
+        // больше чем на этот запас, считаем мусором. Применяется только при живом прежнем
+        // максимуме: на чистой установке часы устройства могут быть какими угодно.
+        private const double MaxPlausibleAheadHours = 48;
+
+        /// <summary>База для FetchOnce; ядро подставляет настроенный BaseUrl аналитики —
+        /// дефолт остаётся на случай, когда конфиг ещё не прочитан.</summary>
+        public static string BaseUrl = AnalyticsSettingData.DefaultBaseUrl;
+
         private static bool _loaded;
         private static DateTime _maxSeenUtc;       // максимум наблюдений за всю жизнь установки (персистится)
         private static bool _hasFresh;             // было ли наблюдение в этой сессии
@@ -65,6 +76,15 @@ namespace AMZNGoDSDK.Runtime
 
             EnsureLoaded();
 
+            if (_maxSeenUtc != DateTime.MinValue
+                && (observed - _maxSeenUtc).TotalHours > MaxPlausibleAheadHours
+                && (observed - DateTime.UtcNow).TotalHours > MaxPlausibleAheadHours)
+            {
+                Debug.LogError($"[SdkTrustedTime] Implausible Date header ignored: '{httpDateHeader}' " +
+                               $"is over {MaxPlausibleAheadHours}h ahead of both the previous maximum and the device clock");
+                return;
+            }
+
             bool first = !_hasFresh;
 
             if (observed > _maxSeenUtc)
@@ -94,7 +114,7 @@ namespace AMZNGoDSDK.Runtime
             if (_hasFresh)
                 yield break;
 
-            using (var request = UnityWebRequest.Get(AnalyticsSettingData.DefaultBaseUrl + "/"))
+            using (var request = UnityWebRequest.Get(BaseUrl + "/"))
             {
                 request.timeout = 15;
                 yield return request.SendWebRequest();
