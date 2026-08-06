@@ -1,62 +1,83 @@
 #if AMZN_IAP_ENABLED
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using com.amazon.device.iap.cpt;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
+    /// <summary>
+    /// Amazon Appstore IAP (ТЗ «исправление IAP», ред. 3).
+    ///
+    /// Источник истины о правах — чеки Amazon: подписка/разовая покупка активна, если в
+    /// ПОЛНОМ ответе GetPurchaseUpdates есть её чек с пустым CancelDate. Результат сверки
+    /// применяется снапшотом целиком; любой сбой оставляет состояние Unknown, а не «прав
+    /// нет». SDK ничего не начисляет (IAP-13): он сообщает состояние
+    /// (Unknown/Entitled/NotEntitled), события выдачи и снятия прав и начало новых
+    /// оплаченных периодов подписки — начисляет игра.
+    ///
+    /// Оркестрация здесь; механика — в Core/: каталог продуктов, журналы чеков, стор прав,
+    /// сессия сверки, калькулятор периодов, повторы с бэкоффом, шов к плагину Amazon и
+    /// аналитика. Плагин Amazon (Plugins/Amazon/AmazonIapV2) не тронут.
+    /// </summary>
     public class InAppPurchaseModule : ModuleBase
     {
-        // Amazon GetProductData accepts at most 100 SKUs per request.
+        // Amazon GetProductData принимает не больше 100 SKU за запрос.
         private const int ProductDataBatchSize = 100;
 
-        // Persistent set of receipts we have already granted + fulfilled.
-        // Guarantees idempotent grants and prevents re-notifying closed receipts.
-        private const string FulfilledReceiptsKey = "AMZN_FulfilledReceipts";
-        private const char FulfilledReceiptsSeparator = '\n';
+        // IAP-11: пересверка на возврате из фона, если состояние старше этого.
+        private const float ReconcileStaleSeconds = 5f * 60f;
+
+        // IAP-21: окно блокировки повторной покупки. Ответ может не прийти вовсе (игрок
+        // свернул приложение на диалоге, мост умер) — бессрочный лок заблокировал бы
+        // магазин до перезапуска.
+        private const float PendingPurchaseWindowSeconds = 90f;
 
         private InAppPurchaseSettingData settings;
 
-        private IAmazonIapV2 iapService;
+        private IIapServiceGateway _gateway;
         private bool _serviceReady;
-        private readonly HashSet<string> registeredProductIds = new();
-        private readonly Dictionary<string, ProductData> productDataCache = new();
-        private readonly HashSet<string> ownedSkus = new();
-        private readonly HashSet<string> _fulfilledReceipts = new();
 
-        // SKUs registered during initialization, kept so RetryInitialize can re-request the catalog.
-        private readonly List<string> _pendingSkus = new();
+        private readonly IapProductCatalog _catalog = new();
+        private readonly IapReceiptJournal _journal = new();
+        private readonly IapEntitlementStore _entitlements = new();
+        private readonly IapAnalytics _analytics = new();
 
-        private readonly Dictionary<ConsumableRewardType, Action<string, int>> _rewardTypeHandlers =
-            new();
-        private Action<string, int> _defaultConsumableRewardSetter;
+        private IapRetryScheduler _reconcileRetry;
+        private IapRetryScheduler _catalogRetry;
+
+        // Текущий прогон сверки; null — сверка не идёт. Обрыв = выбросить сессию целиком,
+        // частичный ответ не применяется никогда.
+        private IapReconcileSession _reconcileSession;
+        private readonly List<Action<bool>> _restoreCallbacks = new();
+        private float _lastReconcileRealtime = float.NegativeInfinity;
+
+        // Чеки последней успешной сверки: доначисление периодов, когда доверенное время
+        // приходит ПОЗЖЕ ответа Amazon (старт без сети).
+        private IReadOnlyList<PurchaseReceipt> _lastReceipts;
+
+        // IAP-21: SKU текущей покупки + отметка времени + защёлка «терминальное событие
+        // воронки уже отправлено» (ветка catch шлёт failed, но нативка после этого всё ещё
+        // может прислать ответ — иначе на один started пришлись бы и failed, и success).
+        private string _pendingPurchaseSku;
+        private float _pendingPurchaseStartedRealtime;
+        private bool _pendingTerminalReported;
 
         public Action<string> OnPurchaseComplete;
         public Action<string> OnPurchaseFailedCallback;
 
-        // SKU текущей покупки, запомненный в момент BuyProduct. Нужен ветке отказа: на реальном
-        // фейле Amazon возвращает PurchaseReceipt == null, и SKU иначе теряется ("unknown").
-        private string _pendingPurchaseSku;
+        private readonly List<Action<IapEntitlement>> _grantedListeners = new();
+        private readonly List<Action<IapEntitlement>> _revokedListeners = new();
+        private readonly List<Action<IapPeriodStarted>> _periodListeners = new();
 
-        public bool IsInitialized { get; private set; } = false;
+        /// <summary>Сервис поднят и каталог запрошен: BuyProduct легален. Состоянию прав
+        /// верить рано — см. <see cref="IsRestored"/> (IAP-11).</summary>
+        public bool IsInitialized { get; private set; }
 
-        private Dictionary<string, SubscriptionStatus> subscriptionStatuses = new();
+        /// <summary>Была успешная ПОЛНАЯ сверка с Amazon в этой сессии — состоянию можно верить.</summary>
+        public bool IsRestored => _entitlements.ReconciledThisSession;
 
-        private Action<bool> _restoreCallback;
-        private bool _isRestoring;
-
-        // Cancellation resolution is deferred until the last page (HasMore == false) and evaluated
-        // against SKUs seen active across ALL pages, so it can never depend on receipt/page order.
-        private readonly HashSet<string> _restoreActiveSkus = new();
-        private readonly List<PurchaseReceipt> _restoreCancelledReceipts = new();
-
-        private void Awake()
-        {
-            _defaultConsumableRewardSetter = DefaultConsumableRewardSetter;
-            _rewardTypeHandlers[ConsumableRewardType.Default] = _defaultConsumableRewardSetter;
-        }
+        public DateTime LastReconciliationUtc => _entitlements.ReconciledAtUtc;
 
         public void Construct(InAppPurchaseSettingData iapSettings)
         {
@@ -64,159 +85,103 @@ namespace AMZNGoDSDK.Runtime
             Enabled = iapSettings.Enabled;
         }
 
+        #region Initialization
+
         public override void Initialize()
         {
             if (!Enabled)
                 return;
 
-            LoadFulfilledReceipts();
+            _reconcileRetry = new IapRetryScheduler(this, RetryReconcile, OnReconcileExhausted);
+            _catalogRetry = new IapRetryScheduler(this, RetryInitialize, null);
+
+            _catalog.Configure(settings);
+
+            // Миграция строго до первого обращения к Amazon: засев GrantedReceipts из
+            // старого журнала — иначе вся история расходуемых выдастся повторно (IAP-12).
+            IapReceiptJournal.MigrateIfNeeded(_catalog.LongLivedSkus);
+            _journal.Load();
+            _entitlements.Load();
+
+            // Грейс на старте: сохранённые права старше 7 суток без сверки — доступ снят.
+            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow))
+            {
+                _analytics.EntitlementRevoked(sku);
+                RaiseRevoked(sku);
+            }
+
+            SdkTrustedTime.OnFirstFreshTime += OnTrustedTimeAvailable;
+            StartCoroutine(SdkTrustedTime.FetchOnce());
+
             InitializeAmazonIAP();
         }
 
         private void InitializeAmazonIAP()
         {
-            if (IsInitialized)
-                return;
-
-            // Phase 1 (fatal, done once): acquire the service and register listeners. If it
-            // throws, the store stays down but retryable. Listeners are registered exactly once
-            // so a retry never double-subscribes.
             if (!_serviceReady)
             {
-                try
-                {
-                    iapService = AmazonIapV2Impl.Instance;
+                _gateway ??= new AmazonIapV2Gateway();
 
-                    iapService.AddGetProductDataResponseListener(OnGetProductDataResponse);
-                    iapService.AddPurchaseResponseListener(OnPurchaseResponseHandler);
-                    iapService.AddGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
-
-                    _serviceReady = true;
-                }
-                catch (Exception e)
+                if (!_gateway.TryAcquire(OnGetProductDataResponse, OnPurchaseResponseHandler,
+                        OnGetPurchaseUpdatesResponse, out var error))
                 {
-                    Debug.LogError($"[AMZNGoDSDK] Amazon IAP service init error: {e.Message}");
-                    ReportCatalogFailed("init_error");   // сервис не поднялся — покупки невозможны
-                    iapService = null;
-                    _serviceReady = false;
-                    IsInitialized = false;
+                    Debug.LogError($"[AMZNGoDSDK] Amazon IAP service init error: {error}");
+                    _analytics.CatalogFailed("init_error");
                     return;
                 }
+
+                _serviceReady = true;
             }
 
-            // Phase 2 (non-fatal, retryable): catalog + restore. A failure here must never tear
-            // down the live service or leave IsInitialized out of sync — it just stays false so
-            // RetryInitialize() can re-run this phase (all steps below are idempotent).
-            try
-            {
-                RegisterProducts();
-                RequestProductData();
-                RequestPurchaseUpdates();
-                CheckExpiredSubscriptions();
+            // Идемпотентно: список запроса каталога наполняется заново при каждом вызове,
+            // поэтому RetryInitialize реально перезапрашивает цены (IAP-04).
+            _catalog.Configure(settings);
+            RequestProductData();
+            StartReconcile(null);
+            RetryPendingFulfillments();
 
+            if (!IsInitialized)
+            {
                 IsInitialized = true;
                 Debug.Log("[AMZNGoDSDK] Amazon IAP initialized");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[AMZNGoDSDK] Amazon IAP catalog init error (retryable): {e.Message}");
-                ReportCatalogFailed("catalog_failed");
             }
         }
 
         /// <summary>
-        /// Re-attempts initialization after a failure. If the service is already fully initialized
-        /// but the catalog failed to load asynchronously, only the product-data request is retried.
+        /// Повтор инициализации/каталога после сбоя. Дёргается автоматически повторами с
+        /// бэкоффом и доступен игре через AmznGoDSDKCore (IAP-04: раньше не вызывался
+        /// нигде и не работал бы из-за пустого списка SKU при повторном вызове).
         /// </summary>
         public void RetryInitialize()
         {
             if (!Enabled)
                 return;
 
-            if (!IsInitialized)
-            {
-                InitializeAmazonIAP();
-                return;
-            }
-
-            RequestProductData();
-        }
-
-        private void RegisterProducts()
-        {
-            _pendingSkus.Clear();
-
-            foreach (var subscription in settings.SubscriptionProducts.Where(s => s.Enabled))
-            {
-                if (string.IsNullOrWhiteSpace(subscription.ProductId))
-                    continue;
-
-                RegisterSubscriptionStatus(subscription);
-
-                if (!registeredProductIds.Add(subscription.ProductId))
-                    continue;
-
-                _pendingSkus.Add(subscription.ProductId);
-            }
-
-            foreach (var consumable in settings.ConsumableProducts.Where(c => c.Enabled))
-            {
-                if (string.IsNullOrWhiteSpace(consumable.ProductId))
-                    continue;
-
-                if (string.IsNullOrWhiteSpace(consumable.RewardKey))
-                    consumable.RewardKey = consumable.ProductId;
-
-                if (!registeredProductIds.Add(consumable.ProductId))
-                    continue;
-
-                _pendingSkus.Add(consumable.ProductId);
-            }
+            InitializeAmazonIAP();
         }
 
         private void RequestProductData()
         {
-            if (iapService == null || _pendingSkus.Count == 0)
+            var skus = _catalog.CatalogRequestSkus;
+            if (skus.Count == 0)
                 return;
 
-            // Chunk into batches of 100 — a single over-limit request fails as a whole,
-            // taking the entire catalog (prices/titles) down with it.
-            for (int i = 0; i < _pendingSkus.Count; i += ProductDataBatchSize)
+            // Батчи по 100: один сверхлимитный запрос падает целиком вместе со всем каталогом.
+            for (int i = 0; i < skus.Count; i += ProductDataBatchSize)
             {
-                var batch = _pendingSkus.GetRange(i, Math.Min(ProductDataBatchSize, _pendingSkus.Count - i));
+                var batch = new List<string>();
+                int end = Math.Min(i + ProductDataBatchSize, skus.Count);
+                for (int j = i; j < end; j++)
+                    batch.Add(skus[j]);
 
-                try
+                if (!_gateway.TryGetProductData(batch, out var error))
                 {
-                    iapService.GetProductData(new SkusInput { Skus = batch });
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"[AMZNGoDSDK] GetProductData batch [{i}..{i + batch.Count}) failed: {e.Message}");
-                    ReportCatalogFailed("catalog_failed");
+                    Debug.LogError($"[AMZNGoDSDK] GetProductData batch [{i}..{end}) failed: {error}");
+                    _analytics.CatalogFailed("catalog_request_failed");
+                    _catalogRetry.OnFailure();
+                    return;
                 }
             }
-        }
-
-        private void RequestPurchaseUpdates()
-        {
-            if (iapService == null)
-                return;
-
-            try
-            {
-                BeginRestoreAccumulators();
-                iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[AMZNGoDSDK] GetPurchaseUpdates failed: {e.Message}");
-            }
-        }
-
-        private void BeginRestoreAccumulators()
-        {
-            _restoreActiveSkus.Clear();
-            _restoreCancelledReceipts.Clear();
         }
 
         private void OnGetProductDataResponse(GetProductDataResponse response)
@@ -224,563 +189,694 @@ namespace AMZNGoDSDK.Runtime
             if (response.Status != "SUCCESSFUL")
             {
                 Debug.LogWarning($"[AMZNGoDSDK] GetProductData failed: {response.Status}");
-                ReportCatalogFailed("catalog_failed");   // реальная точка отказа запроса каталога (асинхронный ответ)
+                _analytics.CatalogFailed("catalog_response_failed", response.Status);
+                _catalogRetry.OnFailure();
                 return;
             }
 
+            _catalogRetry.OnSuccess();
+
             if (response.ProductDataMap != null)
-            {
-                foreach (var kvp in response.ProductDataMap)
-                    productDataCache[kvp.Key] = kvp.Value;
-            }
+                _catalog.StoreProductData(response.ProductDataMap);
 
             if (response.UnavailableSkus != null && response.UnavailableSkus.Count > 0)
             {
-                // Приходит ВНУТРИ SUCCESSFUL — это частичная недоступность части SKU,
-                // а не отказ запроса каталога. Отдельная причина уровня 1.
+                // Приходит ВНУТРИ SUCCESSFUL — частичная недоступность части SKU, а не
+                // отказ запроса каталога. Отдельная причина уровня 1.
                 Debug.LogWarning($"[AMZNGoDSDK] Unavailable SKUs: {string.Join(", ", response.UnavailableSkus)}");
-                ReportCatalogFailed("sku_unavailable");
+                _analytics.CatalogFailed("sku_unavailable");
             }
 
-            Debug.Log($"[AMZNGoDSDK] Product data loaded: {productDataCache.Count} products");
+            Debug.Log($"[AMZNGoDSDK] Product data loaded: {_catalog.CachedProductCount} products");
+        }
+
+        #endregion
+
+        #region Purchase
+
+        public void BuyProduct(string productId)
+        {
+            productId ??= "unknown";                     // единая нормализация ключа SKU в воронке
+
+            _analytics.PurchaseStarted(productId);       // ПЕРВОЙ строкой — инвариант started ≈ success + failed
+
+            if (!_serviceReady)
+            {
+                Debug.LogError("[AMZNGoDSDK] Store not initialized. Purchase impossible.");
+                _analytics.PurchaseFailed(productId, "not_initialized");
+                return;
+            }
+
+            if (!_catalog.CanBuy(productId))
+            {
+                Debug.LogError($"[AMZNGoDSDK] Product not registered or disabled: {productId}");
+                _analytics.PurchaseFailed(productId, "product_not_registered");
+                return;
+            }
+
+            // IAP-21: вторая покупка до ответа перетёрла бы SKU текущей, и отказ по первой
+            // приписался бы второму товару. Лок только внутри окна — см. константу.
+            if (_pendingPurchaseSku != null
+                && Time.realtimeSinceStartup - _pendingPurchaseStartedRealtime < PendingPurchaseWindowSeconds)
+            {
+                Debug.LogWarning($"[AMZNGoDSDK] Purchase already in progress ({_pendingPurchaseSku}), rejecting {productId}");
+                _analytics.PurchaseFailed(productId, "purchase_in_progress");
+                return;
+            }
+
+            _pendingPurchaseSku = productId;
+            _pendingPurchaseStartedRealtime = Time.realtimeSinceStartup;
+            _pendingTerminalReported = false;
+
+            if (!_gateway.TryPurchase(productId, out var error))
+            {
+                // Текст ошибки в событие не кладём: там урлы/id аккаунта — рост
+                // кардинальности параметра и утечка PII.
+                Debug.LogError($"[AMZNGoDSDK] Purchase threw for {productId}: {error}");
+                _analytics.PurchaseFailed(productId, "exception");
+                _pendingTerminalReported = true;   // поздний ответ нативки не должен дать второй терминал
+                _pendingPurchaseSku = null;
+            }
         }
 
         private void OnPurchaseResponseHandler(PurchaseResponse response)
         {
-            if (response.Status == "SUCCESSFUL" || response.Status == "ALREADY_PURCHASED")
+            string pendingSku = _pendingPurchaseSku;
+            bool terminalAlreadySent = _pendingTerminalReported;
+            _pendingPurchaseSku = null;              // обнуляем ДО внешних колбэков (ре-энтрантный BuyProduct)
+            _pendingTerminalReported = false;
+
+            bool successStatus = response.Status == "SUCCESSFUL" || response.Status == "ALREADY_PURCHASED";
+
+            if (successStatus)
             {
                 var receipt = response.PurchaseReceipt;
                 if (receipt == null)
                 {
-                    // Колбэк пришёл (значит это НЕ класс C), но чека нет. Молчаливый return
-                    // сломал бы инвариант: started ушёл, а ни success, ни failed — нет.
-                    string failedSku = _pendingPurchaseSku;
-                    ReportPurchaseFailed(failedSku, "no_receipt");
-                    _pendingPurchaseSku = null;                  // обнуляем ДО внешнего колбэка (ре-энтрантный BuyProduct не затрёт pending)
-                    OnPurchaseFailedCallback?.Invoke(failedSku); // как и else-ветка: игровой код должен узнать об отказе (иначе UI зависает)
+                    // Колбэк пришёл, а чека нет — деньги могли списаться. Чек почти
+                    // наверняка приедет в истории: перезапрашиваем её прямо здесь (IAP-20).
+                    string failedSku = pendingSku ?? "unknown";
+                    Debug.LogWarning($"[AMZNGoDSDK] Purchase {response.Status} without receipt: {failedSku}");
+                    if (!terminalAlreadySent)
+                        _analytics.PurchaseFailed(failedSku, "no_receipt");
+                    StartReconcile(null);
+                    OnPurchaseFailedCallback?.Invoke(failedSku);
                     return;
                 }
 
-                ReportPurchaseSuccess(receipt.Sku);
-                _pendingPurchaseSku = null;
+                string sku = string.IsNullOrEmpty(receipt.Sku) ? (pendingSku ?? "unknown") : receipt.Sku;
+                bool alreadyOwned = response.Status == "ALREADY_PURCHASED";
 
-                string productId = receipt.Sku;
-                ownedSkus.Add(productId);
+                Debug.Log($"[AMZNGoDSDK] Purchase {response.Status}: {sku}");
 
-                Debug.Log($"[AMZNGoDSDK] Purchase {response.Status}: {productId}");
+                ProcessLiveReceipt(receipt);
+                _journal.SaveIfDirty();
 
-                // Grant (idempotent by ReceiptId), persist, THEN notify fulfillment.
-                ProcessReceipt(receipt, isNewPurchase: response.Status == "SUCCESSFUL");
+                // Аналитика ПОСЛЕ выдачи (IAP-01) и с разрезом new/already_owned (IAP-16):
+                // повторная покупка того, чем игрок уже владеет, — не продажа.
+                if (!terminalAlreadySent)
+                    _analytics.PurchaseSuccess(sku, alreadyOwned);
 
-                OnPurchaseComplete?.Invoke(productId);
+                OnPurchaseComplete?.Invoke(sku);
+
+                // Живая покупка применила только-добавляющее обновление; полная сверка
+                // следом подтверждает его штатным снапшотом.
+                StartReconcile(null);
             }
             else
             {
-                string productId = response.PurchaseReceipt?.Sku ?? _pendingPurchaseSku ?? "unknown";
-                Debug.LogWarning($"[AMZNGoDSDK] Purchase failed: {productId} - {response.Status}");
-                ReportPurchaseFailed(productId, MapAmazonStatus(response.Status));
-                _pendingPurchaseSku = null;                  // обнуляем ДО внешнего колбэка (консистентно с success/no_receipt)
-                OnPurchaseFailedCallback?.Invoke(productId);
+                string sku = response.PurchaseReceipt?.Sku ?? pendingSku ?? "unknown";
+                Debug.LogWarning($"[AMZNGoDSDK] Purchase failed: {sku} - {response.Status}");
+                if (!terminalAlreadySent)
+                    _analytics.PurchaseFailed(sku, IapAnalytics.MapAmazonStatus(response.Status));
+                OnPurchaseFailedCallback?.Invoke(sku);
             }
-        }
-
-        private void OnGetPurchaseUpdatesResponse(GetPurchaseUpdatesResponse response)
-        {
-            if (response.Status != "SUCCESSFUL")
-            {
-                Debug.LogWarning($"[AMZNGoDSDK] GetPurchaseUpdates failed: {response.Status}");
-                CompleteRestore(false);
-                return;
-            }
-
-            if (response.Receipts != null && response.Receipts.Count > 0)
-            {
-                foreach (var receipt in response.Receipts)
-                {
-                    if (receipt == null)
-                        continue;
-
-                    if (receipt.CancelDate != 0)
-                    {
-                        // Defer: ownership loss is resolved after all pages, against active
-                        // terms seen anywhere in the history — never per-page/per-order.
-                        _restoreCancelledReceipts.Add(receipt);
-                        continue;
-                    }
-
-                    if (!string.IsNullOrEmpty(receipt.Sku))
-                        _restoreActiveSkus.Add(receipt.Sku);
-
-                    ownedSkus.Add(receipt.Sku);
-
-                    // Recovery path: grant unfulfilled consumables and restore subscription
-                    // entitlement. Idempotent by ReceiptId — never re-grants or re-notifies.
-                    ProcessReceipt(receipt, isNewPurchase: false);
-                }
-            }
-
-            if (response.HasMore)
-            {
-                iapService.GetPurchaseUpdates(new ResetInput { Reset = false });
-                return;
-            }
-
-            // Last page: a cancelled SKU is dropped only if it has no active term anywhere.
-            foreach (var cancelled in _restoreCancelledReceipts)
-            {
-                if (!string.IsNullOrEmpty(cancelled.Sku) && !_restoreActiveSkus.Contains(cancelled.Sku))
-                    ownedSkus.Remove(cancelled.Sku);
-            }
-            _restoreCancelledReceipts.Clear();
-            _restoreActiveSkus.Clear();
-
-            CompleteRestore(true);
-
-            foreach (var status in subscriptionStatuses.Values.Where(s => s.IsActive))
-                Debug.Log($"[AMZNGoDSDK] Active subscription: {status.ProductId} (until {status.ExpiresAt.ToLocalTime():G})");
         }
 
         /// <summary>
-        /// Single grant + fulfillment path shared by the live purchase and recovery flows.
-        /// Idempotent: a receipt is granted and fulfilled at most once (tracked persistently),
-        /// which prevents lost rewards, double grants, and re-fulfillment of closed receipts.
-        ///
-        /// Ordering is deliberately grant → persist marker → NotifyFulfillment. The two persisted
-        /// writes (reward and fulfilled-marker) are separate PlayerPrefs saves and thus not atomic:
-        /// an app-kill in the sub-millisecond window between them can re-grant on the next launch.
-        /// This is an accepted trade-off — the priority is never losing a paid consumable, so on the
-        /// rare crash we favor a possible extra grant over a lost one. Marker-before-notify still
-        /// guarantees NotifyFulfillment is never spammed on an already-closed receipt.
+        /// Чек живой покупки. Только добавление: свежий SUCCESSFUL-чек может дать право или
+        /// товар, но никогда ничего не снимает — снятие исключительно снапшотом сверки.
         /// </summary>
-        private void ProcessReceipt(PurchaseReceipt receipt, bool isNewPurchase)
+        private void ProcessLiveReceipt(PurchaseReceipt receipt)
         {
-            if (receipt == null || string.IsNullOrEmpty(receipt.ReceiptId))
+            if (string.IsNullOrEmpty(receipt.ReceiptId) || string.IsNullOrEmpty(receipt.Sku))
                 return;
 
-            if (_fulfilledReceipts.Contains(receipt.ReceiptId))
+            if (!_catalog.TryResolve(receipt.Sku, out var product))
+            {
+                LogUnknownReceipt(receipt);
                 return;
-
-            string productId = receipt.Sku;
-            bool granted = false;
-
-            var subscriptionProduct = settings.SubscriptionProducts
-                .FirstOrDefault(s => s.ProductId == productId);
-
-            if (subscriptionProduct != null)
-            {
-                if (isNewPurchase)
-                {
-                    Debug.Log($"[AMZNGoDSDK] Subscription purchased: {productId}");
-                    ExtendSubscription(subscriptionProduct);
-                    GiveSubscriptionReward(subscriptionProduct);
-                    GrantSubscriptionConsumables(subscriptionProduct);
-                }
-                else if (!HasSubscription(subscriptionProduct.ProductId))
-                {
-                    // Restore entitlement only — do NOT replay historical rewards, otherwise
-                    // a reinstall (which returns the full receipt history) would stack terms
-                    // and re-grant coins for every past renewal.
-                    ExtendSubscription(subscriptionProduct);
-                }
-
-                granted = true;
-            }
-            else
-            {
-                var consumableProduct = settings.ConsumableProducts
-                    .FirstOrDefault(c => c.ProductId == productId);
-
-                if (consumableProduct != null)
-                {
-                    Debug.Log($"[AMZNGoDSDK] Consumable granted: {productId}");
-                    GiveConsumableReward(consumableProduct);
-                    granted = true;
-                }
             }
 
-            if (!granted)
-                Debug.LogWarning($"[AMZNGoDSDK] Receipt for unregistered product '{productId}', fulfilling without grant");
-
-            // Persist BEFORE notifying so a crash between the two can never double-grant;
-            // the receipt simply re-appears and is skipped here next time.
-            MarkReceiptFulfilled(receipt.ReceiptId);
-            NotifyFulfillment(receipt.ReceiptId);
-        }
-
-        private void NotifyFulfillment(string receiptId)
-        {
-            if (iapService == null || string.IsNullOrEmpty(receiptId))
+            if (!ValidateProductType(receipt, product))
                 return;
 
-            iapService.NotifyFulfillment(new NotifyFulfillmentInput
+            _entitlements.MarkEverPurchased(receipt.Sku);
+
+            switch (product.Kind)
             {
-                ReceiptId = receiptId,
-                FulfillmentResult = "FULFILLED"
-            });
+                case IapProductKind.Consumable:
+                    // Идемпотентность по ReceiptId — ранний return старого кода, который
+                    // гасил переоценку подписок (IAP-02), переехал ровно сюда.
+                    _journal.MarkGranted(receipt.ReceiptId);
+                    break;
+
+                case IapProductKind.Subscription:
+                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku);
+                    RaiseGranted(receipt.Sku);
+                    FirePeriods(receipt, product);   // журнал пишут ОБЕ ветки через один хелпер (IAP-14)
+                    break;
+
+                case IapProductKind.NonConsumable:
+                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku);
+                    RaiseGranted(receipt.Sku);
+                    break;
+            }
+
+            NotifyFulfillmentSafe(receipt.ReceiptId);
         }
 
-        private void LoadFulfilledReceipts()
-        {
-            _fulfilledReceipts.Clear();
+        #endregion
 
-            var raw = PlayerPrefs.GetString(FulfilledReceiptsKey, "");
-            if (string.IsNullOrEmpty(raw))
-                return;
-
-            foreach (var id in raw.Split(new[] { FulfilledReceiptsSeparator }, StringSplitOptions.RemoveEmptyEntries))
-                _fulfilledReceipts.Add(id);
-        }
-
-        private void MarkReceiptFulfilled(string receiptId)
-        {
-            if (string.IsNullOrEmpty(receiptId))
-                return;
-
-            if (!_fulfilledReceipts.Add(receiptId))
-                return;
-
-            PlayerPrefs.SetString(FulfilledReceiptsKey, string.Join(FulfilledReceiptsSeparator.ToString(), _fulfilledReceipts));
-            PlayerPrefs.Save();
-        }
-
-        private void CompleteRestore(bool success)
-        {
-            if (!_isRestoring)
-                return;
-
-            _restoreCallback?.Invoke(success);
-            _restoreCallback = null;
-            _isRestoring = false;
-        }
+        #region Reconcile (GetPurchaseUpdates)
 
         public void RestorePurchases(Action<bool> onComplete = null)
         {
-            if (iapService == null)
+            if (!_serviceReady)
             {
                 Debug.LogWarning("[AMZNGoDSDK] Cannot restore purchases — not initialized");
                 onComplete?.Invoke(false);
                 return;
             }
 
-            _restoreCallback = onComplete;
-            _isRestoring = true;
-            BeginRestoreAccumulators();
-            iapService.GetPurchaseUpdates(new ResetInput { Reset = true });
+            StartReconcile(onComplete);
         }
 
-        // --- Воронка покупок в AppMetrica (started / success / failed), разрез по SKU ---
-        // Дерево вложенных параметров: started/success = {"<sku>":""};
-        // failed = {"<sku>":{"<reason>":{"<online|offline>":""}}}. SKU всегда уровень 1.
-
-        // Escape строки для вставки в сырой JSON (ключи sku/reason приходят из конфига).
-        private static string J(string s) =>
-            (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-        private static string Net() =>
-            Application.internetReachability != NetworkReachability.NotReachable ? "online" : "offline";
-
-        private void ReportPurchaseStarted(string sku) =>
-            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
-                "iap_purchase_started", $"{{\"{J(sku)}\":\"\"}}");
-
-        private void ReportPurchaseSuccess(string sku) =>
-            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
-                "iap_purchase_success", $"{{\"{J(sku)}\":\"\"}}");
-
-        private void ReportPurchaseFailed(string sku, string reason) =>
-            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica("iap_purchase_failed",
-                $"{{\"{J(sku ?? "unknown")}\":{{\"{J(reason)}\":{{\"{Net()}\":\"\"}}}}}}");
-
-        // Отказы каталога (init/цены/доступность) — это НЕ покупки: у большинства точек нет
-        // одного SKU, слать их под iap_purchase_failed нельзя (испортит воронку). Отдельное
-        // событие с плоским {"<reason>":""}: ур.1 = причина отказа каталога.
-        private void ReportCatalogFailed(string reason) =>
-            AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(
-                "iap_catalog_failed", $"{{\"{J(reason)}\":\"\"}}");
-
-        // Amazon отдаёт ограниченный набор статусов отказа — маппим в стабильный enum причин.
-        private static string MapAmazonStatus(string status) => status switch
+        /// <summary>Ручная пересверка прав; ею же пользуются форграунд и повторы.</summary>
+        public void RefreshEntitlements()
         {
-            "FAILED" => "failed",
-            "INVALID_SKU" => "invalid_sku",
-            "NOT_SUPPORTED" => "not_supported",
-            _ => "unknown",
-        };
+            if (_serviceReady)
+                StartReconcile(null);
+        }
 
-        public void BuyProduct(string productId)
+        private void StartReconcile(Action<bool> onComplete)
         {
-            productId ??= "unknown";                     // единая нормализация: started/success/failed уходят под одним ключом SKU
+            if (onComplete != null)
+                _restoreCallbacks.Add(onComplete);
 
-            ReportPurchaseStarted(productId);            // ПЕРВОЙ строкой, до пре-чеков — держим инвариант started ≈ success + failed
+            // Single-flight: слушатель Amazon один, RequestId не читается — параллельные
+            // прогоны перемешали бы страницы. Колбэк дождётся текущего прогона.
+            if (!_reconcileRetry.TryBegin())
+                return;
 
-            if (iapService == null)
+            BeginReconcileRun();
+        }
+
+        private void RetryReconcile()
+        {
+            if (_serviceReady && _reconcileRetry.TryBegin())
+                BeginReconcileRun();
+        }
+
+        private void BeginReconcileRun()
+        {
+            // Новый прогон всегда с Reset=true и чистых аккумуляторов — дожимать оборванную
+            // цепочку нельзя (IAP-03): Reset=false отдаёт только новое, а для подписок лишь
+            // неподтверждённое.
+            _reconcileSession = new IapReconcileSession();
+
+            if (!_gateway.TryGetPurchaseUpdates(true, out var error))
             {
-                Debug.LogError("[AMZNGoDSDK] Store not initialized. Purchase impossible.");
-                ReportPurchaseFailed(productId, "not_initialized");
-                return;                                  // return обязателен: иначе провал в Purchase() с null-сервисом (NRE)
+                Debug.LogError($"[AMZNGoDSDK] GetPurchaseUpdates failed: {error}");
+                OnReconcileRunFailed();
             }
+        }
 
-            if (!registeredProductIds.Contains(productId))
+        private void OnReconcileRunFailed()
+        {
+            _reconcileSession = null;    // частичный ответ выбрасывается целиком
+            _reconcileRetry.OnFailure(); // бэкофф 2/8/30 с; состояние остаётся Unknown
+        }
+
+        private void OnReconcileExhausted()
+        {
+            // Попытки кончились: права НЕ трогаем (Unknown — не «прав нет»), колбэки
+            // восстановления отпускаем с false, новая попытка — на форграунде.
+            CompleteRestoreCallbacks(false);
+        }
+
+        private void OnGetPurchaseUpdatesResponse(GetPurchaseUpdatesResponse response)
+        {
+            if (_reconcileSession == null)
             {
-                Debug.LogError($"[AMZNGoDSDK] Product not registered: {productId}");
-                ReportPurchaseFailed(productId, "product_not_registered");
+                Debug.LogWarning("[AMZNGoDSDK] GetPurchaseUpdates response without an active run — ignored");
                 return;
             }
 
-            _pendingPurchaseSku = productId;
-
-            try
+            if (response.Status != "SUCCESSFUL")
             {
-                iapService.Purchase(new SkuInput { Sku = productId });
-            }
-            catch (Exception e)                          // класс B: исключение из нативки Amazon
-            {
-                // Тип исключения залогировать можно, но e.Message в событие НЕ кладём:
-                // там урлы/id аккаунта → рост кардинальности параметра и утечка PII.
-                Debug.LogError($"[AMZNGoDSDK] Purchase threw for {productId}: {e.Message}");
-                ReportPurchaseFailed(productId, "exception");
-                _pendingPurchaseSku = null;
-            }
-        }
-
-        public bool HasSubscription(string productId)
-        {
-            if (string.IsNullOrWhiteSpace(productId))
-                return false;
-
-            return subscriptionStatuses.TryGetValue(productId, out var status) && status.IsActive;
-        }
-
-        public bool IsSubscribed(string productId) =>
-            HasSubscription(productId);
-
-        public bool HasReceipt(string productId)
-        {
-            return ownedSkus.Contains(productId);
-        }
-
-        public ProductData GetProduct(string productId)
-        {
-            productDataCache.TryGetValue(productId, out var data);
-            return data;
-        }
-
-        public IEnumerable<ProductData> GetAllProducts()
-        {
-            return productDataCache.Values;
-        }
-
-        private void RegisterSubscriptionStatus(SubscriptionProduct subscription)
-        {
-            if (subscription == null || string.IsNullOrWhiteSpace(subscription.ProductId))
+                Debug.LogWarning($"[AMZNGoDSDK] GetPurchaseUpdates failed: {response.Status}");
+                OnReconcileRunFailed();
                 return;
+            }
 
-            if (!subscriptionStatuses.TryGetValue(subscription.ProductId, out var status))
+            _reconcileSession.AddPage(response.Receipts);
+
+            if (response.HasMore)
             {
-                status = new SubscriptionStatus
+                // Продолжение страниц внутри одного ответа — единственное место для Reset=false.
+                if (!_gateway.TryGetPurchaseUpdates(false, out var error))
                 {
-                    ProductId = subscription.ProductId,
-                    RewardAmount = subscription.RewardAmount,
-                    ExpiresAt = LoadSubscriptionExpiration(subscription.ProductId)
-                };
-
-                subscriptionStatuses[subscription.ProductId] = status;
+                    Debug.LogError($"[AMZNGoDSDK] GetPurchaseUpdates continuation failed: {error}");
+                    OnReconcileRunFailed();
+                }
+                return;
             }
-            else
+
+            var result = _reconcileSession.Complete(_catalog.LongLivedSkus);
+            _reconcileSession = null;
+            ApplyReconcileResult(result);
+        }
+
+        private void ApplyReconcileResult(IapReconcileResult result)
+        {
+            // 1. Чеки: выдача расходуемых (однократно), периоды подписок, подтверждения.
+            //    Упавший NotifyFulfillment кладёт чек в очередь и НЕ рвёт цикл (IAP-03).
+            foreach (var receipt in result.Receipts)
+                ProcessRestoredReceipt(receipt);
+
+            // 2. Права — снапшотом целиком: единственное место, где право может стать NotEntitled.
+            var diff = _entitlements.ApplySnapshot(result, _catalog.LongLivedSkus, DateTime.UtcNow);
+
+            _lastReceipts = result.Receipts;
+            _lastReconcileRealtime = Time.realtimeSinceStartup;
+            _journal.SaveIfDirty();
+
+            // Событие выдачи — сигнал состояния «игрок этим владеет», приходит при каждом
+            // запуске (история приезжает целиком каждый раз). Обработчик игры обязан быть
+            // идемпотентным и не начислять валюту — см. README.
+            foreach (var sku in diff.Entitled)
+                RaiseGranted(sku);
+
+            foreach (var sku in diff.Revoked)
             {
-                status.RewardAmount = subscription.RewardAmount;
-
-                if (status.ExpiresAt == DateTime.MinValue)
-                    status.ExpiresAt = LoadSubscriptionExpiration(subscription.ProductId);
+                Debug.LogWarning($"[AMZNGoDSDK] Entitlement revoked by reconciliation: {sku}");
+                _analytics.EntitlementRevoked(sku);
+                RaiseRevoked(sku);
             }
+
+            _reconcileRetry.OnSuccess();
+            CompleteRestoreCallbacks(true);
+
+            Debug.Log($"[AMZNGoDSDK] Reconciled with Amazon: receipts={result.Receipts.Count}, active=[{string.Join(", ", result.ActiveSkus)}]");
         }
 
-        private void GiveSubscriptionReward(SubscriptionProduct subscription)
+        private void ProcessRestoredReceipt(PurchaseReceipt receipt)
         {
-            int currentCoins = PlayerPrefs.GetInt("TotalCoins", 0);
-            PlayerPrefs.SetInt("TotalCoins", currentCoins + subscription.RewardAmount);
-            PlayerPrefs.Save();
-
-            Debug.Log($"[AMZNGoDSDK] Subscription reward {subscription.ProductId}: {subscription.RewardAmount} coins");
-        }
-
-        private void GiveConsumableReward(ConsumableProduct consumable)
-        {
-            if (consumable == null)
-                return;
-
-            string rewardKey = string.IsNullOrWhiteSpace(consumable.RewardKey)
-                ? consumable.ProductId
-                : consumable.RewardKey;
-
-            int amount = Math.Max(1, consumable.RewardAmount);
-            ConsumableRewardType rewardType = consumable.RewardType;
-
-            ApplyConsumableReward(rewardKey, amount, rewardType);
-        }
-
-        private void CheckExpiredSubscriptions()
-        {
-            foreach (var status in subscriptionStatuses.Values)
+            if (!_catalog.TryResolve(receipt.Sku, out var product))
             {
-                if (status.IsActive || status.ExpiresAt == DateTime.MinValue)
-                    continue;
-
-                Debug.LogWarning($"[AMZNGoDSDK] Subscription expired: {status.ProductId} (until {status.ExpiresAt:G})");
-                SaveSubscriptionStatus(status);
+                LogUnknownReceipt(receipt);
+                return;
             }
-        }
 
-        private void ExtendSubscription(SubscriptionProduct subscription)
-        {
-            if (subscription == null || !subscriptionStatuses.TryGetValue(subscription.ProductId, out var status))
+            if (!ValidateProductType(receipt, product))
                 return;
 
-            DateTime now = DateTime.UtcNow;
-            DateTime basePoint = status.IsActive ? status.ExpiresAt : now;
-            int durationDays = Math.Max(1, subscription.DurationDays);
-            status.ExpiresAt = basePoint.AddDays(durationDays);
+            _entitlements.MarkEverPurchased(receipt.Sku);
 
-            SaveSubscriptionStatus(status);
-        }
-
-        private void GrantSubscriptionConsumables(SubscriptionProduct subscription)
-        {
-            if (subscription?.ConsumableRewards == null || subscription.ConsumableRewards.Count == 0)
-                return;
-
-            foreach (var reward in subscription.ConsumableRewards)
+            switch (product.Kind)
             {
-                if (reward == null || string.IsNullOrWhiteSpace(reward.ProductId))
-                    continue;
+                case IapProductKind.Consumable:
+                    // Невыданный расходуемый: сообщаем игре ровно один раз (журнал).
+                    // Отменённый Amazon'ом (возврат) — не выдаём, но чек закрываем, иначе
+                    // он будет возвращаться в истории вечно (IAP-06).
+                    if (receipt.CancelDate == 0 && !_journal.IsGranted(receipt.ReceiptId))
+                    {
+                        _journal.MarkGranted(receipt.ReceiptId);
+                        _analytics.PurchaseRestored(receipt.Sku);
+                        OnPurchaseComplete?.Invoke(receipt.Sku);   // начисляет игра (IAP-13)
+                    }
+                    break;
 
-                int amount = Math.Max(1, reward.RewardAmount);
-                string rewardKey = string.IsNullOrWhiteSpace(reward.RewardKey) ? reward.ProductId : reward.RewardKey;
-                ConsumableRewardType rewardType = reward.RewardType;
+                case IapProductKind.Subscription:
+                    // Проверка раздела H ТЗ: по документации getSku возвращает родительский
+                    // SKU подписки (то, что заведено в настройках), но мост нестандартный —
+                    // если на устройстве Sku окажется term-ом, матчинг придётся вести по TermSku.
+                    Debug.Log($"[AMZNGoDSDK] Subscription receipt: sku={receipt.Sku}, termSku={receipt.TermSku}, " +
+                              $"type={receipt.ProductType}, purchase={receipt.PurchaseDate}, cancel={receipt.CancelDate}");
 
-                if (rewardType == default)
-                    rewardType = ResolveConsumableRewardType(reward.ProductId);
+                    // Ветка схлопнута (IAP-02): ничего не выдаёт и не продлевает — право
+                    // выражается снапшотом, периоды считает калькулятор (потолок CancelDate
+                    // внутри него: оплаченные ДО отмены периоды выдаются).
+                    FirePeriods(receipt, product);
+                    break;
 
-                ApplyConsumableReward(rewardKey, amount, rewardType);
+                case IapProductKind.NonConsumable:
+                    break;   // право выражается снапшотом
+            }
+
+            NotifyFulfillmentSafe(receipt.ReceiptId);
+        }
+
+        private void CompleteRestoreCallbacks(bool success)
+        {
+            if (_restoreCallbacks.Count == 0)
+                return;
+
+            var callbacks = new List<Action<bool>>(_restoreCallbacks);
+            _restoreCallbacks.Clear();
+
+            foreach (var callback in callbacks)
+            {
+                try { callback?.Invoke(success); }
+                catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] Restore callback threw: {e}"); }
             }
         }
 
-        private void ApplyConsumableReward(string rewardKey, int rewardAmount, ConsumableRewardType rewardType)
+        #endregion
+
+        #region Receipt helpers
+
+        /// <summary>
+        /// Неизвестный чек НЕ закрываем (IAP-05): раньше он получал NotifyFulfillment и
+        /// сгорал без выдачи навсегда. Незакрытый вернётся при следующем запуске — и будет
+        /// обработан, когда продукт появится в настройках.
+        /// </summary>
+        private void LogUnknownReceipt(PurchaseReceipt receipt)
         {
-            if (string.IsNullOrWhiteSpace(rewardKey) || rewardAmount <= 0)
+            Debug.LogError($"[AMZNGoDSDK] Receipt for unconfigured product '{receipt.Sku}' " +
+                           $"(type {receipt.ProductType}). NOT fulfilling — add the product to SDK Settings.");
+        }
+
+        /// <summary>Сверка типа из настроек с тем, что говорит Amazon (IAP-05): при
+        /// расхождении — внятная ошибка, чек не обрабатывается и не закрывается.</summary>
+        private bool ValidateProductType(PurchaseReceipt receipt, IapConfiguredProduct product)
+        {
+            if (string.IsNullOrEmpty(receipt.ProductType))
+                return true;   // старые стабы/тесты тип не заполняют — не повод жечь чек
+
+            string expected = product.Kind switch
+            {
+                IapProductKind.Subscription => "SUBSCRIPTION",
+                IapProductKind.Consumable => "CONSUMABLE",
+                _ => "ENTITLED",
+            };
+
+            if (receipt.ProductType == expected)
+                return true;
+
+            Debug.LogError($"[AMZNGoDSDK] Product type mismatch for '{receipt.Sku}': configured as {expected}, " +
+                           $"Amazon says {receipt.ProductType}. Receipt NOT processed — fix the product type in SDK Settings.");
+            return false;
+        }
+
+        private void NotifyFulfillmentSafe(string receiptId)
+        {
+            if (_gateway.TryNotifyFulfillment(receiptId, out var error))
+            {
+                _journal.ClearPendingFulfillment(receiptId);
+                return;
+            }
+
+            // Не рвём обработку остальных чеков (IAP-03). Выдача уже случилась и записана,
+            // поэтому повтор подтверждения при старте ничего не выдаст заново (IAP-12).
+            Debug.LogWarning($"[AMZNGoDSDK] NotifyFulfillment failed for {receiptId}: {error} — queued for retry");
+            _journal.MarkPendingFulfillment(receiptId);
+        }
+
+        private void RetryPendingFulfillments()
+        {
+            var pending = _journal.PendingFulfillment;
+            if (pending.Count == 0)
                 return;
 
-            if (!_rewardTypeHandlers.TryGetValue(rewardType, out var handler))
-                handler = _defaultConsumableRewardSetter ?? DefaultConsumableRewardSetter;
-
-            handler.Invoke(rewardKey, rewardAmount);
-            Debug.Log($"[AMZNGoDSDK] Reward ({rewardType}) {rewardKey}: {rewardAmount}");
+            Debug.Log($"[AMZNGoDSDK] Retrying {pending.Count} pending fulfillment(s)");
+            foreach (var receiptId in new List<string>(pending))
+                NotifyFulfillmentSafe(receiptId);
+            _journal.SaveIfDirty();
         }
 
-        private ConsumableRewardType ResolveConsumableRewardType(string productId)
+        /// <summary>
+        /// Оплаченные периоды подписки (IAP-14). Единственная точка выдачи для обеих веток —
+        /// живой покупки и восстановления: если бы живая покупка выдавала мимо журнала,
+        /// следующий запуск выдал бы второй раз.
+        /// </summary>
+        private void FirePeriods(PurchaseReceipt receipt, IapConfiguredProduct product)
         {
-            var consumable = settings.ConsumableProducts.FirstOrDefault(c => c.ProductId == productId);
-
-            if (consumable == null)
-                return ConsumableRewardType.Default;
-
-            return consumable.RewardType;
-        }
-
-        private DateTime LoadSubscriptionExpiration(string productId)
-        {
-#if UNITY_EDITOR
-            return DateTime.MinValue;
-#else
-            var stored = PlayerPrefs.GetString($"SubscriptionExpires_{productId}", "");
-            return DateTime.TryParse(stored, out var expiration) ? expiration : DateTime.MinValue;
-#endif
-        }
-
-        private void SaveSubscriptionStatus(SubscriptionStatus status)
-        {
-            if (status == null)
+            if (product.Kind != IapProductKind.Subscription)
                 return;
 
-            PlayerPrefs.SetString($"SubscriptionExpires_{status.ProductId}", status.ExpiresAt.ToString("o"));
-            PlayerPrefs.SetInt($"SubscriptionStatus_{status.ProductId}", status.IsActive ? 1 : 0);
-            PlayerPrefs.Save();
+            if (product.TermDays <= 0)
+            {
+                // Барьеры IAP-15 (окно настроек + билд-гард) сюда не пускают; если срок всё
+                // же приехал нулевым — не начисляем и говорим об этом, а не подставляем 1.
+                Debug.LogError($"[AMZNGoDSDK] Subscription '{product.ProductId}' has no TermDays — periods are NOT accrued. " +
+                               "Set Term (days) in AMZN GoD → SDK Settings.");
+                return;
+            }
+
+            // Без доверенного времени не выдаём ничего — ждём сети (часы устройства игрок
+            // может перевести). Ничего не теряется: OnTrustedTimeAvailable доначислит.
+            var now = SdkTrustedTime.UtcNow;
+            if (now == null)
+                return;
+
+            bool hasEntry = _journal.TryGetLastFiredPeriod(receipt.ReceiptId, out int lastFired);
+            var toFire = IapSubscriptionPeriods.PeriodsToFire(
+                receipt.PurchaseDate, product.TermDays, receipt.CancelDate, receipt.DeferredDate,
+                now.Value, hasEntry, lastFired);
+
+            foreach (var index in toFire)
+            {
+                // Журнал до события: при краше между ними период выдастся повторно после
+                // рестарта (журнал не успел на диск) — теряем в пользу игрока, не наоборот.
+                _journal.SetLastFiredPeriod(receipt.ReceiptId, index);
+
+                var period = new IapPeriodStarted(
+                    receipt.Sku, receipt.ReceiptId, index,
+                    IapSubscriptionPeriods.PeriodStartUtc(receipt.PurchaseDate, product.TermDays, index));
+
+                Debug.Log($"[AMZNGoDSDK] Paid period started: {receipt.Sku} #{index}");
+                RaisePeriodStarted(period);
+            }
         }
 
-        public void SetPurchaseCompleteCallback(System.Action<string> callback)
+        private void OnTrustedTimeAvailable()
         {
-            OnPurchaseComplete = callback;
+            if (_lastReceipts == null)
+                return;
+
+            foreach (var receipt in _lastReceipts)
+                if (_catalog.TryResolve(receipt.Sku, out var product))
+                    FirePeriods(receipt, product);
+
+            _journal.SaveIfDirty();
         }
 
-        public void SetPurchaseFailedCallback(System.Action<string> callback)
+        #endregion
+
+        #region Lifecycle
+
+        private void OnApplicationPause(bool paused)
         {
-            OnPurchaseFailedCallback = callback;
+            if (!Enabled)
+                return;
+
+            if (paused)
+            {
+                _journal.SaveIfDirty();
+                _entitlements.SaveIfDirty();
+                return;
+            }
+
+            OnForeground();
         }
 
-        public void AddPurchaseCompleteCallback(System.Action<string> callback)
+        private void OnApplicationFocus(bool focused)
+        {
+            if (Enabled && focused)
+                OnForeground();
+        }
+
+        private void OnForeground()
+        {
+            if (!_serviceReady)
+                return;
+
+            // Брошенный диалог покупки не должен блокировать магазин (IAP-21).
+            _pendingPurchaseSku = null;
+
+            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow))
+            {
+                _analytics.EntitlementRevoked(sku);
+                RaiseRevoked(sku);
+            }
+
+            _reconcileRetry.OnForeground();
+            _catalogRetry.OnForeground();
+
+            if (!SdkTrustedTime.HasFreshTime)
+                StartCoroutine(SdkTrustedTime.FetchOnce());
+
+            // Продление, случившееся пока приложение было в фоне, иначе не заметить до
+            // перезапуска процесса (IAP-11).
+            if (Time.realtimeSinceStartup - _lastReconcileRealtime > ReconcileStaleSeconds)
+                StartReconcile(null);
+        }
+
+        public override void Cleanup()
+        {
+            SdkTrustedTime.OnFirstFreshTime -= OnTrustedTimeAvailable;
+            _gateway?.ReleaseListeners();
+        }
+
+        #endregion
+
+        #region State API
+
+        public IapEntitlementState GetEntitlementState(string productId) =>
+            _entitlements.GetState(productId);
+
+        public IapEntitlement GetEntitlement(string productId) =>
+            _entitlements.GetEntitlement(productId);
+
+        /// <summary>
+        /// Legacy-bool: пока состояние Unknown, отдаёт последнее сохранённое значение, а НЕ
+        /// false — иначе каждый запуск начинался бы с того, что подписчик на пару секунд
+        /// теряет премиум (IAP-02/IAP-11).
+        /// </summary>
+        public bool IsSubscribed(string productId) =>
+            _entitlements.GetEffectiveAccess(productId);
+
+        public bool HasSubscription(string productId) =>
+            IsSubscribed(productId);
+
+        /// <summary>
+        /// Отвечает ИДЕНТИЧНО IsSubscribed (IAP-07: раньше методы врали в разные стороны).
+        /// Только долгоживущие права: чеки расходуемых Amazon возвращает вечно, и по ним
+        /// HasReceipt был бы навсегда true при давно потраченном балансе. «Покупал ли
+        /// когда-либо» — <see cref="HasEverPurchased"/>.
+        /// </summary>
+        public bool HasReceipt(string productId) =>
+            _entitlements.GetEffectiveAccess(productId);
+
+        public bool HasEverPurchased(string productId) =>
+            _entitlements.HasEverPurchased(productId);
+
+        public ProductData GetProduct(string productId) => _catalog.GetProduct(productId);
+
+        public IEnumerable<ProductData> GetAllProducts() => _catalog.GetAllProducts();
+
+        #endregion
+
+        #region Listeners
+
+        // Пары Add/Remove вместо event: доигрывание последнего снимка поздним подписчикам
+        // требует тела метода (IAP-11 — иначе поздний подписчик теряет событие навсегда).
+
+        public void AddEntitlementGrantedListener(Action<IapEntitlement> listener)
+        {
+            if (listener == null)
+                return;
+            _grantedListeners.Add(listener);
+            foreach (var sku in _entitlements.EntitledSkus)
+                SafeInvoke(listener, _entitlements.GetEntitlement(sku));
+        }
+
+        public void RemoveEntitlementGrantedListener(Action<IapEntitlement> listener)
+        {
+            if (listener != null)
+                _grantedListeners.Remove(listener);
+        }
+
+        public void AddEntitlementRevokedListener(Action<IapEntitlement> listener)
+        {
+            if (listener == null)
+                return;
+            _revokedListeners.Add(listener);
+            foreach (var sku in _entitlements.RevokedOwnedSkus)
+                SafeInvoke(listener, _entitlements.GetEntitlement(sku));
+        }
+
+        public void RemoveEntitlementRevokedListener(Action<IapEntitlement> listener)
+        {
+            if (listener != null)
+                _revokedListeners.Remove(listener);
+        }
+
+        // Без доигрывания: защита от потери — персистентный журнал периодов, а не replay.
+        public void AddPeriodStartedListener(Action<IapPeriodStarted> listener)
+        {
+            if (listener != null)
+                _periodListeners.Add(listener);
+        }
+
+        public void RemovePeriodStartedListener(Action<IapPeriodStarted> listener)
+        {
+            if (listener != null)
+                _periodListeners.Remove(listener);
+        }
+
+        private void RaiseGranted(string sku)
+        {
+            var entitlement = _entitlements.GetEntitlement(sku);
+            foreach (var listener in _grantedListeners.ToArray())
+                SafeInvoke(listener, entitlement);
+        }
+
+        private void RaiseRevoked(string sku)
+        {
+            var entitlement = _entitlements.GetEntitlement(sku);
+            foreach (var listener in _revokedListeners.ToArray())
+                SafeInvoke(listener, entitlement);
+        }
+
+        private void RaisePeriodStarted(IapPeriodStarted period)
+        {
+            foreach (var listener in _periodListeners.ToArray())
+            {
+                try { listener(period); }
+                catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] Period listener threw: {e}"); }
+            }
+        }
+
+        private static void SafeInvoke(Action<IapEntitlement> listener, IapEntitlement entitlement)
+        {
+            try { listener(entitlement); }
+            catch (Exception e) { Debug.LogError($"[AMZNGoDSDK] Entitlement listener threw: {e}"); }
+        }
+
+        // --- Legacy-колбэки покупок (контракт сохранён) ---
+
+        public void SetPurchaseCompleteCallback(Action<string> callback) => OnPurchaseComplete = callback;
+
+        public void SetPurchaseFailedCallback(Action<string> callback) => OnPurchaseFailedCallback = callback;
+
+        public void AddPurchaseCompleteCallback(Action<string> callback)
         {
             if (callback == null) return;
             OnPurchaseComplete += callback;
         }
 
-        public void RemovePurchaseCompleteCallback(System.Action<string> callback)
+        public void RemovePurchaseCompleteCallback(Action<string> callback)
         {
             if (callback == null) return;
             OnPurchaseComplete -= callback;
         }
 
-        public void AddPurchaseFailedCallback(System.Action<string> callback)
+        public void AddPurchaseFailedCallback(Action<string> callback)
         {
             if (callback == null) return;
             OnPurchaseFailedCallback += callback;
         }
 
-        public void RemovePurchaseFailedCallback(System.Action<string> callback)
+        public void RemovePurchaseFailedCallback(Action<string> callback)
         {
             if (callback == null) return;
             OnPurchaseFailedCallback -= callback;
         }
 
-        public void SetConsumableRewardSetter(Action<string, int> rewardSetter)
-        {
-            _defaultConsumableRewardSetter = rewardSetter ?? DefaultConsumableRewardSetter;
-            _rewardTypeHandlers[ConsumableRewardType.Default] = _defaultConsumableRewardSetter;
-        }
-
-        public void RegisterConsumableRewardType(ConsumableRewardType rewardType, Action<string, int> handler)
-        {
-            if (handler == null)
-                return;
-
-            _rewardTypeHandlers[rewardType] = handler;
-        }
-
-        public override void Cleanup()
-        {
-            if (iapService != null)
-            {
-                iapService.RemoveGetProductDataResponseListener(OnGetProductDataResponse);
-                iapService.RemovePurchaseResponseListener(OnPurchaseResponseHandler);
-                iapService.RemoveGetPurchaseUpdatesResponseListener(OnGetPurchaseUpdatesResponse);
-            }
-        }
-
-        [Serializable]
-        private class SubscriptionStatus
-        {
-            public string ProductId;
-            public int RewardAmount;
-            public DateTime ExpiresAt;
-
-            public bool IsActive => ExpiresAt > DateTime.UtcNow;
-        }
-
-        private void DefaultConsumableRewardSetter(string rewardKey, int rewardAmount)
-        {
-            int current = PlayerPrefs.GetInt(rewardKey, 0);
-            PlayerPrefs.SetInt(rewardKey, current + rewardAmount);
-            PlayerPrefs.Save();
-        }
+        #endregion
     }
 }
 #endif

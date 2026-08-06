@@ -1,14 +1,21 @@
 using System;
 using System.Collections.Generic;
-using AMZNGoDSDK.Runtime;
 
 namespace AMZNGoDSDK.Editor
 {
+    // Зеркало Runtime-модели. Типы намеренно раздельные (см. SdkSettingsManager-конвертеры):
+    // поле, добавленное только в одну модель, молча теряется при сохранении — любые правки
+    // делать в ОБЕИХ моделях и ОБОИХ конвертерах одним коммитом.
+    //
+    // Награды из настроек убраны (ТЗ IAP-13): SDK ничего не начисляет — он сообщает события
+    // и состояние, начисляет игра.
+
     [Serializable]
     public class InAppPurchaseSettingData : ModuleSettingData
     {
         public List<SubscriptionProduct> SubscriptionProducts = new();
         public List<ConsumableProduct> ConsumableProducts = new();
+        public List<NonConsumableProduct> NonConsumableProducts = new();
     }
 
     [Serializable]
@@ -16,9 +23,10 @@ namespace AMZNGoDSDK.Editor
     {
         public string ProductId;
         public string DisplayName;
-        public int RewardAmount;
-        public int DurationDays = 30;
-        public List<SubscriptionConsumableReward> ConsumableRewards = new();
+
+        /// <summary>Срок оплаченного периода в днях. 0 = «не задано» — Save Settings и билд остановятся (IAP-15).</summary>
+        public int TermDays = 0;
+
         public bool Enabled = true;
     }
 
@@ -27,18 +35,15 @@ namespace AMZNGoDSDK.Editor
     {
         public string ProductId;
         public string DisplayName;
-        public int RewardAmount;
-        public string RewardKey;
-        public ConsumableRewardType RewardType = ConsumableRewardType.Default;
         public bool Enabled = true;
     }
 
+    /// <summary>Разовая покупка (ENTITLED): право выдаётся один раз и не теряется, кроме возврата денег (IAP-05).</summary>
     [Serializable]
-    public class SubscriptionConsumableReward
+    public class NonConsumableProduct
     {
         public string ProductId;
-        public int RewardAmount;
-        public ConsumableRewardType RewardType = ConsumableRewardType.Default;
-        public string RewardKey;
+        public string DisplayName;
+        public bool Enabled = true;
     }
 }

@@ -1326,7 +1326,6 @@ MonoBehaviour:
   _appMetricaModule: {fileID: 1715585218864181717}
   _crossPromoModule: {fileID: 8594457579960082331}
   _inAppPurchaseModule: {fileID: 5973293715722677776}
-  _inAppPurchaseModuleInitializer: {fileID: 7494516239693092885}
   _firebaseModule: {fileID: 2230358514083168411}
   _internetConnectionModule: {fileID: 8927851016569776912}
 --- !u!114 &3356679579407347576
@@ -1638,7 +1637,6 @@ GameObject:
   m_Component:
   - component: {fileID: 3508364295925013600}
   - component: {fileID: 5973293715722677776}
-  - component: {fileID: 7494516239693092885}
   m_Layer: 0
   m_Name: SubscriptionModule
   m_TagString: Untagged
@@ -1673,20 +1671,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1de960266fb1e548b14152a05886a24, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &7494516239693092885
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7215043715134241900}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c88e6a4d1b175384e8853e9336411176, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _bonusCoinsMultiplier: 0
-  _energyAmount: 0
 --- !u!1 &7374923080562624114
 GameObject:
   m_ObjectHideFlags: 0

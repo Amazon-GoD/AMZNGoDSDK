@@ -61,27 +61,11 @@ namespace AMZNGoDSDK.Runtime
             return sb.ToString();
         }
 
+        // Реализация уехала в общий SdkJson (ТЗ IAP-19): тот же эскейп нужен воронке IAP,
+        // а держать две версии — значит снова получить урезанную копию в одной из них.
         private static string Escape(string s)
         {
-            var sb = new StringBuilder(s.Length);
-            foreach (var c in s)
-            {
-                switch (c)
-                {
-                    case '"': sb.Append("\\\""); break;
-                    case '\\': sb.Append("\\\\"); break;
-                    case '\b': sb.Append("\\b"); break;
-                    case '\f': sb.Append("\\f"); break;
-                    case '\n': sb.Append("\\n"); break;
-                    case '\r': sb.Append("\\r"); break;
-                    case '\t': sb.Append("\\t"); break;
-                    default:
-                        if (c < 0x20) sb.AppendFormat("\\u{0:x4}", (int)c);
-                        else sb.Append(c);
-                        break;
-                }
-            }
-            return sb.ToString();
+            return SdkJson.Escape(s);
         }
 
         public override void Cleanup() { }
