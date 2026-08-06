@@ -26,7 +26,7 @@ namespace AMZNGoDSDK.Runtime
         public const string LegacySubscriptionExpiresPrefix = "SubscriptionExpires_";
         public const string LegacySubscriptionStatusPrefix = "SubscriptionStatus_";
 
-        public const char FieldSep = '';
+        public const char FieldSep = '\u001f';
         public const char LineSep = '\n';
     }
 
@@ -44,7 +44,15 @@ namespace AMZNGoDSDK.Runtime
     /// </summary>
     internal sealed class IapReceiptJournal
     {
+        // IAP-24: верхняя граница журнала выдач. Журнал защищает от повторной выдачи чека,
+        // который Amazon ещё возвращает в истории; подтверждённые расходуемые Amazon из
+        // истории убирает, так что старые записи мертвы — режем с головы (порядок вставки),
+        // не трогая pending (такой чек ещё вернётся) и подписочные из журнала периодов
+        // (ReceiptId один на всю жизнь подписки).
+        private const int MaxGrantedReceipts = 2000;
+
         private readonly HashSet<string> _granted = new();
+        private readonly List<string> _grantedOrder = new();
         private readonly HashSet<string> _pendingFulfillment = new();
         private readonly Dictionary<string, int> _periods = new();
         private bool _dirty;
@@ -55,10 +63,18 @@ namespace AMZNGoDSDK.Runtime
         public void Load()
         {
             _granted.Clear();
+            _grantedOrder.Clear();
             _pendingFulfillment.Clear();
             _periods.Clear();
 
-            ParseSet(PlayerPrefs.GetString(IapPrefsKeys.GrantedReceipts, ""), _granted);
+            var rawGranted = PlayerPrefs.GetString(IapPrefsKeys.GrantedReceipts, "");
+            if (!string.IsNullOrEmpty(rawGranted))
+            {
+                foreach (var id in rawGranted.Split(new[] { IapPrefsKeys.LineSep }, StringSplitOptions.RemoveEmptyEntries))
+                    if (_granted.Add(id))
+                        _grantedOrder.Add(id);
+            }
+
             ParseSet(PlayerPrefs.GetString(IapPrefsKeys.PendingFulfillment, ""), _pendingFulfillment);
 
             var rawPeriods = PlayerPrefs.GetString(IapPrefsKeys.PeriodJournal, "");
@@ -80,7 +96,10 @@ namespace AMZNGoDSDK.Runtime
             if (string.IsNullOrEmpty(receiptId))
                 return;
             if (_granted.Add(receiptId))
+            {
+                _grantedOrder.Add(receiptId);
                 _dirty = true;
+            }
         }
 
         public void MarkPendingFulfillment(string receiptId)
@@ -114,7 +133,9 @@ namespace AMZNGoDSDK.Runtime
                 return;
             _dirty = false;
 
-            PlayerPrefs.SetString(IapPrefsKeys.GrantedReceipts, string.Join(IapPrefsKeys.LineSep.ToString(), _granted));
+            TrimGrantedIfNeeded();
+
+            PlayerPrefs.SetString(IapPrefsKeys.GrantedReceipts, string.Join(IapPrefsKeys.LineSep.ToString(), _grantedOrder));
             PlayerPrefs.SetString(IapPrefsKeys.PendingFulfillment, string.Join(IapPrefsKeys.LineSep.ToString(), _pendingFulfillment));
 
             var sb = new StringBuilder();
@@ -126,6 +147,29 @@ namespace AMZNGoDSDK.Runtime
             PlayerPrefs.SetString(IapPrefsKeys.PeriodJournal, sb.ToString());
 
             PlayerPrefs.Save();
+        }
+
+        private void TrimGrantedIfNeeded()
+        {
+            if (_grantedOrder.Count <= MaxGrantedReceipts)
+                return;
+
+            int removed = 0;
+            for (int i = 0; i < _grantedOrder.Count && _grantedOrder.Count - removed > MaxGrantedReceipts;)
+            {
+                var id = _grantedOrder[i];
+                if (_pendingFulfillment.Contains(id) || _periods.ContainsKey(id))
+                {
+                    i++;
+                    continue;
+                }
+                _granted.Remove(id);
+                _grantedOrder.RemoveAt(i);
+                removed++;
+            }
+
+            if (removed > 0)
+                Debug.Log($"[AMZNGoDSDK] Granted-receipt journal trimmed: {removed} oldest fulfilled entries dropped (cap {MaxGrantedReceipts})");
         }
 
         private static void ParseSet(string raw, HashSet<string> target)
@@ -161,9 +205,11 @@ namespace AMZNGoDSDK.Runtime
             }
 
             // Засев прав из legacy-даты, чтобы подписчик не терял доступ на время первой
-            // сверки. Значение локальное и Amazon его не подтверждал, поэтому вместе с ним
-            // пишем отметку сверки «сейчас» — реальная экспозиция ограничена секундами до
-            // первого ответа GetPurchaseUpdates, а не грейс-периодом.
+            // сверки. Значение локальное и Amazon его не подтверждал; вместе с ним пишем
+            // отметку сверки «сейчас». Онлайн-экспозиция — секунды до первого ответа
+            // GetPurchaseUpdates; в худшем случае (обновился и ушёл в офлайн) незаслуженный
+            // доступ живёт до грейс-периода IapEntitlementStore.GraceDays — осознанный
+            // трейдофф в пользу честного подписчика.
             var entitled = new List<string>();
             foreach (var sku in longLivedSkus)
             {

@@ -59,6 +59,11 @@ namespace AMZNGoDSDK.Runtime
             var adjustSettings = sdkSettingsData.Adjust;
             var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
 
+            // Доверенное время для периодов подписки (IAP-14) ходит за заголовком Date на
+            // бэкенд аналитики — подставляем настроенный адрес, а не только дефолтный.
+            if (!string.IsNullOrWhiteSpace(analyticsSettings.BaseUrl))
+                SdkTrustedTime.BaseUrl = analyticsSettings.BaseUrl;
+
 #if AMZN_INTERNETCONNECTION_ENABLED
             EnsureInternetConnectionModule();
 #endif

@@ -1,4 +1,6 @@
-#if AMZN_IAP_ENABLED
+// Тестовый инструментарий не попадает в релизную сборку игры: SimulatedAmazonStore
+// умеет вбрасывать фейковые чеки через FireEvent плагина.
+#if AMZN_IAP_ENABLED && (UNITY_EDITOR || DEVELOPMENT_BUILD)
 using System;
 using System.Collections;
 using System.Collections.Generic;
