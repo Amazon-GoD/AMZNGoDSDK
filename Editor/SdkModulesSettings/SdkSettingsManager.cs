@@ -170,9 +170,10 @@ namespace AMZNGoDSDK.Editor
                 {
                     ProductId = runtimeProduct.ProductId,
                     DisplayName = runtimeProduct.DisplayName,
-                    RewardAmount = runtimeProduct.RewardAmount,
-                    DurationDays = runtimeProduct.DurationDays,
-                    ConsumableRewards = ConvertSubscriptionConsumableRewardsToEditor(runtimeProduct.ConsumableRewards),
+                    // TermDays намеренно НЕ подменяется из устаревшего DurationDays: во всех
+                    // старых конфигах там лежит дефолтная 30, а подписки портфеля недельные.
+                    // Нулевой TermDays заставит один раз проставить настоящий срок (IAP-15).
+                    TermDays = runtimeProduct.TermDays,
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -183,9 +184,16 @@ namespace AMZNGoDSDK.Editor
                 {
                     ProductId = runtimeProduct.ProductId,
                     DisplayName = runtimeProduct.DisplayName,
-                    RewardAmount = runtimeProduct.RewardAmount,
-                    RewardKey = runtimeProduct.RewardKey,
-                    RewardType = runtimeProduct.RewardType,
+                    Enabled = runtimeProduct.Enabled
+                });
+            }
+
+            foreach (var runtimeProduct in runtimeSettings.NonConsumableProducts)
+            {
+                editorSettings.NonConsumableProducts.Add(new NonConsumableProduct
+                {
+                    ProductId = runtimeProduct.ProductId,
+                    DisplayName = runtimeProduct.DisplayName,
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -220,27 +228,6 @@ namespace AMZNGoDSDK.Editor
             };
         }
 
-        private static List<SubscriptionConsumableReward> ConvertSubscriptionConsumableRewardsToEditor(List<Runtime.SubscriptionConsumableReward> runtimeRewards)
-        {
-            var editorRewards = new List<SubscriptionConsumableReward>();
-
-            if (runtimeRewards == null)
-                return editorRewards;
-
-            foreach (var runtimeReward in runtimeRewards)
-            {
-                editorRewards.Add(new SubscriptionConsumableReward
-                {
-                    ProductId = runtimeReward.ProductId,
-                    RewardAmount = runtimeReward.RewardAmount,
-                    RewardKey = runtimeReward.RewardKey,
-                    RewardType = runtimeReward.RewardType
-                });
-            }
-
-            return editorRewards;
-        }
-
         public static bool ValidateInAppPurchaseProductIds(InAppPurchaseSettingData settings, out string message)
         {
             var subscriptionIds = settings.SubscriptionProducts
@@ -253,21 +240,41 @@ namespace AMZNGoDSDK.Editor
                 .Where(x => !string.IsNullOrEmpty(x))
                 .ToArray();
 
+            var nonConsumableIds = settings.NonConsumableProducts
+                .Select(x => x.ProductId?.Trim())
+                .Where(x => !string.IsNullOrEmpty(x))
+                .ToArray();
+
             var ids = subscriptionIds
                 .Concat(consumableIds)
+                .Concat(nonConsumableIds)
                 .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
                 .Where(g => g.Count() > 1)
                 .Select(g => g.Key)
                 .ToArray();
 
-            if (ids.Length == 0)
+            if (ids.Length > 0)
             {
-                message = string.Empty;
-                return true;
+                message = $"Невозможно сохранить: повторяются идентификаторы продуктов ({string.Join(", ", ids)}). Каждый ProductId должен быть уникальным.";
+                return false;
             }
 
-            message = $"Невозможно сохранить: повторяются идентификаторы продуктов ({string.Join(", ", ids)}). Каждый ProductId должен быть уникальным.";
-            return false;
+            // IAP-15: у включённой подписки обязателен срок периода — от него считаются
+            // оплаченные периоды. Выключенный продукт сохранение не блокирует.
+            var missingTerm = settings.SubscriptionProducts
+                .Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.ProductId) && x.TermDays <= 0)
+                .Select(x => x.ProductId.Trim())
+                .ToArray();
+
+            if (missingTerm.Length > 0)
+            {
+                message = $"Невозможно сохранить: у подписок не задан срок периода Term (days): {string.Join(", ", missingTerm)}. " +
+                          "Укажи реальный период подписки из консоли Amazon (например, 7 для недельной).";
+                return false;
+            }
+
+            message = string.Empty;
+            return true;
         }
 
         public static bool SaveSettings(SdkSettingsData settings)
@@ -396,9 +403,7 @@ namespace AMZNGoDSDK.Editor
                 {
                     ProductId = editorProduct.ProductId,
                     DisplayName = editorProduct.DisplayName,
-                    RewardAmount = editorProduct.RewardAmount,
-                    DurationDays = editorProduct.DurationDays,
-                    ConsumableRewards = ConvertSubscriptionConsumableRewards(editorProduct.ConsumableRewards),
+                    TermDays = editorProduct.TermDays,
                     Enabled = editorProduct.Enabled
                 });
             }
@@ -409,35 +414,21 @@ namespace AMZNGoDSDK.Editor
                 {
                     ProductId = editorProduct.ProductId,
                     DisplayName = editorProduct.DisplayName,
-                    RewardAmount = editorProduct.RewardAmount,
-                    RewardKey = editorProduct.RewardKey,
-                    RewardType = editorProduct.RewardType,
+                    Enabled = editorProduct.Enabled
+                });
+            }
+
+            foreach (var editorProduct in editorSettings.NonConsumableProducts)
+            {
+                runtimeSettings.NonConsumableProducts.Add(new Runtime.NonConsumableProduct
+                {
+                    ProductId = editorProduct.ProductId,
+                    DisplayName = editorProduct.DisplayName,
                     Enabled = editorProduct.Enabled
                 });
             }
 
             return runtimeSettings;
-        }
-
-        private static List<Runtime.SubscriptionConsumableReward> ConvertSubscriptionConsumableRewards(List<SubscriptionConsumableReward> editorRewards)
-        {
-            var runtimeRewards = new List<Runtime.SubscriptionConsumableReward>();
-
-            if (editorRewards == null)
-                return runtimeRewards;
-
-            foreach (var reward in editorRewards)
-            {
-                runtimeRewards.Add(new Runtime.SubscriptionConsumableReward
-                {
-                    ProductId = reward.ProductId,
-                    RewardAmount = reward.RewardAmount,
-                    RewardKey = reward.RewardKey,
-                    RewardType = reward.RewardType
-                });
-            }
-
-            return runtimeRewards;
         }
 
         private static Runtime.FirebaseSettingData ConvertFirebaseSettings(FirebaseSettingData editorSettings)

@@ -321,6 +321,10 @@ namespace AMZNGoDSDK.Runtime
 
                 yield return request.SendWebRequest();
 
+                // Попутное наблюдение доверенного времени для периодов подписки (ТЗ IAP-14):
+                // заголовок Date есть в любом ответе по RFC, включая ошибочные.
+                SdkTrustedTime.OfferHttpDate(request.GetResponseHeader("Date"));
+
                 long code = request.responseCode;
 
                 if (request.result == UnityWebRequest.Result.Success)

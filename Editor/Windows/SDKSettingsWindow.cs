@@ -289,7 +289,8 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.InAppPurchase.Enabled = DrawModuleSection(
                 "In-App Purchase",
-                "Управление Amazon IAP, подписками и consumable товарами с автоматическими наградами.",
+                "Amazon IAP: подписки, расходуемые и разовые покупки. Права определяет чек Amazon; " +
+                "награды начисляет игра по событиям SDK (см. README модуля).",
                 _currentSettings.InAppPurchase.Enabled,
                 () =>
                 {
@@ -308,62 +309,20 @@ namespace AMZNGoDSDK.Editor
                         {
                             product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
                             product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
-                        }
 
-                    product.DurationDays = EditorGUILayout.IntField("Duration (days)", Math.Max(1, product.DurationDays));
+                            // Без Math.Max: 0 — это осознанный признак «не задано», по нему
+                            // не сохранится конфиг и не соберётся билд (IAP-15).
+                            product.TermDays = EditorGUILayout.IntField("Term (days)", product.TermDays);
 
-                    GUILayout.Space(5);
-                    GUILayout.Label("Subscription Consumables:", EditorStyles.miniBoldLabel);
-
-                    for (int rewardIndex = 0; rewardIndex < product.ConsumableRewards.Count; rewardIndex++)
-                    {
-                        var reward = product.ConsumableRewards[rewardIndex];
-                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-                        var consumableOptions = _currentSettings.InAppPurchase.ConsumableProducts
-                            .Where(c => !string.IsNullOrWhiteSpace(c.ProductId))
-                            .Select(c => c.ProductId)
-                            .ToArray();
-
-                        if (consumableOptions.Length > 0)
-                        {
-                            int currentIndex = Mathf.Max(0, Array.IndexOf(consumableOptions, reward.ProductId));
-                            currentIndex = Mathf.Clamp(EditorGUILayout.Popup("Consumable ID", currentIndex, consumableOptions), 0, consumableOptions.Length - 1);
-                            reward.ProductId = consumableOptions[currentIndex];
-
-                            var mappedConsumable = _currentSettings.InAppPurchase.ConsumableProducts
-                                .FirstOrDefault(c => c.ProductId == reward.ProductId);
-
-                            if (mappedConsumable != null)
+                            if (product.TermDays <= 0)
                             {
-                                EditorGUILayout.LabelField("Reward Amount", mappedConsumable.RewardAmount.ToString());
-                                EditorGUILayout.LabelField("Reward Key", string.IsNullOrEmpty(mappedConsumable.RewardKey) ? mappedConsumable.ProductId : mappedConsumable.RewardKey);
-                                EditorGUILayout.LabelField("Reward Type", mappedConsumable.RewardType.ToString());
+                                EditorGUILayout.HelpBox(
+                                    "Term (days) не задан. Укажи реальный период подписки из консоли Amazon " +
+                                    "(например, 7 для недельной) — от него считаются оплаченные периоды. " +
+                                    "Без него настройки не сохранятся, а билд не соберётся.",
+                                    MessageType.Error);
                             }
                         }
-                        else
-                        {
-                            EditorGUILayout.LabelField("Добавьте consumable товар выше, чтобы выбрать его здесь.");
-                            reward.ProductId = string.Empty;
-                        }
-
-                        if (GUILayout.Button("Remove Consumable Reward", GUILayout.Height(20)))
-                        {
-                            product.ConsumableRewards.RemoveAt(rewardIndex);
-                            rewardIndex--;
-                            EditorGUILayout.EndVertical();
-                            GUILayout.Space(5);
-                            continue;
-                        }
-
-                        EditorGUILayout.EndVertical();
-                        GUILayout.Space(5);
-                    }
-
-                    if (GUILayout.Button("Add Consumable Reward"))
-                    {
-                        product.ConsumableRewards.Add(new SubscriptionConsumableReward());
-                    }
 
                         if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))
                         {
@@ -380,6 +339,7 @@ namespace AMZNGoDSDK.Editor
 
                     if (GUILayout.Button("Add Subscription Product"))
                     {
+                        // Свежая подписка с TermDays = 0 сразу «не задана» — это задумано.
                         _currentSettings.InAppPurchase.SubscriptionProducts.Add(new SubscriptionProduct());
                     }
 
@@ -397,9 +357,6 @@ namespace AMZNGoDSDK.Editor
                         {
                             product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
                             product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
-                            product.RewardAmount = EditorGUILayout.IntField("Reward Amount", product.RewardAmount);
-                            product.RewardKey = EditorGUILayout.TextField("Reward Key", string.IsNullOrEmpty(product.RewardKey) ? product.ProductId : product.RewardKey);
-                            product.RewardType = (ConsumableRewardType)EditorGUILayout.EnumPopup("Reward Type", product.RewardType);
                         }
 
                         if (GUILayout.Button("Remove Consumable", GUILayout.Height(20)))
@@ -418,6 +375,40 @@ namespace AMZNGoDSDK.Editor
                     if (GUILayout.Button("Add Consumable Product"))
                     {
                         _currentSettings.InAppPurchase.ConsumableProducts.Add(new ConsumableProduct());
+                    }
+
+                    GUILayout.Space(10);
+                    GUILayout.Label("Non-Consumable Products (разовые покупки):", EditorStyles.miniBoldLabel);
+
+                    for (int i = 0; i < _currentSettings.InAppPurchase.NonConsumableProducts.Count; i++)
+                    {
+                        var product = _currentSettings.InAppPurchase.NonConsumableProducts[i];
+                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                        product.Enabled = EditorGUILayout.Toggle("Enabled", product.Enabled);
+
+                        if (product.Enabled)
+                        {
+                            product.ProductId = EditorGUILayout.TextField("Product ID", product.ProductId);
+                            product.DisplayName = EditorGUILayout.TextField("Display Name", product.DisplayName);
+                        }
+
+                        if (GUILayout.Button("Remove Non-Consumable", GUILayout.Height(20)))
+                        {
+                            _currentSettings.InAppPurchase.NonConsumableProducts.RemoveAt(i);
+                            i--;
+                            EditorGUILayout.EndVertical();
+                            GUILayout.Space(5);
+                            continue;
+                        }
+
+                        EditorGUILayout.EndVertical();
+                        GUILayout.Space(5);
+                    }
+
+                    if (GUILayout.Button("Add Non-Consumable Product"))
+                    {
+                        _currentSettings.InAppPurchase.NonConsumableProducts.Add(new NonConsumableProduct());
                     }
                 });
         }

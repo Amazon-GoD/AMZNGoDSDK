@@ -25,7 +25,6 @@ namespace AMZNGoDSDK.Runtime
 #endif
 #if AMZN_IAP_ENABLED
         [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
-        [SerializeField] private InAppPurchaseModuleInitializer _inAppPurchaseModuleInitializer;
 #endif
 #if AMZN_FIREBASE_ENABLED
         [SerializeField] private FirebaseModule _firebaseModule;
@@ -133,9 +132,6 @@ namespace AMZNGoDSDK.Runtime
 
 #if AMZN_IAP_ENABLED
             _inAppPurchaseModule.Construct(inAppPurchaseSettings);
-
-            EnsureInAppPurchaseModuleInitializer();
-            _inAppPurchaseModuleInitializer.Initialize(_inAppPurchaseModule);
 #endif
 
             #endregion
@@ -294,17 +290,21 @@ namespace AMZNGoDSDK.Runtime
         #region AppMetrica
 
 #if AMZN_APPMETRICA_ENABLED
+        // Проверка Initialized обязательна (ТЗ IAP-01): если AppMetrica упала на битом
+        // ключе, исключение инициализации проглатывается в InitializeModules, Enabled
+        // остаётся true — и каждый репорт бился бы о мёртвый модуль. null-гард — на случай
+        // вызова до OnAwake (модуль ещё не привязан).
         public void ReportEventAppMetrica(string eventName, Dictionary<string, string> args)
         {
-            if(!_appMetricaModule.Enabled)
+            if (_appMetricaModule == null || !_appMetricaModule.Enabled || !_appMetricaModule.Initialized)
                 return;
-            
+
             _appMetricaModule.ReportEvent(eventName, args);
         }
 
         public void ReportEventRawAppMetrica(string eventName, string jsonValue)
         {
-            if (!_appMetricaModule.Enabled)
+            if (_appMetricaModule == null || !_appMetricaModule.Enabled || !_appMetricaModule.Initialized)
                 return;
 
             _appMetricaModule.ReportEventRaw(eventName, jsonValue);
@@ -354,63 +354,129 @@ namespace AMZNGoDSDK.Runtime
         #region In-App Purchase
 
 #if AMZN_IAP_ENABLED
-        public bool IsIAPInitialized => _inAppPurchaseModule.IsInitialized;
+        private bool IapReady => _inAppPurchaseModule != null && _inAppPurchaseModule.Enabled;
+
+        /// <summary>Сервис поднят: можно вызывать BuyProduct. Состоянию прав верить рано —
+        /// см. <see cref="IsIAPRestored"/>.</summary>
+        public bool IsIAPInitialized => _inAppPurchaseModule != null && _inAppPurchaseModule.IsInitialized;
+
+        /// <summary>Была успешная полная сверка с Amazon в этой сессии — состоянию можно верить.</summary>
+        public bool IsIAPRestored => _inAppPurchaseModule != null && _inAppPurchaseModule.IsRestored;
+
+        public DateTime IAPLastReconciliationUtc =>
+            _inAppPurchaseModule != null ? _inAppPurchaseModule.LastReconciliationUtc : DateTime.MinValue;
 
         public void BuyProduct(string productId)
         {
-            if (!_inAppPurchaseModule.Enabled)
-                return;
-
-            _inAppPurchaseModule.BuyProduct(productId);
+            if (IapReady)
+                _inAppPurchaseModule.BuyProduct(productId);
         }
 
-        public bool IsSubscribed(string productId)
-        {
-            if (!_inAppPurchaseModule.Enabled)
-                return false;
+        public bool IsSubscribed(string productId) =>
+            IapReady && _inAppPurchaseModule.IsSubscribed(productId);
 
-            return _inAppPurchaseModule.IsSubscribed(productId);
-        }
+        public bool HasReceipt(string productId) =>
+            IapReady && _inAppPurchaseModule.HasReceipt(productId);
 
-        public bool HasReceipt(string productId)
-        {
-            if (!_inAppPurchaseModule.Enabled)
-                return false;
+        public bool HasEverPurchasedIAP(string productId) =>
+            IapReady && _inAppPurchaseModule.HasEverPurchased(productId);
 
-            return _inAppPurchaseModule.HasReceipt(productId);
-        }
+        /// <summary>Трёхзначное состояние права — для игр, которым важно отличать «не знаю» от «нет».</summary>
+        public IapEntitlementState GetIAPEntitlementState(string productId) =>
+            IapReady ? _inAppPurchaseModule.GetEntitlementState(productId) : IapEntitlementState.Unknown;
+
+        public IapEntitlement GetIAPEntitlement(string productId) =>
+            IapReady ? _inAppPurchaseModule.GetEntitlement(productId) : default;
 
         public void RestorePurchases(Action<bool> onComplete = null)
         {
-            if (!_inAppPurchaseModule.Enabled)
-                return;
+            if (IapReady)
+                _inAppPurchaseModule.RestorePurchases(onComplete);
+            else
+                onComplete?.Invoke(false);
+        }
 
-            _inAppPurchaseModule.RestorePurchases(onComplete);
+        /// <summary>Ручная пересверка прав с Amazon.</summary>
+        public void RefreshIAPEntitlements()
+        {
+            if (IapReady)
+                _inAppPurchaseModule.RefreshEntitlements();
+        }
+
+        /// <summary>Повтор инициализации IAP после сбоя (каталог, сервис).</summary>
+        public void RetryIAPInitialize()
+        {
+            if (IapReady)
+                _inAppPurchaseModule.RetryInitialize();
+        }
+
+        // События прав. Оба с доигрыванием последнего снимка поздним подписчикам.
+        // Обработчик выдачи ОБЯЗАН быть идемпотентным и не начислять валюту: событие
+        // приходит при каждом запуске (см. README модуля IAP).
+
+        public void AddIAPEntitlementGrantedListener(Action<IapEntitlement> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.AddEntitlementGrantedListener(listener);
+        }
+
+        public void RemoveIAPEntitlementGrantedListener(Action<IapEntitlement> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.RemoveEntitlementGrantedListener(listener);
+        }
+
+        public void AddIAPEntitlementRevokedListener(Action<IapEntitlement> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.AddEntitlementRevokedListener(listener);
+        }
+
+        public void RemoveIAPEntitlementRevokedListener(Action<IapEntitlement> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.RemoveEntitlementRevokedListener(listener);
+        }
+
+        /// <summary>Начался новый оплаченный период подписки — игра начисляет награду за период (IAP-14).</summary>
+        public void AddIAPPeriodStartedListener(Action<IapPeriodStarted> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.AddPeriodStartedListener(listener);
+        }
+
+        public void RemoveIAPPeriodStartedListener(Action<IapPeriodStarted> listener)
+        {
+            if (IapReady) _inAppPurchaseModule.RemovePeriodStartedListener(listener);
         }
 
         public void SetIAPPurchaseCompleteCallback(Action<string> callback)
         {
-            _inAppPurchaseModule.SetPurchaseCompleteCallback(callback);
+            if (_inAppPurchaseModule != null)
+                _inAppPurchaseModule.SetPurchaseCompleteCallback(callback);
         }
 
         public void SetIAPPurchaseFailedCallback(Action<string> callback)
         {
-            _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
-        }
-
-        public void SetIAPConsumableRewardSetter(Action<string, int> rewardSetter)
-        {
-            _inAppPurchaseModule.SetConsumableRewardSetter(rewardSetter);
+            if (_inAppPurchaseModule != null)
+                _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
         }
 #else
         public bool IsIAPInitialized => false;
+        public bool IsIAPRestored => false;
+        public DateTime IAPLastReconciliationUtc => DateTime.MinValue;
         public void BuyProduct(string productId) { }
         public bool IsSubscribed(string productId) => false;
         public bool HasReceipt(string productId) => false;
-        public void RestorePurchases(Action<bool> onComplete = null) { }
+        public bool HasEverPurchasedIAP(string productId) => false;
+        public IapEntitlementState GetIAPEntitlementState(string productId) => IapEntitlementState.Unknown;
+        public IapEntitlement GetIAPEntitlement(string productId) => default;
+        public void RestorePurchases(Action<bool> onComplete = null) { onComplete?.Invoke(false); }
+        public void RefreshIAPEntitlements() { }
+        public void RetryIAPInitialize() { }
+        public void AddIAPEntitlementGrantedListener(Action<IapEntitlement> listener) { }
+        public void RemoveIAPEntitlementGrantedListener(Action<IapEntitlement> listener) { }
+        public void AddIAPEntitlementRevokedListener(Action<IapEntitlement> listener) { }
+        public void RemoveIAPEntitlementRevokedListener(Action<IapEntitlement> listener) { }
+        public void AddIAPPeriodStartedListener(Action<IapPeriodStarted> listener) { }
+        public void RemoveIAPPeriodStartedListener(Action<IapPeriodStarted> listener) { }
         public void SetIAPPurchaseCompleteCallback(Action<string> callback) { }
         public void SetIAPPurchaseFailedCallback(Action<string> callback) { }
-        public void SetIAPConsumableRewardSetter(Action<string, int> rewardSetter) { }
 #endif
 
         #endregion
@@ -453,18 +519,6 @@ namespace AMZNGoDSDK.Runtime
             _internetConnectionModule = GetComponent<InternetConnectionModule>();
             if (_internetConnectionModule == null)
                 _internetConnectionModule = gameObject.AddComponent<InternetConnectionModule>();
-        }
-#endif
-
-#if AMZN_IAP_ENABLED
-        private void EnsureInAppPurchaseModuleInitializer()
-        {
-            if (_inAppPurchaseModuleInitializer != null)
-                return;
-
-            _inAppPurchaseModuleInitializer = GetComponent<InAppPurchaseModuleInitializer>();
-            if (_inAppPurchaseModuleInitializer == null)
-                _inAppPurchaseModuleInitializer = gameObject.AddComponent<InAppPurchaseModuleInitializer>();
         }
 #endif
 
