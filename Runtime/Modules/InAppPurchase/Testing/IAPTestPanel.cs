@@ -62,6 +62,9 @@ namespace AMZNGoDSDK.Runtime
 
         private static readonly Color PanelColor = new(0f, 0f, 0f, 0.72f);
         private static readonly Color BuyColor = new(0.16f, 0.42f, 0.24f, 1f);
+        private static readonly Color RestoreColor = new(0.15f, 0.3f, 0.5f, 1f);
+        private static readonly Color SimColor = new(0.5f, 0.35f, 0.12f, 1f);
+        private static readonly Color DangerColor = new(0.55f, 0.15f, 0.15f, 1f);
 
         private Text _statusText;
         private Text _coinsText;
@@ -131,7 +134,7 @@ namespace AMZNGoDSDK.Runtime
         {
             var product = ResolveSubscription();
             Buy(product?.ProductId ?? Trimmed(_subscriptionSku),
-                product != null,
+                product is { Enabled: true },
                 SimulatedAmazonStore.SubscriptionType,
                 "subscription");
         }
@@ -140,12 +143,12 @@ namespace AMZNGoDSDK.Runtime
         {
             var product = ResolveConsumable();
             Buy(product?.ProductId ?? Trimmed(_consumableSku),
-                product != null,
+                product is { Enabled: true },
                 SimulatedAmazonStore.ConsumableType,
                 "consumable");
         }
 
-        private void Buy(string sku, bool registered, string productType, string kind)
+        private void Buy(string sku, bool buyable, string productType, string kind)
         {
             var module = Module;
             if (module == null)
@@ -166,9 +169,12 @@ namespace AMZNGoDSDK.Runtime
             if (SimulatedAmazonStore.HasRealStore)
                 return;
 
-            if (!registered)
+            // Гейт симуляции обязан совпадать с гейтом модуля (CanBuy = настроен И включён):
+            // иначе панель вбросила бы SUCCESSFUL для покупки, которую модуль отклонил, — в
+            // логе рядом легли бы «покупка не прошла» и «права выданы», как будто модуль врёт.
+            if (!buyable)
             {
-                Log("   SKU нет в настройках SDK — покупка отклонена модулем, симуляция пропущена");
+                Log("   SKU нет в настройках SDK или продукт выключен — покупка отклонена модулем, симуляция пропущена");
                 return;
             }
 
@@ -182,6 +188,81 @@ namespace AMZNGoDSDK.Runtime
 
             // Модуль после покупки сам запускает полную сверку — отвечаем за стор историей.
             SimulatedAmazonStore.SimulateRestore();
+        }
+
+        /// <summary>Ручное восстановление — тот же путь, что и авто-сверка на старте.</summary>
+        public void RestorePurchases()
+        {
+            var module = Module;
+            if (module == null)
+            {
+                Log("Restore невозможен: модуль IAP не найден на сцене");
+                return;
+            }
+
+            Log("→ RestorePurchases");
+            module.RestorePurchases(ok => Log($"← Restore завершён: {(ok ? "успех" : "сбой (права не тронуты)")}"));
+
+            // Сверка уже запущена вызовом выше — кормим её историей, как это делает нативка.
+            if (!SimulatedAmazonStore.HasRealStore)
+                SimulatedAmazonStore.SimulateRestore();
+        }
+
+        /// <summary>Симуляция отмены/возврата подписки: у последнего чека появляется
+        /// CancelDate, следующая сверка снимает право (событие Revoked).</summary>
+        public void SimulateCancelSubscription()
+        {
+            var product = ResolveSubscription();
+            if (product == null)
+            {
+                Log("Отмена невозможна: подписка не настроена");
+                return;
+            }
+
+            if (!SimulatedAmazonStore.SimulateCancel(product.ProductId))
+            {
+                Log($"Отмена: у {product.ProductId} нет чеков (сначала купи)");
+                return;
+            }
+
+            Log($"→ (симуляция) подписка {product.ProductId} отменена стором, запускаем сверку");
+            Module?.RefreshEntitlements();          // открывает прогон сверки…
+            SimulatedAmazonStore.SimulateRestore(); // …и сразу отвечает историей с CancelDate
+        }
+
+        /// <summary>Симуляция «у аккаунта нет покупок»: стор забывает чеки, сверка по пустой
+        /// истории снимает права. Журналы модуля не трогаются — выдачи не повторятся.</summary>
+        public void SimulateClearReceipts()
+        {
+            SimulatedAmazonStore.ClearReceipts();
+            Log("→ (симуляция) стор забыл все чеки, запускаем сверку по пустой истории");
+            Module?.RefreshEntitlements();
+            SimulatedAmazonStore.SimulateRestore();
+        }
+
+        /// <summary>
+        /// Полный сброс к «чистой установке»: журналы и права модуля, чеки симулятора,
+        /// демо-баланс панели, храповик доверенного времени. Модуль держит состояние в
+        /// памяти — реальный эффект только после перезапуска Play Mode / приложения.
+        /// </summary>
+        public void WipeSdkState()
+        {
+            PlayerPrefs.DeleteKey(IapPrefsKeys.SchemaVersion);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.GrantedReceipts);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.PendingFulfillment);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.Entitlements);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.EntitlementReconciledAt);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.PeriodJournal);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.EverPurchasedSkus);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.LegacyFulfilledReceipts);
+            PlayerPrefs.DeleteKey("AMZN_TrustedTimeUtc");   // приватный ключ SdkTrustedTime
+            PlayerPrefs.DeleteKey(PanelMoneyKey);
+            PlayerPrefs.Save();
+
+            SimulatedAmazonStore.ClearReceipts();
+
+            Log("⚠ Состояние IAP стёрто (журналы, права, чеки симулятора, монеты).");
+            Log("⚠ ПЕРЕЗАПУСТИ Play Mode / приложение — модуль держит старое состояние в памяти.");
         }
 
         #endregion
@@ -492,6 +573,26 @@ namespace AMZNGoDSDK.Runtime
 
         private void BuildButtons(Transform parent)
         {
+            const float buttonHeight = 72f;
+            const float spacing = 12f;
+
+            // Симуляционные действия показываем только там, где стора нет: на устройстве
+            // с реальным Appstore они не участвуют в пути ответов и лишь путали бы QA.
+            var actions = new List<(string label, Color color, UnityEngine.Events.UnityAction onClick)>
+            {
+                ("BUY SUBSCRIPTION", BuyColor, BuySubscription),
+                ("BUY CONSUMABLE", BuyColor, BuyConsumable),
+                ("RESTORE PURCHASES", RestoreColor, RestorePurchases),
+            };
+
+            if (!SimulatedAmazonStore.HasRealStore)
+            {
+                actions.Add(("SIM: CANCEL SUBSCRIPTION", SimColor, SimulateCancelSubscription));
+                actions.Add(("SIM: CLEAR RECEIPTS", SimColor, SimulateClearReceipts));
+            }
+
+            actions.Add(("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState));
+
             var container = new GameObject("Buttons", typeof(RectTransform), typeof(VerticalLayoutGroup));
             container.transform.SetParent(parent, false);
             container.layer = parent.gameObject.layer;
@@ -500,19 +601,19 @@ namespace AMZNGoDSDK.Runtime
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(620f, 200f);
+            rect.sizeDelta = new Vector2(620f, actions.Count * buttonHeight + (actions.Count - 1) * spacing);
             rect.anchoredPosition = Vector2.zero;
 
             var layout = container.GetComponent<VerticalLayoutGroup>();
-            layout.spacing = 16f;
+            layout.spacing = spacing;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = true;
 
-            CreateButton("BUY SUBSCRIPTION", container.transform, BuyColor, BuySubscription);
-            CreateButton("BUY CONSUMABLE", container.transform, BuyColor, BuyConsumable);
+            foreach (var (label, color, onClick) in actions)
+                CreateButton(label, container.transform, color, onClick);
         }
 
         private void BuildLogPanel(Transform parent)
