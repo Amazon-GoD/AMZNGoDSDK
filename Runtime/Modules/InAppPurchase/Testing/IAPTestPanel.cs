@@ -62,8 +62,6 @@ namespace AMZNGoDSDK.Runtime
 
         private static readonly Color PanelColor = new(0f, 0f, 0f, 0.72f);
         private static readonly Color BuyColor = new(0.16f, 0.42f, 0.24f, 1f);
-        private static readonly Color RestoreColor = new(0.15f, 0.3f, 0.5f, 1f);
-        private static readonly Color SimColor = new(0.5f, 0.35f, 0.12f, 1f);
         private static readonly Color DangerColor = new(0.55f, 0.15f, 0.15f, 1f);
 
         private Text _statusText;
@@ -187,56 +185,6 @@ namespace AMZNGoDSDK.Runtime
             Log($"   (симуляция) стор: {status}");
 
             // Модуль после покупки сам запускает полную сверку — отвечаем за стор историей.
-            SimulatedAmazonStore.SimulateRestore();
-        }
-
-        /// <summary>Ручное восстановление — тот же путь, что и авто-сверка на старте.</summary>
-        public void RestorePurchases()
-        {
-            var module = Module;
-            if (module == null)
-            {
-                Log("Restore невозможен: модуль IAP не найден на сцене");
-                return;
-            }
-
-            Log("→ RestorePurchases");
-            module.RestorePurchases(ok => Log($"← Restore завершён: {(ok ? "успех" : "сбой (права не тронуты)")}"));
-
-            // Сверка уже запущена вызовом выше — кормим её историей, как это делает нативка.
-            if (!SimulatedAmazonStore.HasRealStore)
-                SimulatedAmazonStore.SimulateRestore();
-        }
-
-        /// <summary>Симуляция отмены/возврата подписки: у последнего чека появляется
-        /// CancelDate, следующая сверка снимает право (событие Revoked).</summary>
-        public void SimulateCancelSubscription()
-        {
-            var product = ResolveSubscription();
-            if (product == null)
-            {
-                Log("Отмена невозможна: подписка не настроена");
-                return;
-            }
-
-            if (!SimulatedAmazonStore.SimulateCancel(product.ProductId))
-            {
-                Log($"Отмена: у {product.ProductId} нет чеков (сначала купи)");
-                return;
-            }
-
-            Log($"→ (симуляция) подписка {product.ProductId} отменена стором, запускаем сверку");
-            Module?.RefreshEntitlements();          // открывает прогон сверки…
-            SimulatedAmazonStore.SimulateRestore(); // …и сразу отвечает историей с CancelDate
-        }
-
-        /// <summary>Симуляция «у аккаунта нет покупок»: стор забывает чеки, сверка по пустой
-        /// истории снимает права. Журналы модуля не трогаются — выдачи не повторятся.</summary>
-        public void SimulateClearReceipts()
-        {
-            SimulatedAmazonStore.ClearReceipts();
-            Log("→ (симуляция) стор забыл все чеки, запускаем сверку по пустой истории");
-            Module?.RefreshEntitlements();
             SimulatedAmazonStore.SimulateRestore();
         }
 
@@ -576,22 +524,14 @@ namespace AMZNGoDSDK.Runtime
             const float buttonHeight = 72f;
             const float spacing = 12f;
 
-            // Симуляционные действия показываем только там, где стора нет: на устройстве
-            // с реальным Appstore они не участвуют в пути ответов и лишь путали бы QA.
+            // Восстановление отдельной кнопкой не выводим: QA тестирует restore
+            // переустановкой игры (WIPE SDK STATE + перезапуск = тот же сценарий).
             var actions = new List<(string label, Color color, UnityEngine.Events.UnityAction onClick)>
             {
                 ("BUY SUBSCRIPTION", BuyColor, BuySubscription),
                 ("BUY CONSUMABLE", BuyColor, BuyConsumable),
-                ("RESTORE PURCHASES", RestoreColor, RestorePurchases),
+                ("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState),
             };
-
-            if (!SimulatedAmazonStore.HasRealStore)
-            {
-                actions.Add(("SIM: CANCEL SUBSCRIPTION", SimColor, SimulateCancelSubscription));
-                actions.Add(("SIM: CLEAR RECEIPTS", SimColor, SimulateClearReceipts));
-            }
-
-            actions.Add(("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState));
 
             var container = new GameObject("Buttons", typeof(RectTransform), typeof(VerticalLayoutGroup));
             container.transform.SetParent(parent, false);
