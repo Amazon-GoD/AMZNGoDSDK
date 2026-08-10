@@ -27,8 +27,13 @@ namespace AMZNGoDSDK.Runtime
         void ReleaseListeners();
 
         bool TryGetProductData(List<string> skus, out string error);
-        bool TryPurchase(string sku, out string error);
-        bool TryGetPurchaseUpdates(bool reset, out string error);
+
+        // RequestId нужен вызывающему для матчинга асинхронного ответа с запросом: слушатель
+        // у плагина один на все запросы, и без RequestId поздний ответ мёртвого прогона
+        // неотличим от ответа текущего. Editor-стаб отдаёт "{}" — тогда requestId == null,
+        // и матчинг на стороне вызывающего обязан быть мягким.
+        bool TryPurchase(string sku, out string requestId, out string error);
+        bool TryGetPurchaseUpdates(bool reset, out string requestId, out string error);
         bool TryNotifyFulfillment(string receiptId, out string error);
     }
 
@@ -87,11 +92,11 @@ namespace AMZNGoDSDK.Runtime
         public bool TryGetProductData(List<string> skus, out string error) =>
             Call(() => _service.GetProductData(new SkusInput { Skus = skus }), out error);
 
-        public bool TryPurchase(string sku, out string error) =>
-            Call(() => _service.Purchase(new SkuInput { Sku = sku }), out error);
+        public bool TryPurchase(string sku, out string requestId, out string error) =>
+            CallWithRequestId(() => _service.Purchase(new SkuInput { Sku = sku }), out requestId, out error);
 
-        public bool TryGetPurchaseUpdates(bool reset, out string error) =>
-            Call(() => _service.GetPurchaseUpdates(new ResetInput { Reset = reset }), out error);
+        public bool TryGetPurchaseUpdates(bool reset, out string requestId, out string error) =>
+            CallWithRequestId(() => _service.GetPurchaseUpdates(new ResetInput { Reset = reset }), out requestId, out error);
 
         public bool TryNotifyFulfillment(string receiptId, out string error)
         {
@@ -131,6 +136,29 @@ namespace AMZNGoDSDK.Runtime
 
         private bool Call(Func<object> action, out string error) =>
             Call(() => { action(); }, out error);
+
+        private bool CallWithRequestId(Func<RequestOutput> action, out string requestId, out string error)
+        {
+            requestId = null;
+
+            if (_service == null)
+            {
+                error = "service not acquired";
+                return false;
+            }
+
+            try
+            {
+                requestId = action()?.RequestId;
+                error = null;
+                return true;
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+                return false;
+            }
+        }
     }
 }
 #endif

@@ -15,8 +15,32 @@ namespace AMZNGoDSDK.Runtime
     internal sealed class IapReconcileSession
     {
         private readonly List<PurchaseReceipt> _receipts = new();
+        private readonly HashSet<string> _requestIds = new();
 
         public int PageCount { get; private set; }
+
+        /// <summary>RequestId запроса, отправленного в рамках ЭТОГО прогона (Reset=true и
+        /// каждое продолжение страниц). Editor-стаб RequestId не отдаёт — null игнорируется.</summary>
+        public void RegisterRequest(string requestId)
+        {
+            if (!string.IsNullOrEmpty(requestId))
+                _requestIds.Add(requestId);
+        }
+
+        /// <summary>
+        /// Принадлежит ли ответ этому прогону. Защита от гонки ватчдога: прогон без ответа
+        /// объявляется мёртвым через таймаут, стартует новый — если после этого хвостовая
+        /// страница СТАРОГО прогона с HasMore=false попала бы в новую сессию, снапшот
+        /// применился бы с одной страницей и снял права у всех, кого на ней нет.
+        /// Матчинг мягкий: когда сравнивать нечего (editor-стаб, симулятор, ответ без
+        /// RequestId), ответ принимается — как до этой проверки.
+        /// </summary>
+        public bool OwnsResponse(string responseRequestId)
+        {
+            if (_requestIds.Count == 0 || string.IsNullOrEmpty(responseRequestId))
+                return true;
+            return _requestIds.Contains(responseRequestId);
+        }
 
         public void AddPage(IEnumerable<PurchaseReceipt> receipts)
         {

@@ -85,7 +85,11 @@ sdk.SetIAPPurchaseFailedCallback(productId => ShowPurchaseFailed(productId));
 ### 6. Аналитика (AppMetrica)
 
 - Воронка: `iap_purchase_started` → `iap_purchase_success` (`new` / `already_owned`) /
-  `iap_purchase_failed` (`{"sku":{"reason":{"online|offline":""}}}`).
+  `iap_purchase_failed` (`{"sku":{"reason":{"online|offline":""}}}`). Отдельные reason'ы:
+  `pending` — ожидание одобрения родителем (Amazon Kids, не отказ);
+  `receipt_not_processed` — стор ответил SUCCESSFUL, но чек не удалось обработать
+  (SKU не настроен / тип разошёлся) — игра получает failed, чек догонит сверка после
+  исправления настроек.
 - `already_owned` включает и повторное нажатие «купить», на которое Amazon ответил
   `ALREADY_PURCHASED` без чека: в воронке это не отказ, но игра получает failed-колбэк —
   ничего нового не выдано, право подтвердит сверка.
@@ -106,9 +110,19 @@ sdk.SetIAPPurchaseFailedCallback(productId => ShowPurchaseFailed(productId));
   лечится только сервером. Подписки и разовые покупки восстанавливаются полностью.
 - Повторное нажатие «купить» до ответа отклоняется с reason `purchase_in_progress`
   (окно 90 секунд — брошенный диалог покупки не блокирует магазин навсегда).
-- **Остаточная гонка атрибуции**: у легаси-моста один слушатель без RequestId. Если ответ по
-  покупке придёт ПОЗЖЕ 90-секундного окна и после старта следующей покупки, отказ первой
-  может приписаться второй. На этом плагине не лечится — зафиксировано как ограничение.
+- **Гонка атрибуции закрыта по RequestId**: ответы покупки и сверки матчатся с запросом по
+  RequestId моста. Поздний ответ брошенной покупки не закрывает текущую и не крадёт её
+  атрибуцию (чек из него всё равно обрабатывается — деньги могли списаться); поздняя
+  страница мёртвого прогона сверки отбрасывается и не может примениться как неполный
+  снапшот прав. Когда RequestId сравнить не с чем (editor-стаб, симулятор), матчинг мягкий —
+  ответ считается своим.
+- **PENDING (Amazon Kids)**: покупка, ждущая одобрения родителя, приходит игре как failed с
+  reason `pending`; после одобрения чек приедет в истории и выдастся сверкой. Как именно
+  легаси-мост передаёт статус PENDING (строкой или как FAILED) — проверить App Tester'ом.
+- **Term SKU подписки**: если чек приходит с term SKU вместо родительского (квирк Amazon,
+  раздел H ТЗ), матчинг фолбэком приводит его к настроенному SKU: точный `TermSku`, затем
+  единственный настроенный префикс среди подписок. Неоднозначный префикс не угадывается —
+  чек лежит необработанным до исправления настроек.
 - Если покупка упала исключением при вызове (в воронке `failed`), а нативка позже всё же
   прислала SUCCESSFUL — товар выдаётся, но событие success уже не шлётся (терминал воронки
   один на started). В отчётах такая покупка выглядит отказом; чек при этом обработан честно.
@@ -149,11 +163,15 @@ sdk.SetIAPPurchaseFailedCallback(productId => ShowPurchaseFailed(productId));
 | `AmazonIapV2Client.jar`, `AmazonIapV2JavaService-1.0.jar`, `AmazonCptPluginsUtils-1.0.jar`, `gson-2.2.4.jar`, `libs/*/libAmazonIapV2Bridge.so` | легаси Unity-плагин Amazon IAP V2 (JNI-мост, через который ходит C#) |
 | `AmazonIapV2Compat.jar` | шим: возвращает удалённый в 3.0.9 класс `com.amazon.android.CrossPlatformPluginUtils`, без него легаси-плагин падает с `NoClassDefFoundError` при инициализации. Исходник и обоснование — в `AmazonIapV2Compat~/` |
 
-Манифест: `com.amazon.device.iap.ResponseReceiver` (и DRM-аналог) объявлены в глобальном
-`Assets/Plugins/Android/AndroidManifest.xml` — без них Appstore не доставляет ответы
-`PurchasingListener`. Там же `AmznGoDIapBootstrapProvider` — поднимает Appstore SDK до первой
-активити, иначе окно покупки не показывается («No UI visible»). С выключенным модулем записи
-вырезает `DisabledModuleManifestCleaner`.
+Манифест: `com.amazon.device.iap.ResponseReceiver` (и DRM-аналог) обязаны быть объявлены в
+манифесте — без них Appstore не доставляет ответы `PurchasingListener`. Туда же нужен
+`AmznGoDIapBootstrapProvider` — поднимает Appstore SDK до первой активити, иначе окно покупки
+не показывается («No UI visible») — и `<queries>` на пакеты Appstore/App Tester (package
+visibility с targetSdk 30+). Вручную ничего прописывать не нужно: при включённом модуле все
+недостающие записи дописывает в манифест Gradle-проекта `IapManifestInjector`
+(`Editor/SdkModulesSettings/IapManifestInjector.cs`) на этапе сборки; уже объявленные записи
+(например, в `Assets/Plugins/Android/AndroidManifest.xml` этого проекта) он не дублирует.
+С выключенным модулем записи вырезает `DisabledModuleManifestCleaner`.
 
 **Ограничение:** `libAmazonIapV2Bridge.so` собран только под 32-бит (`armeabi-v7a`, `armeabi`, `x86`) —
 arm64-сборка с этим плагином работать не будет. Проект сейчас собирается под ARMv7
