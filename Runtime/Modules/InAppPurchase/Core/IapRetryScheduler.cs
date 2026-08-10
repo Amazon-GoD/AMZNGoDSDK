@@ -44,7 +44,8 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>false — операция уже в полёте, второй запуск запрещён. Полёт старше
         /// ватчдога считается мёртвым: новый запуск разрешается, поздний ответ мёртвого
-        /// прогона отбрасывается на стороне вызывающего (сессия уже другая).</summary>
+        /// прогона отбрасывается на стороне вызывающего (сверка — по RequestId в
+        /// IapReconcileSession.OwnsResponse, покупка — сравнением с RequestId текущей).</summary>
         public bool TryBegin()
         {
             if (InFlightFresh)

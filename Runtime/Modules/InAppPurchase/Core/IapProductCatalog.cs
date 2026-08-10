@@ -102,6 +102,53 @@ namespace AMZNGoDSDK.Runtime
             return !string.IsNullOrEmpty(sku) && _bySku.TryGetValue(sku, out product);
         }
 
+        /// <summary>
+        /// Матчинг ЧЕКА к настроенному продукту (раздел H ТЗ). Основной путь — точный
+        /// receipt.Sku; фолбэки закрывают подписочный квирк Amazon, когда чек приходит с
+        /// term SKU вместо родительского:
+        ///  1) receipt.TermSku совпал с настроенным SKU (в настройках завели term);
+        ///  2) receipt.Sku — term вида «родительский + суффикс», и родительский-префикс
+        ///     ровно один среди настроенных подписок (неоднозначность = не угадываем).
+        /// Нормализацию Sku к настроенному ProductId делает вызывающий.
+        /// </summary>
+        public bool TryResolveReceipt(PurchaseReceipt receipt, out IapConfiguredProduct product)
+        {
+            product = null;
+            if (receipt == null)
+                return false;
+
+            if (TryResolve(receipt.Sku, out product))
+                return true;
+
+            if (TryResolve(receipt.TermSku, out product))
+                return true;
+
+            if (receipt.ProductType == "SUBSCRIPTION" && !string.IsNullOrEmpty(receipt.Sku))
+            {
+                IapConfiguredProduct match = null;
+                foreach (var candidate in _bySku.Values)
+                {
+                    if (candidate.Kind != IapProductKind.Subscription)
+                        continue;
+                    if (receipt.Sku.Length <= candidate.ProductId.Length
+                        || !receipt.Sku.StartsWith(candidate.ProductId, System.StringComparison.Ordinal))
+                        continue;
+
+                    if (match != null)
+                        return false;   // два префикса-кандидата — неоднозначно
+                    match = candidate;
+                }
+
+                if (match != null)
+                {
+                    product = match;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>Единственное место, где Enabled влияет на поведение (IAP-08).</summary>
         public bool CanBuy(string sku) => TryResolve(sku, out var product) && product.Enabled;
 

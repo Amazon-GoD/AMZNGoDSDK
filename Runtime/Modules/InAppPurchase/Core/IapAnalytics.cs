@@ -83,12 +83,17 @@ namespace AMZNGoDSDK.Runtime
         /// Amazon IAP v2 не отдаёт отдельного статуса отмены: закрытие окна покупки приходит
         /// как FAILED. Поэтому reason называется store_failed (IAP-22) — туда попадают в
         /// основном отмены пользователем, это не поломка.
+        ///
+        /// PENDING — Appstore SDK 3.x, «ребёнок попросил — родитель ещё не одобрил» (Amazon
+        /// Kids): не отказ и не продажа. После одобрения чек приедет в getPurchaseUpdates и
+        /// выдастся сверкой; в воронке пусть будет виден отдельной причиной, не store_failed.
         /// </summary>
         public static string MapAmazonStatus(string status) => status switch
         {
             "FAILED" => "store_failed",
             "INVALID_SKU" => "invalid_sku",
             "NOT_SUPPORTED" => "not_supported",
+            "PENDING" => "pending",
             _ => "unknown",
         };
     }
