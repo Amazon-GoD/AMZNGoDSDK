@@ -1,6 +1,6 @@
-// Тестовый инструментарий не попадает в релизную сборку игры: SimulatedAmazonStore
-// умеет вбрасывать фейковые чеки через FireEvent плагина.
-#if AMZN_IAP_ENABLED && (UNITY_EDITOR || DEVELOPMENT_BUILD)
+// Панель собирается в любой билд с включённым IAP — QA тестирует на релизных билдах
+// (Development Build падает на Vulkan-баге эмулятора BlueStacks).
+#if AMZN_IAP_ENABLED
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -94,7 +94,7 @@ namespace AMZNGoDSDK.Runtime
         /// префаба с ней, и dev-билд для QA оставался без кнопок. Создаёмся сами после
         /// загрузки первой сцены, если модуль IAP включён в настройках и панели ещё нет
         /// (добавленная в сцену руками имеет приоритет). DontDestroyOnLoad — QA видит
-        /// панель в любой сцене. В релизный билд файл не попадает вовсе (см. #if в шапке).
+        /// панель в любой сцене. Сейчас попадает и в релизный билд (см. #if в шапке).
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoSpawn()
@@ -118,7 +118,7 @@ namespace AMZNGoDSDK.Runtime
                 var go = new GameObject("IAP Test Panel (auto)");
                 DontDestroyOnLoad(go);
                 go.AddComponent<IAPTestPanel>();
-                Debug.Log("[IAPTestPanel] Автоспавн: панель создана (dev-инструмент, в релизный билд не попадает)");
+                Debug.Log("[IAPTestPanel] Автоспавн: панель создана (тестовый инструмент — не для стора!)");
             }
             catch (Exception e)
             {

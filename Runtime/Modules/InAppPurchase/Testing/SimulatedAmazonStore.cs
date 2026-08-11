@@ -1,6 +1,6 @@
-// Тестовый инструментарий не попадает в релизную сборку игры: SimulatedAmazonStore
-// умеет вбрасывать фейковые чеки через FireEvent плагина.
-#if AMZN_IAP_ENABLED && (UNITY_EDITOR || DEVELOPMENT_BUILD)
+// Собирается в любой билд с включённым IAP, вместе с IAPTestPanel (они ходят парой).
+// На устройстве с реальным стором симуляция не активируется (HasRealStore).
+#if AMZN_IAP_ENABLED
 using System;
 using System.Collections.Generic;
 using com.amazon.device.iap.cpt;
