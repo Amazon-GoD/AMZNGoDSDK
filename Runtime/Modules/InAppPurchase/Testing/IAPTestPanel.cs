@@ -89,6 +89,43 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
+        /// <summary>
+        /// Автоспавн: в собранной игре панель никто не создаёт — в SDK нет ни сцены, ни
+        /// префаба с ней, и dev-билд для QA оставался без кнопок. Создаёмся сами после
+        /// загрузки первой сцены, если модуль IAP включён в настройках и панели ещё нет
+        /// (добавленная в сцену руками имеет приоритет). DontDestroyOnLoad — QA видит
+        /// панель в любой сцене. В релизный билд файл не попадает вовсе (см. #if в шапке).
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void AutoSpawn()
+        {
+            try
+            {
+                var settings = DataLoader.LoadSettings();
+                if (settings == null || !settings.Enabled)
+                    return;
+                if (settings.InAppPurchase == null || !settings.InAppPurchase.Enabled)
+                    return;
+
+#if UNITY_2023_1_OR_NEWER
+                if (FindFirstObjectByType<IAPTestPanel>(FindObjectsInactive.Include) != null)
+                    return;
+#else
+                if (FindObjectOfType<IAPTestPanel>(true) != null)
+                    return;
+#endif
+
+                var go = new GameObject("IAP Test Panel (auto)");
+                DontDestroyOnLoad(go);
+                go.AddComponent<IAPTestPanel>();
+                Debug.Log("[IAPTestPanel] Автоспавн: панель создана (dev-инструмент, в релизный билд не попадает)");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[IAPTestPanel] Автоспавн не удался: {e.Message}");
+            }
+        }
+
         private void Awake()
         {
             LoadSettings();
