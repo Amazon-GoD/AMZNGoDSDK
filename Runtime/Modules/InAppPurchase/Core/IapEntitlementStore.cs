@@ -14,8 +14,9 @@ namespace AMZNGoDSDK.Runtime
     /// Знание и политика разведены:
     ///  • GetState — знание: Unknown, пока в ЭТОЙ сессии не было успешной полной сверки;
     ///  • GetEffectiveAccess — политика для IsSubscribed/HasReceipt: последнее сохранённое
-    ///    значение, с грейсом 7 суток (выбранное значение, ТЗ число не задаёт): без сверки
-    ///    дольше грейса доступ снимается, но по одной неудаче — никогда.
+    ///    значение, с грейсом GraceDays + срок периода подписки (база — выбранное значение,
+    ///    ТЗ число не задаёт): без сверки дольше грейса доступ снимается, но по одной
+    ///    неудаче — никогда.
     ///
     /// Хранимые значения: 'E' — entitled, 'N' — not entitled, 'G' — entitled, у которого
     /// вышел грейс (доступ снят, событие Revoked уже отправлено один раз — 'G' и есть
@@ -125,11 +126,15 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>
-        /// Грейс: если успешной сверки не было дольше GraceDays, доступ по сохранённым E
-        /// снимается. Вызывается на старте и на форграунде, не по таймеру. Возвращает SKU,
-        /// потерявшие доступ, — по одному событию Revoked на каждый ('E' → 'G' и есть защёлка).
+        /// Грейс: доступ по сохранённому 'E' снимается, если успешной сверки не было дольше
+        /// GraceDays + срок периода подписки этого SKU (termDaysBySku; 0 — разовые покупки
+        /// и неизвестные SKU). Срок прибавляется к базе, а не заменяет её: при пороге ровно
+        /// в TermDays недельная подписка снималась бы у игрока, ушедшего в офлайн на один
+        /// оплаченный период, хотя он продолжает платить. Вызывается на старте и на
+        /// форграунде, не по таймеру. Возвращает SKU, потерявшие доступ, — по одному
+        /// событию Revoked на каждый ('E' → 'G' и есть защёлка).
         /// </summary>
-        public List<string> EvaluateGrace(DateTime nowUtc)
+        public List<string> EvaluateGrace(DateTime nowUtc, Func<string, int> termDaysBySku)
         {
             var revoked = new List<string>();
 
@@ -137,12 +142,15 @@ namespace AMZNGoDSDK.Runtime
                 return revoked;
             if (_reconciledAtUtc == DateTime.MinValue)
                 return revoked;   // E без отметки не бывает: миграция и живая выдача пишут якорь вместе с ним
-            if ((nowUtc - _reconciledAtUtc).TotalDays <= GraceDays)
-                return revoked;
+
+            double daysWithoutReconcile = (nowUtc - _reconciledAtUtc).TotalDays;
+            if (daysWithoutReconcile <= GraceDays)
+                return revoked;   // быстрый путь: порог любого SKU не меньше базы
 
             List<string> expired = null;
             foreach (var kvp in _stored)
-                if (kvp.Value == 'E')
+                if (kvp.Value == 'E'
+                    && daysWithoutReconcile > GraceDays + Math.Max(0, termDaysBySku?.Invoke(kvp.Key) ?? 0))
                     (expired ??= new List<string>()).Add(kvp.Key);
 
             if (expired == null)

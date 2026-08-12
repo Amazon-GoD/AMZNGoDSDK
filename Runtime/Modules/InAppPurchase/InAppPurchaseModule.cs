@@ -104,8 +104,8 @@ namespace AMZNGoDSDK.Runtime
             _journal.Load();
             _entitlements.Load();
 
-            // Грейс на старте: сохранённые права старше 7 суток без сверки — доступ снят.
-            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow))
+            // Грейс на старте: без сверки дольше 7 суток + срок периода подписки — доступ снят.
+            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
             {
                 _analytics.EntitlementRevoked(sku);
                 RaiseRevoked(sku);
@@ -356,7 +356,7 @@ namespace AMZNGoDSDK.Runtime
                 LiveReceiptOutcome outcome;
                 try
                 {
-                    outcome = ProcessLiveReceipt(receipt);
+                    outcome = ProcessLiveReceipt(receipt, newPurchase: !alreadyOwned);
                     _journal.SaveIfDirty();
                 }
                 catch (Exception e)
@@ -432,8 +432,10 @@ namespace AMZNGoDSDK.Runtime
         /// Чек живой покупки. Только добавление: свежий SUCCESSFUL-чек может дать право или
         /// товар, но никогда ничего не снимает — снятие исключительно снапшотом сверки.
         /// Матчинг к настройкам — с нормализацией term SKU (раздел H ТЗ).
+        /// newPurchase = статус SUCCESSFUL (не ALREADY_PURCHASED): только такой чек — новая
+        /// транзакция, которой положен якорь журнала периодов.
         /// </summary>
-        private LiveReceiptOutcome ProcessLiveReceipt(PurchaseReceipt receipt)
+        private LiveReceiptOutcome ProcessLiveReceipt(PurchaseReceipt receipt, bool newPurchase)
         {
             if (string.IsNullOrEmpty(receipt.ReceiptId) || string.IsNullOrEmpty(receipt.Sku))
                 return LiveReceiptOutcome.NotProcessed;
@@ -464,6 +466,17 @@ namespace AMZNGoDSDK.Runtime
                 case IapProductKind.Subscription:
                     _entitlements.ApplyLivePurchaseGrant(receipt.Sku);
                     RaiseGranted(receipt.Sku);
+
+                    // Якорь журнала для СВЕЖЕЙ покупки: без него FirePeriods, вышедший по
+                    // отсутствию доверенного времени, оставил бы чек неизвестным журналу — и
+                    // первое время спустя N периодов выдало бы только текущий (правило
+                    // засева), молча съев промежуточные. -1 = «чек знаем, не выдано ни
+                    // одного» → позже выдастся диапазон с нуля. Восстановленным чекам якорь
+                    // НЕ ставится: переустановка + недоступный бэкенд получили бы всю
+                    // историю подписки (фарм, от которого правило засева и защищает).
+                    if (newPurchase && !_journal.TryGetLastFiredPeriod(receipt.ReceiptId, out _))
+                        _journal.SetLastFiredPeriod(receipt.ReceiptId, -1);
+
                     FirePeriods(receipt, product);   // журнал пишут ОБЕ ветки через один хелпер (IAP-14)
                     break;
 
@@ -809,7 +822,9 @@ namespace AMZNGoDSDK.Runtime
             }
 
             // Без доверенного времени не выдаём ничего — ждём сети (часы устройства игрок
-            // может перевести). Ничего не теряется: OnTrustedTimeAvailable доначислит.
+            // может перевести). Живая покупка к этому моменту уже поставила якорь журнала,
+            // поэтому OnTrustedTimeAvailable доначислит с нуля; восстановленные чеки без
+            // записи в журнале сознательно идут по правилу засева (только текущий период).
             var now = SdkTrustedTime.UtcNow;
             if (now == null)
                 return;
@@ -889,7 +904,7 @@ namespace AMZNGoDSDK.Runtime
                 _pendingPurchaseRequestId = null;
             }
 
-            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow))
+            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
             {
                 _analytics.EntitlementRevoked(sku);
                 RaiseRevoked(sku);
@@ -916,6 +931,11 @@ namespace AMZNGoDSDK.Runtime
         #endregion
 
         #region State API
+
+        /// <summary>Порог грейса складывается из базы и срока периода подписки: у разовых
+        /// покупок и SKU вне конфига добавка нулевая (см. IapEntitlementStore.EvaluateGrace).</summary>
+        private int TermDaysFor(string sku) =>
+            _catalog.TryResolve(sku, out var product) ? product.TermDays : 0;
 
         public IapEntitlementState GetEntitlementState(string productId) =>
             _entitlements.GetState(productId);
