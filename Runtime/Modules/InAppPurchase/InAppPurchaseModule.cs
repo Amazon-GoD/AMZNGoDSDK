@@ -300,8 +300,15 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning($"[AMZNGoDSDK] Purchase response for a stale request {response.RequestId} " +
                                  $"(current: {_pendingPurchaseRequestId}) — processing receipt without touching the current purchase");
-                pendingSku = null;              // атрибуция только по чеку, не по текущей покупке
-                terminalAlreadySent = true;     // терминал воронки текущей покупки не расходуем
+                pendingSku = null;   // атрибуция только по чеку, не по текущей покупке
+
+                // Терминал воронки ЧУЖОЙ покупки шлём: её started уже отправлен, и закрыть
+                // его, кроме как отсюда, нечем — глушение ломало бы started ≈ success +
+                // failed ровно на мультитапах. SKU берётся из чека — отдельный ключ воронки,
+                // с текущей покупкой не конфликтует. Ответ без чека (типичный FAILED) закрыть
+                // нечем: SKU неизвестен, терминал под "unknown" загрязнил бы воронку —
+                // подавляем. Состояние ТЕКУЩЕЙ покупки не трогаем в любом случае.
+                terminalAlreadySent = string.IsNullOrEmpty(response.PurchaseReceipt?.Sku);
             }
             else
             {
