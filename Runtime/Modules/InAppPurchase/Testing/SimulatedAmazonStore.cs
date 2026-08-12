@@ -26,6 +26,7 @@ namespace AMZNGoDSDK.Runtime
     {
         public const string SubscriptionType = "SUBSCRIPTION";
         public const string ConsumableType = "CONSUMABLE";
+        public const string EntitledType = "ENTITLED";   // разовая покупка (non-consumable)
 
         private const string ReceiptsKey = "AMZN_SimulatedReceipts";
         private const char ReceiptSeparator = '\n';
