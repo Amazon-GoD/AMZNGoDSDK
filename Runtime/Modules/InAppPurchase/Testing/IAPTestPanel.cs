@@ -34,6 +34,9 @@ namespace AMZNGoDSDK.Runtime
         [Tooltip("SKU расходуемого продукта. Настраивается там же, в списке Consumable Products.")]
         [SerializeField] private string _consumableSku;
 
+        [Tooltip("SKU разовой покупки (анлок/убрать рекламу). Список Non-Consumable Products.")]
+        [SerializeField] private string _nonConsumableSku;
+
         [Header("Демо-начисления (роль игры)")]
         [Tooltip("Сколько монет панель начисляет за покупку расходуемого товара.")]
         [SerializeField] private int _coinsPerConsumable = 500;
@@ -183,6 +186,15 @@ namespace AMZNGoDSDK.Runtime
                 "consumable");
         }
 
+        public void BuyNonConsumable()
+        {
+            var product = ResolveNonConsumable();
+            Buy(product?.ProductId ?? Trimmed(_nonConsumableSku),
+                product is { Enabled: true },
+                SimulatedAmazonStore.EntitledType,
+                "non-consumable");
+        }
+
         private void Buy(string sku, bool buyable, string productType, string kind)
         {
             var module = Module;
@@ -213,10 +225,11 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            // Активная подписка принадлежит аккаунту — реальный стор ответил бы
-            // ALREADY_PURCHASED, иначе повторный клик стакал бы периоды.
-            bool alreadyActive = productType == SimulatedAmazonStore.SubscriptionType
-                                 && module.IsSubscribed(sku);
+            // Долгоживущее право, уже принадлежащее аккаунту (активная подписка или
+            // купленный анлок), — реальный стор ответил бы ALREADY_PURCHASED, иначе
+            // повторный клик стакал бы периоды/выдавал право «заново».
+            bool alreadyActive = productType != SimulatedAmazonStore.ConsumableType
+                                 && module.HasReceipt(sku);
 
             string status = SimulatedAmazonStore.SimulatePurchase(sku, productType, alreadyActive);
             Log($"   (симуляция) стор: {status}");
@@ -350,6 +363,13 @@ namespace AMZNGoDSDK.Runtime
                 yield return new SimulatedAmazonStore.SimulatedProduct(
                     consumable.ProductId, SimulatedAmazonStore.ConsumableType, consumable.DisplayName);
             }
+
+            var nonConsumable = ResolveNonConsumable();
+            if (nonConsumable != null)
+            {
+                yield return new SimulatedAmazonStore.SimulatedProduct(
+                    nonConsumable.ProductId, SimulatedAmazonStore.EntitledType, nonConsumable.DisplayName);
+            }
         }
 
         // --- Роль игры: начисления по событиям SDK ---
@@ -416,6 +436,18 @@ namespace AMZNGoDSDK.Runtime
                 : products.FirstOrDefault(p => p.Enabled && !string.IsNullOrWhiteSpace(p.ProductId));
         }
 
+        private NonConsumableProduct ResolveNonConsumable()
+        {
+            var products = _settings?.NonConsumableProducts;
+            if (products == null)
+                return null;
+
+            string sku = Trimmed(_nonConsumableSku);
+            return sku != null
+                ? products.FirstOrDefault(p => p.ProductId == sku)
+                : products.FirstOrDefault(p => p.Enabled && !string.IsNullOrWhiteSpace(p.ProductId));
+        }
+
         private static string Trimmed(string value) =>
             string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -471,6 +503,18 @@ namespace AMZNGoDSDK.Runtime
             {
                 string sku = consumable.ProductId;
                 lines.Add($"Расходуемый: {sku}   покупался={module.HasEverPurchased(sku)}   {ProductText(module, sku)}");
+            }
+
+            var nonConsumable = ResolveNonConsumable();
+            if (nonConsumable == null)
+            {
+                lines.Add("Разовая покупка: не настроена (AMZN GoD → SDK Settings → In-App Purchase)");
+            }
+            else
+            {
+                string sku = nonConsumable.ProductId;
+                lines.Add($"Разовая покупка: {sku}   state={module.GetEntitlementState(sku)}   " +
+                          $"HasReceipt={module.HasReceipt(sku)}   {ProductText(module, sku)}");
             }
 
             _statusText.text = string.Join("\n", lines);
@@ -567,6 +611,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 ("BUY SUBSCRIPTION", BuyColor, BuySubscription),
                 ("BUY CONSUMABLE", BuyColor, BuyConsumable),
+                ("BUY NON-CONSUMABLE", BuyColor, BuyNonConsumable),
                 ("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState),
             };
 
