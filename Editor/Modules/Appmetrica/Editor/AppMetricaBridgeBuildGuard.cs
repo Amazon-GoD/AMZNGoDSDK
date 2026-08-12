@@ -20,6 +20,9 @@ namespace AMZNGoDSDK.Editor
     /// classes are absent from the APK and the app crashes at runtime with ClassNotFoundException
     /// on the first AppMetrica call. This guard converts that runtime crash into a clear build
     /// error so it is caught before shipping.
+    ///
+    /// Sources that are present but merely not enabled for Android (a .meta regenerated with
+    /// wrong platform flags after repackaging) are re-enabled automatically instead of failing.
     /// </summary>
     internal sealed class AppMetricaBridgeBuildGuard : IPreprocessBuildWithReport
     {
@@ -48,14 +51,15 @@ namespace AMZNGoDSDK.Editor
                 return;
 
             throw new BuildFailedException(
-                "[AMZNGoDSDK] AppMetrica Android bridge is missing or not enabled for Android: " +
+                "[AMZNGoDSDK] AppMetrica Android bridge sources are missing from the project: " +
                 string.Join(", ", missing) + ".\n" +
                 "These io.appmetrica.analytics.plugin.unity.* sources compile the Java bridge that " +
                 "the C# proxies call. Without them the app throws ClassNotFoundException at runtime " +
                 "on the first AppMetrica call.\n" +
-                "Fix: make sure the AppMetrica module's Runtime/Plugins/Android/*.java are included " +
-                "in the project and enabled for Android (select a .java → Inspector → Platform: Android). " +
-                "If your packaging step strips loose .java, restore them before building."
+                "Fix: restore the AppMetrica module's Runtime/Plugins/Android/*.java exactly as they " +
+                "ship in the SDK package (they must stay under a Plugins/Android folder). If your " +
+                "packaging step strips loose .java, restore them before building. Files that are " +
+                "present but not enabled for Android are re-enabled automatically by this guard."
             );
         }
 
@@ -101,9 +105,20 @@ namespace AMZNGoDSDK.Editor
                     continue;
 
                 string assetPath = "Assets" + path.Substring(dataPath.Length);
-                if (AssetImporter.GetAtPath(assetPath) is PluginImporter importer &&
-                    importer.GetCompatibleWithPlatform(BuildTarget.Android))
+                if (AssetImporter.GetAtPath(assetPath) is PluginImporter importer)
                 {
+                    // Самолечение: файл на месте, но платформа Android выключена — типично
+                    // после переупаковки SDK, когда .meta пересоздались с чужими настройками.
+                    // Ронять сборку ради галочки, которую можем поставить сами, незачем.
+                    if (!importer.GetCompatibleWithPlatform(BuildTarget.Android))
+                    {
+                        importer.SetCompatibleWithPlatform(BuildTarget.Android, true);
+                        importer.SaveAndReimport();
+                        Debug.LogWarning(
+                            $"[AMZNGoDSDK] AppMetrica bridge source {assetPath} was not enabled for " +
+                            "Android — enabled automatically before the build.");
+                    }
+
                     found.Add(fileName);
                 }
             }
