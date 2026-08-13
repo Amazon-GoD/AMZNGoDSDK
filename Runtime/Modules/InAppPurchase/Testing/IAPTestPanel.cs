@@ -87,6 +87,12 @@ namespace AMZNGoDSDK.Runtime
         private InAppPurchaseModule _module;
         private bool _listenersAttached;
 
+        // true только на время Add*Listener: SDK синхронно доигрывает новому подписчику
+        // текущее состояние (IAP-11), и эти события — «сохранённое с прошлой сессии»,
+        // а не свежая выдача. Помечаем их в логе отдельно, чтобы старт читался как
+        // «восстановлено» → «подтверждено сверкой», а не как двойная выдача.
+        private bool _attachingListeners;
+
         // Конфиг SDK, прочитанный тем же DataLoader, что и ядром: список продуктов модуль
         // наружу не отдаёт.
         private InAppPurchaseSettingData _settings;
@@ -393,11 +399,13 @@ namespace AMZNGoDSDK.Runtime
             }
 
             // Add/Remove, а не Set: панель не должна затирать колбэки игрового кода.
+            _attachingListeners = true;
             module.AddPurchaseCompleteCallback(OnPurchaseComplete);
             module.AddPurchaseFailedCallback(OnPurchaseFailed);
             module.AddEntitlementGrantedListener(OnEntitlementGranted);
             module.AddEntitlementRevokedListener(OnEntitlementRevoked);
             module.AddPeriodStartedListener(OnPeriodStarted);
+            _attachingListeners = false;
             _listenersAttached = true;
 
             Log("Модуль IAP подключён, слушаем события");
@@ -484,7 +492,15 @@ namespace AMZNGoDSDK.Runtime
         {
             // Сигнал состояния, приходит при каждом запуске и каждой сверке — обработчик
             // обязан быть идемпотентным и НЕ начислять валюту (см. README). Панель только
-            // логирует, отличая первую выдачу в сессии от переподтверждения снапшотом.
+            // логирует, различая три случая: доигрывание сохранённого состояния при
+            // подключении, первая выдача в сессии, переподтверждение снапшотом сверки.
+            if (_attachingListeners)
+            {
+                _grantedLogged.Add(entitlement.ProductId);
+                Log($"● Права из сохранённого состояния: {entitlement.ProductId} (прошлая сессия, подтвердит сверка)");
+                return;
+            }
+
             Log(_grantedLogged.Add(entitlement.ProductId)
                 ? $"● Права выданы: {entitlement.ProductId} ({entitlement.State})"
                 : $"● Права подтверждены сверкой: {entitlement.ProductId}");
@@ -494,7 +510,12 @@ namespace AMZNGoDSDK.Runtime
         {
             // Сброс пометки: если право вернётся после реального отзыва, это снова «выданы».
             _grantedLogged.Remove(entitlement.ProductId);
-            Log($"○ Права сняты: {entitlement.ProductId}");
+
+            // Доигрывание при подключении — «когда-то покупал, права нет» (истёкшая с
+            // прошлой сессии подписка), а не свежее снятие.
+            Log(_attachingListeners
+                ? $"○ Нет прав (сохранённое состояние): {entitlement.ProductId}"
+                : $"○ Права сняты: {entitlement.ProductId}");
         }
 
         private void OnPeriodStarted(IapPeriodStarted period)
