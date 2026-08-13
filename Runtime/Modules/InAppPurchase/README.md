@@ -113,6 +113,9 @@ sdk.SetIAPPurchaseFailedCallback(productId => ShowPurchaseFailed(productId));
 - `iap_purchase_restored` — восстановленные расходуемые (вне воронки, у них нет started).
 - `iap_catalog_failed` — отказы каталога (`catalog_request_failed` / `catalog_response_failed`
   / `sku_unavailable` / `init_error`), дедуп в пределах сессии.
+- `iap_subscription_renewed` — новый оплаченный период подписки (только продления, не сама
+  покупка). Номер периода бакетом: `1` / `2-4` / `5-12` / `13+` — отвечает на «сколько живёт
+  подписка», дерево не растёт со временем.
 - `iap_access_revoked` (`{"sku":{"reason":""}}`) — снятие доступа, с причиной: `expired` —
   чек подписки с датой отмены; `refunded` — чек разовой покупки с датой отмены;
   `grace_expired` — сверка не проходит дольше грейса; `receipt_gone` — чек исчез из истории
