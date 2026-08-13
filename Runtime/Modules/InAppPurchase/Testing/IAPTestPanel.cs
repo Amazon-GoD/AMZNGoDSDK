@@ -252,6 +252,7 @@ namespace AMZNGoDSDK.Runtime
             PlayerPrefs.DeleteKey(IapPrefsKeys.EntitlementReconciledAt);
             PlayerPrefs.DeleteKey(IapPrefsKeys.PeriodJournal);
             PlayerPrefs.DeleteKey(IapPrefsKeys.EverPurchasedSkus);
+            PlayerPrefs.DeleteKey(IapPrefsKeys.LiveGrantProtection);
             PlayerPrefs.DeleteKey(IapPrefsKeys.LegacyFulfilledReceipts);
             PlayerPrefs.DeleteKey("AMZN_TrustedTimeUtc");   // приватный ключ SdkTrustedTime
             PlayerPrefs.DeleteKey(PanelMoneyKey);

@@ -21,6 +21,7 @@ namespace AMZNGoDSDK.Runtime
         public const string EntitlementReconciledAt = "AMZN_EntitlementReconciledAt";
         public const string PeriodJournal = "AMZN_PeriodJournal";
         public const string EverPurchasedSkus = "AMZN_EverPurchasedSkus";
+        public const string LiveGrantProtection = "AMZN_LiveGrantProtection";
 
         public const string LegacyFulfilledReceipts = "AMZN_FulfilledReceipts";
         public const string LegacySubscriptionExpiresPrefix = "SubscriptionExpires_";
