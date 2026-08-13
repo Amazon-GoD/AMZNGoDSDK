@@ -99,12 +99,20 @@ sdk.SetIAPPurchaseFailedCallback(productId => ShowPurchaseFailed(productId));
 
 ### 6. Аналитика (AppMetrica)
 
-- Воронка: `iap_purchase_started` → `iap_purchase_success` (`new` / `already_owned`) /
-  `iap_purchase_failed` (`{"sku":{"reason":{"online|offline":""}}}`). Отдельные reason'ы:
-  `pending` — ожидание одобрения родителем (Amazon Kids, не отказ);
+- Воронка — два чистых инварианта: `requested = started + blocked` и
+  `started = success + failed`. `iap_purchase_requested` — каждое нажатие «купить»;
+  `iap_purchase_blocked` (`{"sku":{"reason":""}}`) — мы отказали сами, вызов в Amazon не
+  ушёл (`purchase_in_progress` / `not_initialized` / `product_not_registered` / `exception`);
+  `iap_purchase_started` — вызов реально ушёл в Amazon; дальше `iap_purchase_success`
+  (`new` / `already_owned`) / `iap_purchase_failed`
+  (`{"sku":{"reason":{"online|offline":""}}}` — только то, где стор ответил). Отдельные
+  reason'ы failed: `pending` — ожидание одобрения родителем (Amazon Kids, не отказ);
   `receipt_not_processed` — стор ответил SUCCESSFUL, но чек не удалось обработать
   (SKU не настроен / тип разошёлся) — игра получает failed, чек догонит сверка после
   исправления настроек.
+- ⚠️ **При выкате расщеплённой воронки**: смысл `started` изменился (раньше он считал каждое
+  нажатие), а `failed` падает почти до нуля — это переезд цифр, а не «починили покупки».
+  Отметьте дату перехода в дашборде и не сравнивайте старые и новые данные в одном графике.
 - `already_owned` включает и повторное нажатие «купить», на которое Amazon ответил
   `ALREADY_PURCHASED` без чека: в воронке это не отказ, но игра получает failed-колбэк —
   ничего нового не выдано, право подтвердит сверка.
