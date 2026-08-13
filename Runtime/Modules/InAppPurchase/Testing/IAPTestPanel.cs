@@ -44,6 +44,9 @@ namespace AMZNGoDSDK.Runtime
         [Tooltip("Сколько монет панель начисляет за каждый оплаченный период подписки.")]
         [SerializeField] private int _coinsPerPeriod = 100;
 
+        [Tooltip("Сколько монет панель начисляет за разовую покупку (non-consumable). Один раз на устройство.")]
+        [SerializeField] private int _coinsPerNonConsumable = 100;
+
         [Header("UI")]
         [Tooltip("Порядок сортировки Canvas. Должен быть выше игрового UI.")]
         [SerializeField] private int _sortingOrder = 500;
@@ -62,6 +65,11 @@ namespace AMZNGoDSDK.Runtime
 
         // Счётчик полученных периодов подписки — наглядность «каждое продление выдаёт фичи».
         private const string PanelPeriodsKey = "IAPTestPanel_Periods";
+
+        // SKU разовых покупок, за которые награда уже выдана. OnPurchaseComplete у
+        // non-consumable может прийти повторно (ALREADY_PURCHASED с чеком на повторный
+        // клик) — без пометки повторные клики стакали бы монеты.
+        private const string PanelNonConsGrantedKey = "IAPTestPanel_NonConsGranted";
 
         // Множитель межстрочного интервала uGUI Text: на нём считается высота панели лога.
         private const float LogLineHeightFactor = 1.2f;
@@ -352,6 +360,7 @@ namespace AMZNGoDSDK.Runtime
             PlayerPrefs.DeleteKey("AMZN_TrustedTimeUtc");   // приватный ключ SdkTrustedTime
             PlayerPrefs.DeleteKey(PanelMoneyKey);
             PlayerPrefs.DeleteKey(PanelPeriodsKey);
+            PlayerPrefs.DeleteKey(PanelNonConsGrantedKey);
             PlayerPrefs.Save();
 
             SimulatedAmazonStore.ClearReceipts();
@@ -483,6 +492,26 @@ namespace AMZNGoDSDK.Runtime
             {
                 AddMoney(_coinsPerConsumable);
                 Log($"   [игра] +{_coinsPerConsumable} монет за расходуемый");
+                return;
+            }
+
+            // Разовая покупка: демо-награда один раз на устройство (персистентная пометка,
+            // сбрасывается WIPE SDK STATE) — сам колбэк повторяем. Право «игрок владеет»
+            // при этом живёт в entitlement-событиях, а не в этой награде.
+            var nonConsumable = ResolveNonConsumable();
+            if (nonConsumable != null && nonConsumable.ProductId == productId)
+            {
+                var granted = PlayerPrefs.GetString(PanelNonConsGrantedKey, "");
+                if (granted.Split('\n').Contains(productId))
+                {
+                    Log("   [игра] награда за разовую покупку уже выдавалась — повторно не начисляется");
+                    return;
+                }
+
+                PlayerPrefs.SetString(PanelNonConsGrantedKey,
+                    string.IsNullOrEmpty(granted) ? productId : granted + "\n" + productId);
+                AddMoney(_coinsPerNonConsumable);
+                Log($"   [игра] +{_coinsPerNonConsumable} монет за разовую покупку");
             }
         }
 
