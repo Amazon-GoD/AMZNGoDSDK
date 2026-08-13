@@ -865,6 +865,13 @@ namespace AMZNGoDSDK.Runtime
                     IapSubscriptionPeriods.PeriodStartUtc(receipt.PurchaseDate, product.TermDays, index));
 
                 Debug.Log($"[AMZNGoDSDK] Paid period started: {receipt.Sku} #{index}");
+
+                // IAP-30: продление — в аналитику (журнал выше гарантирует «ровно один раз
+                // на период», перезапуски не дублируют). Нулевой период — сама покупка, у
+                // неё уже есть iap_purchase_success.
+                if (index >= 1)
+                    _analytics.SubscriptionRenewed(receipt.Sku, index);
+
                 RaisePeriodStarted(period);
             }
         }

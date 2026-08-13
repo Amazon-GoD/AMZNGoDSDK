@@ -64,6 +64,17 @@ namespace AMZNGoDSDK.Runtime
         public void AccessRevoked(string sku, string reason) =>
             SafeReport("iap_access_revoked", $"{{\"{J(sku)}\":{{\"{J(reason)}\":\"\"}}}}");
 
+        /// <summary>Начало нового оплаченного периода подписки (IAP-30) — рядом с событием
+        /// для игры. Номер периода БАКЕТОМ: сырой индекс за год недельной подписки дал бы
+        /// полсотни значений и нечитаемое дерево; бакеты отвечают на «сколько живёт
+        /// подписка» и не растут со временем. Шлётся только для продлений (период ≥ 1):
+        /// нулевой период — это сама покупка, у неё уже есть iap_purchase_success.</summary>
+        public void SubscriptionRenewed(string sku, int periodIndex) =>
+            SafeReport("iap_subscription_renewed", $"{{\"{J(sku)}\":{{\"{PeriodBucket(periodIndex)}\":\"\"}}}}");
+
+        private static string PeriodBucket(int index) =>
+            index <= 1 ? "1" : index <= 4 ? "2-4" : index <= 12 ? "5-12" : "13+";
+
         /// <summary>
         /// Отказы каталога (IAP-18): синхронный отказ запроса (catalog_request_failed) и отказ
         /// асинхронного ответа (catalog_response_failed, статус Amazon вторым уровнем) — разные
