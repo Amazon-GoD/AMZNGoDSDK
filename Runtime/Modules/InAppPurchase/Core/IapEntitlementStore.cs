@@ -7,6 +7,14 @@ using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
+    /// <summary>Чем снапшот мотивировал снятие права — источник причины события
+    /// iap_access_revoked (IAP-31): по чеку с датой отмены или по исчезновению чека.</summary>
+    internal enum IapSnapshotRevokeCause
+    {
+        ReceiptCancelled,
+        ReceiptGone,
+    }
+
     /// <summary>
     /// Трёхзначное состояние прав (ТЗ IAP-02) и его персист. Инвариант «legacy-bool никогда
     /// не отвечает false из-за НЕЗНАНИЯ» живёт целиком здесь.
@@ -155,9 +163,11 @@ namespace AMZNGoDSDK.Runtime
         /// GraceDays + срок периода подписки этого SKU (termDaysBySku; 0 — разовые покупки
         /// и неизвестные SKU). Срок прибавляется к базе, а не заменяет её: при пороге ровно
         /// в TermDays недельная подписка снималась бы у игрока, ушедшего в офлайн на один
-        /// оплаченный период, хотя он продолжает платить. Вызывается на старте и на
-        /// форграунде, не по таймеру. Возвращает SKU, потерявшие доступ, — по одному
-        /// событию Revoked на каждый ('E' → 'G' и есть защёлка).
+        /// оплаченный период, хотя он продолжает платить. Вызывается на форграунде и при
+        /// исчерпании ретраев сверки (IAP-32: грейс означает «пытались проверить и не
+        /// смогли», а не «прошло время» — на старте до сверки НЕ вызывается). Возвращает
+        /// SKU, потерявшие доступ, — по одному событию Revoked на каждый ('E' → 'G' и есть
+        /// защёлка).
         /// </summary>
         public List<string> EvaluateGrace(DateTime nowUtc, Func<string, int> termDaysBySku)
         {
@@ -198,8 +208,9 @@ namespace AMZNGoDSDK.Runtime
             /// <summary>Все действующие права после сверки — событие состояния, приходит каждый запуск.</summary>
             public readonly List<string> Entitled = new();
 
-            /// <summary>Права, ПОТЕРЯННЫЕ этой сверкой (переход имевшегося доступа в отсутствие).</summary>
-            public readonly List<string> Revoked = new();
+            /// <summary>Права, ПОТЕРЯННЫЕ этой сверкой (переход имевшегося доступа в
+            /// отсутствие), с мотивом снапшота — причиной события iap_access_revoked (IAP-31).</summary>
+            public readonly List<(string Sku, IapSnapshotRevokeCause Cause)> Revoked = new();
         }
 
         /// <summary>
@@ -212,8 +223,8 @@ namespace AMZNGoDSDK.Runtime
         {
             var diff = new SnapshotDiff();
 
-            // SKU, чей чек присутствует в полном ответе В ЛЮБОМ виде (включая отменённый) —
-            // для снятия отметок IAP-26.
+            // SKU, чей чек присутствует в полном ответе В ЛЮБОМ виде (включая отменённый):
+            // для снятия отметок IAP-26 и различения причин отзыва IAP-31.
             var seenSkus = new HashSet<string>();
             foreach (var receipt in result.Receipts)
                 seenSkus.Add(receipt.Sku);
@@ -239,7 +250,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             foreach (var sku in configuredLongLived)
-                ApplySnapshotSku(sku, result.ActiveSkus.Contains(sku), diff);
+                ApplySnapshotSku(sku, result.ActiveSkus.Contains(sku), seenSkus, diff);
 
             // Сохранённые права по SKU, которых в конфиге уже нет (продукт удалили, а не
             // выключили): без переоценки такое 'E' жило бы вечно, включая после рефанда.
@@ -252,7 +263,7 @@ namespace AMZNGoDSDK.Runtime
 
             if (unconfigured != null)
                 foreach (var sku in unconfigured)
-                    ApplySnapshotSku(sku, result.ActiveAnySkus.Contains(sku), diff);
+                    ApplySnapshotSku(sku, result.ActiveAnySkus.Contains(sku), seenSkus, diff);
 
             _reconciledAtUtc = nowUtc;
             _reconciledThisSession = true;
@@ -261,7 +272,7 @@ namespace AMZNGoDSDK.Runtime
             return diff;
         }
 
-        private void ApplySnapshotSku(string sku, bool active, SnapshotDiff diff)
+        private void ApplySnapshotSku(string sku, bool active, HashSet<string> seenSkus, SnapshotDiff diff)
         {
             bool hadAccess = GetEffectiveAccess(sku);
 
@@ -281,7 +292,9 @@ namespace AMZNGoDSDK.Runtime
             if (active)
                 diff.Entitled.Add(sku);
             else if (hadAccess)
-                diff.Revoked.Add(sku);
+                diff.Revoked.Add((sku, seenSkus.Contains(sku)
+                    ? IapSnapshotRevokeCause.ReceiptCancelled
+                    : IapSnapshotRevokeCause.ReceiptGone));
         }
 
         /// <summary>
