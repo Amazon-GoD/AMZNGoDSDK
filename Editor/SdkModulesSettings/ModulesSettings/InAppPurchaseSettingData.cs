@@ -27,6 +27,10 @@ namespace AMZNGoDSDK.Editor
         /// <summary>Срок оплаченного периода в днях. 0 = «не задано» — Save Settings и билд остановятся (IAP-15).</summary>
         public int TermDays = 0;
 
+        /// <summary>ТЕСТОВЫЙ срок в минутах: при > 0 заменяет TermDays в расчёте периодов.
+        /// Для проверки продлений реальным временем; в прод-конфиге обязан быть 0.</summary>
+        public int TestTermMinutes = 0;
+
         public bool Enabled = true;
     }
 

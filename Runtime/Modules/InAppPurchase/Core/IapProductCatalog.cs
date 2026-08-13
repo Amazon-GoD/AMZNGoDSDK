@@ -17,7 +17,13 @@ namespace AMZNGoDSDK.Runtime
         public string ProductId;
         public IapProductKind Kind;
         public bool Enabled;
-        public int TermDays;   // только для подписок; 0 = не задан (IAP-15)
+        public int TermDays;          // только для подписок; 0 = не задан (IAP-15)
+        public int TestTermMinutes;   // ТЕСТ: > 0 заменяет TermDays в расчёте периодов
+
+        /// <summary>Срок периода в днях для калькулятора: тестовый срок в минутах (если
+        /// задан) выражается дробными днями — математика периодов и так на double.</summary>
+        public double EffectiveTermDays =>
+            TestTermMinutes > 0 ? TestTermMinutes / 1440.0 : TermDays;
     }
 
     /// <summary>
@@ -53,20 +59,20 @@ namespace AMZNGoDSDK.Runtime
             if (settings.SubscriptionProducts != null)
                 foreach (var p in settings.SubscriptionProducts)
                     if (p != null)
-                        Register(p.ProductId, IapProductKind.Subscription, p.Enabled, p.TermDays);
+                        Register(p.ProductId, IapProductKind.Subscription, p.Enabled, p.TermDays, p.TestTermMinutes);
 
             if (settings.ConsumableProducts != null)
                 foreach (var p in settings.ConsumableProducts)
                     if (p != null)
-                        Register(p.ProductId, IapProductKind.Consumable, p.Enabled, 0);
+                        Register(p.ProductId, IapProductKind.Consumable, p.Enabled, 0, 0);
 
             if (settings.NonConsumableProducts != null)
                 foreach (var p in settings.NonConsumableProducts)
                     if (p != null)
-                        Register(p.ProductId, IapProductKind.NonConsumable, p.Enabled, 0);
+                        Register(p.ProductId, IapProductKind.NonConsumable, p.Enabled, 0, 0);
         }
 
-        private void Register(string sku, IapProductKind kind, bool enabled, int termDays)
+        private void Register(string sku, IapProductKind kind, bool enabled, int termDays, int testTermMinutes)
         {
             if (string.IsNullOrWhiteSpace(sku))
                 return;
@@ -80,12 +86,19 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            // Громко и при каждом Configure: тестовый срок в прод-конфиге означает периоды
+            // каждые несколько минут у реальных игроков.
+            if (testTermMinutes > 0)
+                Debug.LogWarning($"[AMZNGoDSDK] TEST term active for '{sku}': {testTermMinutes} min instead of " +
+                                 $"{termDays} d. Must be 0 in a production config (SDK Settings → Term minutes (TEST)).");
+
             _bySku[sku] = new IapConfiguredProduct
             {
                 ProductId = sku,
                 Kind = kind,
                 Enabled = enabled,
                 TermDays = termDays,
+                TestTermMinutes = testTermMinutes,
             };
 
             if (kind != IapProductKind.Consumable)
