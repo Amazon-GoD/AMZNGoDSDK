@@ -12,11 +12,15 @@ namespace AMZNGoDSDK.Runtime
     /// AndroidJavaClass в AppMetrica ронял покупку целиком. Образец —
     /// CrossPromoAnalytics.SafeReportAppMetrica.
     ///
-    /// Воронка started/success/failed: дерево вложенных параметров, SKU всегда уровень 1.
-    /// started = {"sku":""}; success = {"sku":{"new"|"already_owned":""}} (IAP-16: повторная
-    /// покупка того, чем владеешь, отделима от продажи); failed =
-    /// {"sku":{"reason":{"online|offline":""}}}. Восстановления — отдельным событием вне
-    /// воронки (IAP-17): у них нет started.
+    /// Воронка (IAP-29, два чистых инварианта: requested = started + blocked,
+    /// started = success + failed): дерево вложенных параметров, SKU всегда уровень 1.
+    /// requested = {"sku":""} — каждое нажатие; blocked = {"sku":{"reason":""}} — отказали
+    /// сами, вызов в Amazon не ушёл (уровень online/offline не нужен — отказы локальные);
+    /// started = {"sku":""} — вызов реально ушёл в Amazon;
+    /// success = {"sku":{"new"|"already_owned":""}} (IAP-16: повторная покупка того, чем
+    /// владеешь, отделима от продажи); failed = {"sku":{"reason":{"online|offline":""}}} —
+    /// только то, где стор ответил. Восстановления — отдельным событием вне воронки
+    /// (IAP-17): у них нет started.
     /// </summary>
     internal sealed class IapAnalytics
     {
@@ -39,6 +43,18 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
+        /// <summary>Каждое нажатие «купить» — первой строкой BuyProduct (IAP-29).</summary>
+        public void PurchaseRequested(string sku) =>
+            SafeReport("iap_purchase_requested", $"{{\"{J(sku)}\":\"\"}}");
+
+        /// <summary>Локальный отказ ДО обращения к Amazon (IAP-29): purchase_in_progress,
+        /// not_initialized, product_not_registered, exception. Без уровня online/offline —
+        /// сеть тут ни при чём.</summary>
+        public void PurchaseBlocked(string sku, string reason) =>
+            SafeReport("iap_purchase_blocked", $"{{\"{J(sku)}\":{{\"{J(reason)}\":\"\"}}}}");
+
+        /// <summary>Вызов реально ушёл в Amazon (IAP-29: шлётся ПОСЛЕ успешного TryPurchase,
+        /// а не на каждое нажатие).</summary>
         public void PurchaseStarted(string sku) =>
             SafeReport("iap_purchase_started", $"{{\"{J(sku)}\":\"\"}}");
 

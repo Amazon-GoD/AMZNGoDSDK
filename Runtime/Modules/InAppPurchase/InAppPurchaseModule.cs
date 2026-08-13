@@ -230,19 +230,22 @@ namespace AMZNGoDSDK.Runtime
         {
             productId ??= "unknown";                     // единая нормализация ключа SKU в воронке
 
-            _analytics.PurchaseStarted(productId);       // ПЕРВОЙ строкой — инвариант started ≈ success + failed
+            _analytics.PurchaseRequested(productId);     // ПЕРВОЙ строкой — каждое нажатие (IAP-29)
 
+            // IAP-29: линия раздела — ушёл вызов в Amazon или нет. Локальные отказы — в
+            // blocked, started шлётся только после успешного TryPurchase: инварианты
+            // requested = started + blocked и started = success + failed.
             if (!_serviceReady)
             {
                 Debug.LogError("[AMZNGoDSDK] Store not initialized. Purchase impossible.");
-                _analytics.PurchaseFailed(productId, "not_initialized");
+                _analytics.PurchaseBlocked(productId, "not_initialized");
                 return;
             }
 
             if (!_catalog.CanBuy(productId))
             {
                 Debug.LogError($"[AMZNGoDSDK] Product not registered or disabled: {productId}");
-                _analytics.PurchaseFailed(productId, "product_not_registered");
+                _analytics.PurchaseBlocked(productId, "product_not_registered");
                 return;
             }
 
@@ -252,7 +255,7 @@ namespace AMZNGoDSDK.Runtime
                 && Time.realtimeSinceStartup - _pendingPurchaseStartedRealtime < PendingPurchaseWindowSeconds)
             {
                 Debug.LogWarning($"[AMZNGoDSDK] Purchase already in progress ({_pendingPurchaseSku}), rejecting {productId}");
-                _analytics.PurchaseFailed(productId, "purchase_in_progress");
+                _analytics.PurchaseBlocked(productId, "purchase_in_progress");
                 return;
             }
 
@@ -263,18 +266,21 @@ namespace AMZNGoDSDK.Runtime
             if (!_gateway.TryPurchase(productId, out var requestId, out var error))
             {
                 // Текст ошибки в событие не кладём: там урлы/id аккаунта — рост
-                // кардинальности параметра и утечка PII.
+                // кардинальности параметра и утечка PII. Вызов в Amazon не ушёл → blocked;
+                // started не отправлен, поэтому защёлка глушит терминал позднего ответа
+                // нативки целиком (терминал без started сломал бы инвариант).
                 Debug.LogError($"[AMZNGoDSDK] Purchase threw for {productId}: {error}");
-                _analytics.PurchaseFailed(productId, "exception");
-                _pendingTerminalReported = true;   // поздний ответ нативки не должен дать второй терминал
+                _analytics.PurchaseBlocked(productId, "exception");
+                _pendingTerminalReported = true;
                 _pendingPurchaseSku = null;
                 _pendingPurchaseRequestId = null;
                 return;
             }
 
             // Ответ приходит асинхронно (UnitySendMessage, не раньше следующего кадра),
-            // поэтому записать RequestId после вызова — безопасно.
+            // поэтому записать RequestId и отправить started после вызова — безопасно.
             _pendingPurchaseRequestId = requestId;
+            _analytics.PurchaseStarted(productId);       // вызов реально ушёл в Amazon (IAP-29)
         }
 
         private void OnPurchaseResponseHandler(PurchaseResponse response)
