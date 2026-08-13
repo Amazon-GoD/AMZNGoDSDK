@@ -719,9 +719,6 @@ namespace AMZNGoDSDK.Runtime
                 ("BUY SUBSCRIPTION", BuyColor, BuySubscription),
                 ("BUY CONSUMABLE", BuyColor, BuyConsumable),
                 ("BUY NON-CONSUMABLE", BuyColor, BuyNonConsumable),
-                ("SIMULATE RENEWAL (+1 период)", SimColor, SimulateRenewal),
-                ("CHECK PERIODS (сверка)", SimColor, CheckPeriods),
-                ("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState),
             };
 
             var container = new GameObject("Buttons", typeof(RectTransform), typeof(VerticalLayoutGroup));
