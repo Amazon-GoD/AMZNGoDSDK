@@ -10,6 +10,8 @@ namespace AMZNGoDSDK.Runtime
     /// (ReceiptId один на всю подписку, purchaseDate — дата ПЕРВОЙ покупки, cancelDate
     /// пуст). Поэтому периоды считаются: якорь — PurchaseDate чека, длина — TermDays из
     /// настроек, «сейчас» — доверенное время (SdkTrustedTime, не часы устройства).
+    /// Срок принимается в днях и может быть дробным: тестовый режим (TestTermMinutes)
+    /// выражает «подписку на 10 минут» как 10/1440 дня — математика и так на double.
     ///
     /// Граница периода N наступает в момент PurchaseDate + N × TermDays; период N считается
     /// оплаченным, если его граница уже наступила и лежит СТРОГО раньше потолков:
@@ -32,7 +34,7 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public static List<int> PeriodsToFire(
             long purchaseDateMs,
-            int termDays,
+            double termDays,
             long cancelDateMs,
             long deferredDateMs,
             DateTime trustedNowUtc,
@@ -63,7 +65,7 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>Номер последнего наступившего оплаченного периода; -1, если ни одна граница не валидна.</summary>
         public static int CurrentPeriodIndex(
             long purchaseDateMs,
-            int termDays,
+            double termDays,
             long cancelDateMs,
             long deferredDateMs,
             DateTime trustedNowUtc)
@@ -78,15 +80,15 @@ namespace AMZNGoDSDK.Runtime
             return index;
         }
 
-        public static DateTime PeriodStartUtc(long purchaseDateMs, int termDays, int index) =>
-            FromUnixMs(purchaseDateMs).AddDays((double)termDays * index);
+        public static DateTime PeriodStartUtc(long purchaseDateMs, double termDays, int index) =>
+            FromUnixMs(purchaseDateMs).AddDays(termDays * index);
 
         /// <summary>
         /// Последний индекс, чья граница наступает СТРОГО раньше потолка. Граница ровно в
         /// момент потолка уже не оплачена: отменённая в точный конец периода подписка не
         /// получает следующий.
         /// </summary>
-        private static int LastIndexBeforeCeiling(DateTime purchaseUtc, int termDays, long ceilingMs)
+        private static int LastIndexBeforeCeiling(DateTime purchaseUtc, double termDays, long ceilingMs)
         {
             if (ceilingMs <= 0)
                 return int.MaxValue;   // потолка нет

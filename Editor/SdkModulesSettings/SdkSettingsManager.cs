@@ -152,6 +152,7 @@ namespace AMZNGoDSDK.Editor
                     // старых конфигах там лежит дефолтная 30, а подписки портфеля недельные.
                     // Нулевой TermDays заставит один раз проставить настоящий срок (IAP-15).
                     TermDays = runtimeProduct.TermDays,
+                    TestTermMinutes = runtimeProduct.TestTermMinutes,
                     Enabled = runtimeProduct.Enabled
                 });
             }
@@ -369,6 +370,7 @@ namespace AMZNGoDSDK.Editor
                     ProductId = editorProduct.ProductId,
                     DisplayName = editorProduct.DisplayName,
                     TermDays = editorProduct.TermDays,
+                    TestTermMinutes = editorProduct.TestTermMinutes,
                     Enabled = editorProduct.Enabled
                 });
             }

@@ -855,9 +855,13 @@ namespace AMZNGoDSDK.Runtime
             if (now == null)
                 return;
 
+            // Эффективный срок: тестовый TestTermMinutes (если задан) выражается дробными
+            // днями — «подписка на 10 минут» для проверки продлений реальным временем.
+            double termDays = product.EffectiveTermDays;
+
             bool hasEntry = _journal.TryGetLastFiredPeriod(receipt.ReceiptId, out int lastFired);
             var toFire = IapSubscriptionPeriods.PeriodsToFire(
-                receipt.PurchaseDate, product.TermDays, receipt.CancelDate, receipt.DeferredDate,
+                receipt.PurchaseDate, termDays, receipt.CancelDate, receipt.DeferredDate,
                 now.Value, hasEntry, lastFired);
 
             foreach (var index in toFire)
@@ -868,7 +872,7 @@ namespace AMZNGoDSDK.Runtime
 
                 var period = new IapPeriodStarted(
                     receipt.Sku, receipt.ReceiptId, index,
-                    IapSubscriptionPeriods.PeriodStartUtc(receipt.PurchaseDate, product.TermDays, index));
+                    IapSubscriptionPeriods.PeriodStartUtc(receipt.PurchaseDate, termDays, index));
 
                 Debug.Log($"[AMZNGoDSDK] Paid period started: {receipt.Sku} #{index}");
 

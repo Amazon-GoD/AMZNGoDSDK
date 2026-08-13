@@ -197,7 +197,7 @@ namespace AMZNGoDSDK.Runtime
         /// непрерывен, повторной выдачи уже выданных периодов не будет. Отменённая подписка
         /// не продлевается — как и у настоящего стора.
         /// </summary>
-        public static bool SimulateRenewal(string sku, int termDays)
+        public static bool SimulateRenewal(string sku, double termDays)
         {
             if (string.IsNullOrWhiteSpace(sku) || termDays <= 0)
                 return false;
@@ -211,7 +211,7 @@ namespace AMZNGoDSDK.Runtime
                     return false;   // подписка отменена — продления не бывает
 
                 receipts[i] = new Receipt(receipts[i].ReceiptId, receipts[i].Sku, receipts[i].ProductType,
-                    receipts[i].PurchaseDate - (long)termDays * MillisPerDay);
+                    receipts[i].PurchaseDate - (long)(termDays * MillisPerDay));
                 SaveReceipts(receipts);
                 return true;
             }

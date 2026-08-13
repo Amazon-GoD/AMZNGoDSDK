@@ -300,6 +300,18 @@ namespace AMZNGoDSDK.Editor
                                     "Без него настройки не сохранятся, а билд не соберётся.",
                                     MessageType.Error);
                             }
+
+                            product.TestTermMinutes = EditorGUILayout.IntField("Term minutes (TEST)", product.TestTermMinutes);
+
+                            if (product.TestTermMinutes > 0)
+                            {
+                                EditorGUILayout.HelpBox(
+                                    $"ТЕСТОВЫЙ режим: период подписки — {product.TestTermMinutes} мин вместо " +
+                                    $"{product.TermDays} дн. Продления считаются локально, поэтому короткий срок " +
+                                    "позволяет проверить их реальным временем за минуты. Перед продакшн-релизом " +
+                                    "верни 0 — иначе игроки будут получать периоды каждые несколько минут.",
+                                    MessageType.Warning);
+                            }
                         }
 
                         if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))

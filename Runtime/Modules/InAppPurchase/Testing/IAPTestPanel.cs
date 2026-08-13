@@ -289,17 +289,42 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            if (!SimulatedAmazonStore.SimulateRenewal(product.ProductId, product.TermDays))
+            // Эффективный срок — с учётом тестового TestTermMinutes («подписка на 10 минут»).
+            double termDays = product.TestTermMinutes > 0 ? product.TestTermMinutes / 1440.0 : product.TermDays;
+
+            if (!SimulatedAmazonStore.SimulateRenewal(product.ProductId, termDays))
             {
                 Log($"Продление невозможно: у {product.ProductId} нет активного чека — сначала купи подписку");
                 return;
             }
 
-            Log($"↻ (симуляция) продление {product.ProductId}: +1 период ({product.TermDays} д.), запускаю сверку");
+            Log($"↻ (симуляция) продление {product.ProductId}: +1 период ({TermText(product)}), запускаю сверку");
 
             // Периоды выдаёт настоящий путь модуля — сверка по обновлённой истории.
             module.RefreshEntitlements();
             SimulatedAmazonStore.SimulateRestore();
+        }
+
+        /// <summary>
+        /// Ручной прогон сверки. Периоды выдаются не по таймеру, а при сверке (старт,
+        /// покупка, форграунд) — с коротким тестовым сроком подписки (Term minutes (TEST))
+        /// новый период иначе пришлось бы ждать до сворачивания/разворачивания приложения.
+        /// Нажал после границы периода — период выдался.
+        /// </summary>
+        public void CheckPeriods()
+        {
+            var module = Module;
+            if (module == null)
+            {
+                Log("Сверка невозможна: модуль IAP не найден на сцене");
+                return;
+            }
+
+            Log("→ Сверка вручную (проверка периодов)");
+            module.RefreshEntitlements();
+
+            if (!SimulatedAmazonStore.HasRealStore)
+                SimulatedAmazonStore.SimulateRestore();
         }
 
         /// <summary>
@@ -529,6 +554,9 @@ namespace AMZNGoDSDK.Runtime
         private static string Trimmed(string value) =>
             string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+        private static string TermText(SubscriptionProduct product) =>
+            product.TestTermMinutes > 0 ? $"{product.TestTermMinutes}min (TEST)" : $"{product.TermDays}d";
+
         #endregion
 
         #region Status & log
@@ -567,7 +595,7 @@ namespace AMZNGoDSDK.Runtime
             else
             {
                 string sku = subscription.ProductId;
-                lines.Add($"Подписка: {sku}   term={subscription.TermDays}d   " +
+                lines.Add($"Подписка: {sku}   term={TermText(subscription)}   " +
                           $"state={module.GetEntitlementState(sku)}   IsSubscribed={module.IsSubscribed(sku)}   " +
                           $"{ProductText(module, sku)}");
             }
@@ -692,6 +720,7 @@ namespace AMZNGoDSDK.Runtime
                 ("BUY CONSUMABLE", BuyColor, BuyConsumable),
                 ("BUY NON-CONSUMABLE", BuyColor, BuyNonConsumable),
                 ("SIMULATE RENEWAL (+1 период)", SimColor, SimulateRenewal),
+                ("CHECK PERIODS (сверка)", SimColor, CheckPeriods),
                 ("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState),
             };
 
