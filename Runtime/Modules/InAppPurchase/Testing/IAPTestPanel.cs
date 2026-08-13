@@ -79,6 +79,11 @@ namespace AMZNGoDSDK.Runtime
         private readonly List<string> _logLines = new();
         private float _statusTimer;
 
+        // SKU, по которым «Права выданы» уже логировалось в этой сессии. Событие Granted —
+        // сигнал состояния и приходит с КАЖДОЙ сверкой полным снапшотом; без пометки
+        // повторов лог читается как повторная выдача товара (особенно рядом с renewal).
+        private readonly HashSet<string> _grantedLogged = new();
+
         private InAppPurchaseModule _module;
         private bool _listenersAttached;
 
@@ -452,13 +457,20 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnEntitlementGranted(IapEntitlement entitlement)
         {
-            // Сигнал состояния, приходит при каждом запуске — обработчик обязан быть
-            // идемпотентным и НЕ начислять валюту (см. README). Панель только логирует.
-            Log($"● Права выданы: {entitlement.ProductId} ({entitlement.State})");
+            // Сигнал состояния, приходит при каждом запуске и каждой сверке — обработчик
+            // обязан быть идемпотентным и НЕ начислять валюту (см. README). Панель только
+            // логирует, отличая первую выдачу в сессии от переподтверждения снапшотом.
+            Log(_grantedLogged.Add(entitlement.ProductId)
+                ? $"● Права выданы: {entitlement.ProductId} ({entitlement.State})"
+                : $"● Права подтверждены сверкой: {entitlement.ProductId}");
         }
 
-        private void OnEntitlementRevoked(IapEntitlement entitlement) =>
+        private void OnEntitlementRevoked(IapEntitlement entitlement)
+        {
+            // Сброс пометки: если право вернётся после реального отзыва, это снова «выданы».
+            _grantedLogged.Remove(entitlement.ProductId);
             Log($"○ Права сняты: {entitlement.ProductId}");
+        }
 
         private void OnPeriodStarted(IapPeriodStarted period)
         {
