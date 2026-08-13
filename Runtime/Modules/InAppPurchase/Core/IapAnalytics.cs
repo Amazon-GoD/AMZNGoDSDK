@@ -55,10 +55,14 @@ namespace AMZNGoDSDK.Runtime
         public void PurchaseRestored(string sku) =>
             SafeReport("iap_purchase_restored", $"{{\"{J(sku)}\":\"\"}}");
 
-        /// <summary>Снятие права по сверке. Редкое по природе — по нему видно массовый отзыв
-        /// (защита от риска «ветка отказа даёт NotEntitled»).</summary>
-        public void EntitlementRevoked(string sku) =>
-            SafeReport("iap_entitlement_revoked", $"{{\"{J(sku)}\":\"\"}}");
+        /// <summary>Снятие доступа (IAP-31; бывшее iap_entitlement_revoked — переименовано:
+        /// шлётся и для подписок, а слово entitlement в конфиге значит тип товара). Причина
+        /// вторым уровнем: expired (чек подписки с датой отмены), refunded (чек разовой
+        /// покупки с датой отмены), grace_expired (сверка не проходит дольше грейса),
+        /// receipt_gone (чек исчез из истории). Редкое по природе — сигнал тревоги: всплеск
+        /// receipt_gone — это гонка класса IAP-26, а не отток.</summary>
+        public void AccessRevoked(string sku, string reason) =>
+            SafeReport("iap_access_revoked", $"{{\"{J(sku)}\":{{\"{J(reason)}\":\"\"}}}}");
 
         /// <summary>
         /// Отказы каталога (IAP-18): синхронный отказ запроса (catalog_request_failed) и отказ

@@ -104,13 +104,10 @@ namespace AMZNGoDSDK.Runtime
             _journal.Load();
             _entitlements.Load();
 
-            // Грейс на старте: без сверки дольше 7 суток + срок периода подписки — доступ снят.
-            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
-            {
-                _analytics.EntitlementRevoked(sku);
-                RaiseRevoked(sku);
-            }
-
+            // Грейс на старте НЕ проверяется (IAP-32): до первой сверки отметка старая по
+            // определению, и вернувшийся через неделю игрок с сетью получал бы мигание
+            // «прав нет» → «права есть» плюс ложный отзыв в аналитике. Грейс оценивается
+            // после реального провала сверки (OnReconcileExhausted) и на форграунде.
             SdkTrustedTime.OnFirstFreshTime += OnTrustedTimeAvailable;
             StartCoroutine(SdkTrustedTime.FetchOnce());
 
@@ -569,8 +566,15 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnReconcileExhausted()
         {
-            // Попытки кончились: права НЕ трогаем (Unknown — не «прав нет»), колбэки
-            // восстановления отпускаем с false, новая попытка — на форграунде.
+            // Попытки кончились: по одной неудаче права НЕ трогаем (Unknown — не «прав
+            // нет»), но именно здесь честное место грейса (IAP-32): «пытались проверить и
+            // не смогли» — если сверки нет дольше порога, доступ снимается один раз.
+            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
+            {
+                _analytics.AccessRevoked(sku, "grace_expired");
+                RaiseRevoked(sku);
+            }
+
             CompleteRestoreCallbacks(false);
         }
 
@@ -649,10 +653,19 @@ namespace AMZNGoDSDK.Runtime
             foreach (var sku in diff.Entitled)
                 RaiseGranted(sku);
 
-            foreach (var sku in diff.Revoked)
+            foreach (var (sku, cause) in diff.Revoked)
             {
-                Debug.LogWarning($"[AMZNGoDSDK] Entitlement revoked by reconciliation: {sku}");
-                _analytics.EntitlementRevoked(sku);
+                // Причина для iap_access_revoked (IAP-31): чек с датой отмены у подписки —
+                // истечение, у разовой покупки — возврат денег; исчезнувший чек — отдельный
+                // сигнал (гонка класса IAP-26 или сбой истории), не отток.
+                string reason = cause == IapSnapshotRevokeCause.ReceiptCancelled
+                    ? (_catalog.TryResolve(sku, out var product) && product.Kind == IapProductKind.Subscription
+                        ? "expired"
+                        : "refunded")
+                    : "receipt_gone";
+
+                Debug.LogWarning($"[AMZNGoDSDK] Entitlement revoked by reconciliation: {sku} ({reason})");
+                _analytics.AccessRevoked(sku, reason);
                 RaiseRevoked(sku);
             }
 
@@ -911,11 +924,17 @@ namespace AMZNGoDSDK.Runtime
                 _pendingPurchaseRequestId = null;
             }
 
-            foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
-            {
-                _analytics.EntitlementRevoked(sku);
-                RaiseRevoked(sku);
-            }
+            // IAP-32: пока прогон сверки в полёте, грейс не оценивается — решение примет её
+            // исход (успех обновит отметку, исчерпание ретраев снимет доступ). Критично на
+            // старте: OnApplicationFocus(true) приходит и при запуске, и без этой проверки
+            // грейс сработал бы по старой отметке до завершения первой сверки — то самое
+            // мигание, ради которого вызов убран из Initialize.
+            if (_reconcileSession == null)
+                foreach (var sku in _entitlements.EvaluateGrace(DateTime.UtcNow, TermDaysFor))
+                {
+                    _analytics.AccessRevoked(sku, "grace_expired");
+                    RaiseRevoked(sku);
+                }
 
             _reconcileRetry.OnForeground();
             _catalogRetry.OnForeground();
