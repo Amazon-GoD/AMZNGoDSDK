@@ -189,6 +189,36 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>
+        /// Симулирует продление подписки: сдвигает PurchaseDate последнего активного чека
+        /// SKU назад на один срок периода. Продления у Amazon не наблюдаются (при продлении
+        /// не меняется ни одно поле чека) — SDK вычисляет периоды из PurchaseDate +
+        /// N × TermDays против доверенного времени, поэтому сдвиг якоря в прошлое
+        /// эквивалентен реально прошедшему периоду. ReceiptId не меняется: журнал периодов
+        /// непрерывен, повторной выдачи уже выданных периодов не будет. Отменённая подписка
+        /// не продлевается — как и у настоящего стора.
+        /// </summary>
+        public static bool SimulateRenewal(string sku, int termDays)
+        {
+            if (string.IsNullOrWhiteSpace(sku) || termDays <= 0)
+                return false;
+
+            var receipts = LoadReceipts();
+            for (int i = receipts.Count - 1; i >= 0; i--)
+            {
+                if (receipts[i].Sku != sku)
+                    continue;
+                if (receipts[i].CancelDate != 0)
+                    return false;   // подписка отменена — продления не бывает
+
+                receipts[i] = new Receipt(receipts[i].ReceiptId, receipts[i].Sku, receipts[i].ProductType,
+                    receipts[i].PurchaseDate - (long)termDays * MillisPerDay);
+                SaveReceipts(receipts);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Помечает последний чек SKU отменённым (возврат денег / отмена подписки) — для
         /// проверки снятия прав снапшотом: на следующей сверке права по SKU не будет.
         /// </summary>
@@ -311,6 +341,8 @@ namespace AMZNGoDSDK.Runtime
             PlayerPrefs.SetString(ReceiptsKey, string.Join(ReceiptSeparator.ToString(), lines));
             PlayerPrefs.Save();
         }
+
+        private const long MillisPerDay = 24L * 60L * 60L * 1000L;
 
         private static string NewId() => Guid.NewGuid().ToString("N");
 

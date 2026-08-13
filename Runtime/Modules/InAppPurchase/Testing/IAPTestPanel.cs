@@ -60,11 +60,15 @@ namespace AMZNGoDSDK.Runtime
         // Демо-баланс панели. Ключ принадлежит ПАНЕЛИ (роль игры), SDK его не знает.
         private const string PanelMoneyKey = "IAPTestPanel_Money";
 
+        // Счётчик полученных периодов подписки — наглядность «каждое продление выдаёт фичи».
+        private const string PanelPeriodsKey = "IAPTestPanel_Periods";
+
         // Множитель межстрочного интервала uGUI Text: на нём считается высота панели лога.
         private const float LogLineHeightFactor = 1.2f;
 
         private static readonly Color PanelColor = new(0f, 0f, 0f, 0.72f);
         private static readonly Color BuyColor = new(0.16f, 0.42f, 0.24f, 1f);
+        private static readonly Color SimColor = new(0.15f, 0.3f, 0.5f, 1f);
         private static readonly Color DangerColor = new(0.55f, 0.15f, 0.15f, 1f);
 
         private Text _statusText;
@@ -239,6 +243,61 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>
+        /// Симуляция продления подписки: продление у Amazon не наблюдается (поля чека не
+        /// меняются) — SDK вычисляет периоды из PurchaseDate + N × Term против доверенного
+        /// времени. Сдвигаем якорь чека симулятора на один Term назад (эквивалент реально
+        /// прошедшего периода) и запускаем сверку: НАСТОЯЩИЙ путь модуля (FirePeriods +
+        /// журнал) выдаёт следующий период ровно один раз, панель в роли игры начисляет
+        /// монеты, в аналитику уходит iap_subscription_renewed.
+        /// </summary>
+        public void SimulateRenewal()
+        {
+            var module = Module;
+            if (module == null)
+            {
+                Log("Продление невозможно: модуль IAP не найден на сцене");
+                return;
+            }
+
+            if (SimulatedAmazonStore.HasRealStore)
+            {
+                Log("Симуляция продления недоступна с реальным стором: на устройстве период наступает по реальному времени");
+                return;
+            }
+
+            var product = ResolveSubscription();
+            if (product == null)
+            {
+                Log("Продление невозможно: подписка не настроена в SDK Settings");
+                return;
+            }
+
+            if (product.TermDays <= 0)
+            {
+                Log($"Продление невозможно: у {product.ProductId} не задан Term (days)");
+                return;
+            }
+
+            if (!SdkTrustedTime.HasFreshTime)
+            {
+                Log("Нет доверенного времени — периоды не начисляются и ждут сети (см. статус)");
+                return;
+            }
+
+            if (!SimulatedAmazonStore.SimulateRenewal(product.ProductId, product.TermDays))
+            {
+                Log($"Продление невозможно: у {product.ProductId} нет активного чека — сначала купи подписку");
+                return;
+            }
+
+            Log($"↻ (симуляция) продление {product.ProductId}: +1 период ({product.TermDays} д.), запускаю сверку");
+
+            // Периоды выдаёт настоящий путь модуля — сверка по обновлённой истории.
+            module.RefreshEntitlements();
+            SimulatedAmazonStore.SimulateRestore();
+        }
+
+        /// <summary>
         /// Полный сброс к «чистой установке»: журналы и права модуля, чеки симулятора,
         /// демо-баланс панели, храповик доверенного времени. Модуль держит состояние в
         /// памяти — реальный эффект только после перезапуска Play Mode / приложения.
@@ -256,6 +315,7 @@ namespace AMZNGoDSDK.Runtime
             PlayerPrefs.DeleteKey(IapPrefsKeys.LegacyFulfilledReceipts);
             PlayerPrefs.DeleteKey("AMZN_TrustedTimeUtc");   // приватный ключ SdkTrustedTime
             PlayerPrefs.DeleteKey(PanelMoneyKey);
+            PlayerPrefs.DeleteKey(PanelPeriodsKey);
             PlayerPrefs.Save();
 
             SimulatedAmazonStore.ClearReceipts();
@@ -404,7 +464,12 @@ namespace AMZNGoDSDK.Runtime
         {
             // Ровно один раз на период (журнал SDK) — здесь начислять безопасно.
             AddMoney(_coinsPerPeriod);
-            Log($"◆ Оплаченный период #{period.PeriodIndex}: {period.ProductId} → [игра] +{_coinsPerPeriod} монет");
+
+            int totalPeriods = PlayerPrefs.GetInt(PanelPeriodsKey, 0) + 1;
+            PlayerPrefs.SetInt(PanelPeriodsKey, totalPeriods);
+            PlayerPrefs.Save();
+
+            Log($"◆ Оплаченный период #{period.PeriodIndex}: {period.ProductId} → [игра] +{_coinsPerPeriod} монет (всего периодов: {totalPeriods})");
         }
 
         private void AddMoney(int amount)
@@ -521,7 +586,8 @@ namespace AMZNGoDSDK.Runtime
             _statusText.text = string.Join("\n", lines);
 
             if (_coinsText != null)
-                _coinsText.text = $"монеты [игра]: {PlayerPrefs.GetInt(PanelMoneyKey, 0)}";
+                _coinsText.text = $"монеты [игра]: {PlayerPrefs.GetInt(PanelMoneyKey, 0)}   " +
+                                  $"периодов получено: {PlayerPrefs.GetInt(PanelPeriodsKey, 0)}";
         }
 
         private static string ProductText(InAppPurchaseModule module, string sku)
@@ -613,6 +679,7 @@ namespace AMZNGoDSDK.Runtime
                 ("BUY SUBSCRIPTION", BuyColor, BuySubscription),
                 ("BUY CONSUMABLE", BuyColor, BuyConsumable),
                 ("BUY NON-CONSUMABLE", BuyColor, BuyNonConsumable),
+                ("SIMULATE RENEWAL (+1 период)", SimColor, SimulateRenewal),
                 ("WIPE SDK STATE (restart!)", DangerColor, WipeSdkState),
             };
 
