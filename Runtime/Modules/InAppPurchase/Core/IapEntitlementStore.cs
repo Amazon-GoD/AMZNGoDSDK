@@ -25,13 +25,27 @@ namespace AMZNGoDSDK.Runtime
     /// NotEntitled право может стать ТОЛЬКО в ApplySnapshot — по успешной полной сверке.
     /// Любой сбой оставляет последнее известное значение (риск R2: массовое снятие прав
     /// у платящих из-за ветки отказа).
+    ///
+    /// IAP-26: право, выданное живой покупкой, защищено от снапшота отметкой на
+    /// LiveGrantProtectionMinutes — история чеков Amazon доезжает с задержкой, и «нет чека»
+    /// в первые минуты после покупки не означает «нет права».
     /// </summary>
     internal sealed class IapEntitlementStore
     {
         public const int GraceDays = 7;
 
+        // IAP-26: защитное окно живой выдачи. История чеков у Amazon доезжает с
+        // непредсказуемой задержкой: сверка, запущенная сразу после покупки, может ещё не
+        // увидеть свежий чек — «нет чека — нет права» отобрало бы только что оплаченное.
+        public const int LiveGrantProtectionMinutes = 10;
+
         private readonly Dictionary<string, char> _stored = new();
         private readonly HashSet<string> _everPurchased = new();
+
+        // IAP-26: SKU → момент живой выдачи (системное UTC). Персистится: перезапуск до
+        // распространения чека иначе снял бы право первой же сверкой на старте.
+        private readonly Dictionary<string, DateTime> _liveGrants = new();
+
         private DateTime _reconciledAtUtc = DateTime.MinValue;
         private bool _reconciledThisSession;
         private bool _dirty;
@@ -43,6 +57,7 @@ namespace AMZNGoDSDK.Runtime
         {
             _stored.Clear();
             _everPurchased.Clear();
+            _liveGrants.Clear();
 
             var raw = PlayerPrefs.GetString(IapPrefsKeys.Entitlements, "");
             foreach (var line in raw.Split(new[] { IapPrefsKeys.LineSep }, StringSplitOptions.RemoveEmptyEntries))
@@ -56,6 +71,16 @@ namespace AMZNGoDSDK.Runtime
             var rawEver = PlayerPrefs.GetString(IapPrefsKeys.EverPurchasedSkus, "");
             foreach (var sku in rawEver.Split(new[] { IapPrefsKeys.LineSep }, StringSplitOptions.RemoveEmptyEntries))
                 _everPurchased.Add(sku);
+
+            var rawLive = PlayerPrefs.GetString(IapPrefsKeys.LiveGrantProtection, "");
+            foreach (var line in rawLive.Split(new[] { IapPrefsKeys.LineSep }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int sep = line.IndexOf(IapPrefsKeys.FieldSep);
+                if (sep <= 0)
+                    continue;
+                if (DateTime.TryParse(line.Substring(sep + 1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var at))
+                    _liveGrants[line.Substring(0, sep)] = at.ToUniversalTime();
+            }
 
             var storedAt = PlayerPrefs.GetString(IapPrefsKeys.EntitlementReconciledAt, "");
             if (!string.IsNullOrEmpty(storedAt))
@@ -187,6 +212,32 @@ namespace AMZNGoDSDK.Runtime
         {
             var diff = new SnapshotDiff();
 
+            // SKU, чей чек присутствует в полном ответе В ЛЮБОМ виде (включая отменённый) —
+            // для снятия отметок IAP-26.
+            var seenSkus = new HashSet<string>();
+            foreach (var receipt in result.Receipts)
+                seenSkus.Add(receipt.Sku);
+
+            // IAP-26: отметка снимается, как только чек впервые доехал до снапшота (дальше
+            // SKU живёт по общим правилам — отменённый чек честно снимет право), либо когда
+            // окно вышло. Строго по SKU: сверка, запущенная одной покупкой, законно снимает
+            // права по другим (параллельный рефанд).
+            if (_liveGrants.Count > 0)
+            {
+                List<string> done = null;
+                foreach (var kvp in _liveGrants)
+                    if (seenSkus.Contains(kvp.Key)
+                        || (nowUtc - kvp.Value).TotalMinutes > LiveGrantProtectionMinutes)
+                        (done ??= new List<string>()).Add(kvp.Key);
+
+                if (done != null)
+                    foreach (var sku in done)
+                    {
+                        _liveGrants.Remove(sku);
+                        _dirty = true;
+                    }
+            }
+
             foreach (var sku in configuredLongLived)
                 ApplySnapshotSku(sku, result.ActiveSkus.Contains(sku), diff);
 
@@ -213,6 +264,17 @@ namespace AMZNGoDSDK.Runtime
         private void ApplySnapshotSku(string sku, bool active, SnapshotDiff diff)
         {
             bool hadAccess = GetEffectiveAccess(sku);
+
+            // IAP-26: свежая живая выдача, чека в снапшоте ещё нет — «нет чека — нет права»
+            // не применяется, пока не выйдет защитное окно. Право остаётся как есть.
+            if (!active && _liveGrants.ContainsKey(sku))
+            {
+                Debug.Log($"[AMZNGoDSDK] Snapshot has no receipt for freshly purchased '{sku}' — " +
+                          $"keeping the live grant ({LiveGrantProtectionMinutes} min protection window)");
+                if (hadAccess)
+                    diff.Entitled.Add(sku);
+                return;
+            }
 
             _stored[sku] = active ? 'E' : 'N';
 
@@ -242,10 +304,14 @@ namespace AMZNGoDSDK.Runtime
                 _dirty = true;
             }
 
-            if (_stored.TryGetValue(sku, out var c) && c == 'E')
-                return;
-            _stored[sku] = 'E';
+            // IAP-26: отметка защитного окна. Время сознательно системное, не доверенное:
+            // игрок, переводящий часы вперёд, лишь укорачивает собственную защиту.
+            _liveGrants[sku] = DateTime.UtcNow;
             _dirty = true;
+
+            if (!_stored.TryGetValue(sku, out var c) || c != 'E')
+                _stored[sku] = 'E';
+
             SaveIfDirty();
         }
 
@@ -263,6 +329,14 @@ namespace AMZNGoDSDK.Runtime
             }
             PlayerPrefs.SetString(IapPrefsKeys.Entitlements, sb.ToString());
             PlayerPrefs.SetString(IapPrefsKeys.EverPurchasedSkus, string.Join(IapPrefsKeys.LineSep.ToString(), _everPurchased));
+
+            var sbLive = new StringBuilder();
+            foreach (var kvp in _liveGrants)
+            {
+                if (sbLive.Length > 0) sbLive.Append(IapPrefsKeys.LineSep);
+                sbLive.Append(kvp.Key).Append(IapPrefsKeys.FieldSep).Append(kvp.Value.ToString("o"));
+            }
+            PlayerPrefs.SetString(IapPrefsKeys.LiveGrantProtection, sbLive.ToString());
 
             if (_reconciledAtUtc != DateTime.MinValue)
                 PlayerPrefs.SetString(IapPrefsKeys.EntitlementReconciledAt, _reconciledAtUtc.ToString("o"));
