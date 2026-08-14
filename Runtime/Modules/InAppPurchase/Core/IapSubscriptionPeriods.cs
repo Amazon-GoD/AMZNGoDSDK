@@ -29,8 +29,13 @@ namespace AMZNGoDSDK.Runtime
         /// Правило засева (ТЗ IAP-14 п.4): если журнал ещё не знает этот чек
         /// (journalHasEntry == false — чистая установка или первая покупка), выдаётся ТОЛЬКО
         /// текущий период, история не выдаётся: фарм через переустановку невыгоден, а
-        /// оплаченный сейчас период игрок получить должен. Иначе — всё в (lastFiredIndex,
-        /// current].
+        /// оплаченный сейчас период игрок получить должен. Причём выдаётся, только если он
+        /// действительно ТЕКУЩИЙ — «сейчас» лежит внутри него. У отменённого чека индекс
+        /// упирается в потолок CancelDate и лежит целиком в прошлом: такой период при
+        /// засеве не выдаётся — иначе каждая чистая установка выдавала бы по последнему
+        /// оплаченному периоду за КАЖДЫЙ отменённый чек истории (лог 2026-08-14: два
+        /// отменённых чека → «+2 периода» на старте, и это же — фарм переустановкой).
+        /// Иначе — всё в (lastFiredIndex, current].
         /// </summary>
         public static List<int> PeriodsToFire(
             long purchaseDateMs,
@@ -52,7 +57,11 @@ namespace AMZNGoDSDK.Runtime
 
             if (!journalHasEntry)
             {
-                result.Add(current);
+                // «Сейчас» внутри периода current ⇔ индекс по одному только времени равен
+                // индексу с потолками (CancelDate/DeferredDate его не срезали).
+                int byTimeOnly = (int)((trustedNowUtc - FromUnixMs(purchaseDateMs)).TotalDays / termDays);
+                if (current == byTimeOnly)
+                    result.Add(current);
                 return result;
             }
 

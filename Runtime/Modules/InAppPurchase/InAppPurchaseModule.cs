@@ -474,7 +474,7 @@ namespace AMZNGoDSDK.Runtime
                     break;
 
                 case IapProductKind.Subscription:
-                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku);
+                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku, receipt.ReceiptId);
                     RaiseGranted(receipt.Sku);
 
                     // Якорь журнала для СВЕЖЕЙ покупки: без него FirePeriods, вышедший по
@@ -491,7 +491,7 @@ namespace AMZNGoDSDK.Runtime
                     break;
 
                 case IapProductKind.NonConsumable:
-                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku);
+                    _entitlements.ApplyLivePurchaseGrant(receipt.Sku, receipt.ReceiptId);
                     RaiseGranted(receipt.Sku);
                     break;
             }
