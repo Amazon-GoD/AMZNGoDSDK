@@ -168,6 +168,19 @@ namespace AMZNGoDSDK.Editor
                 {
                     _currentSettings.InternetConnection.CheckIntervalSeconds = Mathf.Max(
                         1f, EditorGUILayout.FloatField("Check Interval (sec)", _currentSettings.InternetConnection.CheckIntervalSeconds));
+                    _currentSettings.InternetConnection.UseHttpProbe = EditorGUILayout
+                        .Toggle("Use HTTP probe", _currentSettings.InternetConnection.UseHttpProbe);
+
+                    if (_currentSettings.InternetConnection.UseHttpProbe)
+                    {
+                        EditorGUI.indentLevel++;
+                        _currentSettings.InternetConnection.ProbeUrl = EditorGUILayout
+                            .TextField("Probe URL", _currentSettings.InternetConnection.ProbeUrl);
+                        _currentSettings.InternetConnection.ProbeTimeoutSeconds = Mathf.Max(
+                            1f, EditorGUILayout.FloatField("Probe Timeout (sec)", _currentSettings.InternetConnection.ProbeTimeoutSeconds));
+                        EditorGUI.indentLevel--;
+                    }
+
                     _currentSettings.InternetConnection.PauseGameWhenOffline = EditorGUILayout
                         .Toggle("Pause game when offline", _currentSettings.InternetConnection.PauseGameWhenOffline);
                     _currentSettings.InternetConnection.ShowBanner = EditorGUILayout

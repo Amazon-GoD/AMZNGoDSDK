@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Networking;
 namespace AMZNGoDSDK.Runtime
 {
     [DisallowMultipleComponent]
@@ -15,6 +16,7 @@ namespace AMZNGoDSDK.Runtime
 
         private InternetConnectionSettingData _settings = new();
         private Coroutine _monitorCoroutine;
+        private Coroutine _immediateCheckCoroutine;
         private bool _hasInternet = true;
         private bool _pausedByModule;
         private float _savedTimeScale = 1f;
@@ -51,6 +53,53 @@ namespace AMZNGoDSDK.Runtime
             _monitorCoroutine = StartCoroutine(MonitorRoutine());
         }
 
+        /// <summary>
+        /// Runtime toggle. Disabling stops connectivity monitoring, hides the offline banner,
+        /// restores the time scale paused by this module and makes <see cref="IsConnected"/>
+        /// report true (a disabled checker must not gate gameplay on a stale offline state).
+        /// Enabling (re)starts monitoring with the settings supplied via Construct.
+        /// The toggle itself raises no connectivity events; after enabling, an initial
+        /// connectivity check runs immediately and reports the current state (same
+        /// behaviour as Initialize), so subscribers get one event right away.
+        /// </summary>
+        public void SetEnabled(bool enabled)
+        {
+            if (Enabled == enabled)
+                return;
+
+            Enabled = enabled;
+
+            if (enabled)
+            {
+                Initialize();
+                return;
+            }
+
+            StopMonitoring();
+
+            HideBanner();
+            RestoreTimeScale();
+
+            // Also unblocks WaitUntilConnected: its loop exits as soon as the module
+            // is disabled or the connection state reads as online.
+            _hasInternet = true;
+        }
+
+        private void StopMonitoring()
+        {
+            if (_monitorCoroutine != null)
+            {
+                StopCoroutine(_monitorCoroutine);
+                _monitorCoroutine = null;
+            }
+
+            if (_immediateCheckCoroutine != null)
+            {
+                StopCoroutine(_immediateCheckCoroutine);
+                _immediateCheckCoroutine = null;
+            }
+        }
+
         public IEnumerator WaitUntilConnected()
         {
             if (!Enabled)
@@ -63,19 +112,47 @@ namespace AMZNGoDSDK.Runtime
         private IEnumerator MonitorRoutine()
         {
             IsInitialized = true;
-            CheckConnectivity(initial: true);
+            yield return CheckConnectivityRoutine(initial: true);
 
             while (Enabled)
             {
                 float interval = Mathf.Max(MinCheckInterval, _settings.CheckIntervalSeconds);
                 yield return new WaitForSecondsRealtime(interval);
-                CheckConnectivity();
+                yield return CheckConnectivityRoutine(initial: false);
             }
         }
 
-        private void CheckConnectivity(bool initial = false)
+        /// <summary>
+        /// Determines connectivity and applies the result. Reachability alone only proves a
+        /// network interface is up; when it looks online and the HTTP probe is enabled, a real
+        /// request confirms the link, so dead DNS or a missing upstream still read as offline.
+        /// NotReachable short-circuits before the first yield, so a hard offline state applies
+        /// synchronously (Initialize relies on that for the startup connectivity gate).
+        /// </summary>
+        private IEnumerator CheckConnectivityRoutine(bool initial)
         {
             bool connected = Application.internetReachability != NetworkReachability.NotReachable;
+
+            if (connected && _settings.UseHttpProbe && !string.IsNullOrEmpty(_settings.ProbeUrl))
+            {
+                using (UnityWebRequest request = UnityWebRequest.Head(_settings.ProbeUrl))
+                {
+                    request.timeout = Mathf.Max(1, Mathf.RoundToInt(_settings.ProbeTimeoutSeconds));
+                    yield return request.SendWebRequest();
+
+                    // The module may have been disabled while the probe was in flight.
+                    if (!Enabled)
+                        yield break;
+
+                    connected = request.result == UnityWebRequest.Result.Success;
+                }
+            }
+
+            ApplyConnectivityState(connected, initial);
+        }
+
+        private void ApplyConnectivityState(bool connected, bool initial)
+        {
             if (!initial && connected == _hasInternet)
                 return;
 
@@ -184,19 +261,30 @@ namespace AMZNGoDSDK.Runtime
         private void HandleRetryRequested()
         {
             // Re-poll right away. If we are still offline nothing changes, so no event is raised.
-            CheckConnectivity();
+            // A single in-flight immediate check is enough — repeated taps must not stack probes.
+            if (!Enabled || _immediateCheckCoroutine != null)
+                return;
+
+            _immediateCheckCoroutine = StartCoroutine(ImmediateCheckRoutine());
+        }
+
+        private IEnumerator ImmediateCheckRoutine()
+        {
+            yield return CheckConnectivityRoutine(initial: false);
+            _immediateCheckCoroutine = null;
         }
 
         public override void Cleanup()
         {
-            if (_monitorCoroutine != null)
-            {
-                StopCoroutine(_monitorCoroutine);
-                _monitorCoroutine = null;
-            }
+            StopMonitoring();
 
             if (_bannerView != null)
                 _bannerView.OnRetry -= HandleRetryRequested;
+
+            // EnsureBanner subscribes OnRetry only on resolve. After tearing the subscription
+            // down the banner must be re-resolved, or a later Initialize would show a banner
+            // whose retry button no longer triggers a connectivity check.
+            _bannerResolved = false;
 
             HideBanner();
 

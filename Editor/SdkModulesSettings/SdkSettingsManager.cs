@@ -220,6 +220,9 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 CheckIntervalSeconds = runtimeSettings.CheckIntervalSeconds,
+                UseHttpProbe = runtimeSettings.UseHttpProbe,
+                ProbeUrl = runtimeSettings.ProbeUrl,
+                ProbeTimeoutSeconds = runtimeSettings.ProbeTimeoutSeconds,
                 PauseGameWhenOffline = runtimeSettings.PauseGameWhenOffline,
                 ShowBanner = runtimeSettings.ShowBanner,
                 BannerMessage = runtimeSettings.BannerMessage,
@@ -459,6 +462,9 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 CheckIntervalSeconds = editorSettings.CheckIntervalSeconds,
+                UseHttpProbe = editorSettings.UseHttpProbe,
+                ProbeUrl = editorSettings.ProbeUrl,
+                ProbeTimeoutSeconds = editorSettings.ProbeTimeoutSeconds,
                 PauseGameWhenOffline = editorSettings.PauseGameWhenOffline,
                 ShowBanner = editorSettings.ShowBanner,
                 BannerMessage = editorSettings.BannerMessage,
