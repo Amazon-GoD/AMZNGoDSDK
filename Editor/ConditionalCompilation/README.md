@@ -23,23 +23,32 @@
 
 ### 2. Условная компиляция кода
 
-Код модулей обернут в директивы условной компиляции:
+Каждый модуль собирается в собственную assembly (asmdef) с
+`defineConstraints: ["AMZN_<MODULE>_ENABLED"]` — при выключенном define сборка
+модуля не компилируется целиком. `#if AMZN_*` остаются только в общем коде
+(фасад `AmznGoDSDKCore`, межмодульные вызовы):
 
 ```csharp
 #if AMZN_ADJUST_ENABLED
-    // Код модуля Adjust
+    // Код, зависящий от модуля Adjust
     _adjustModule.Initialize();
 #endif
 ```
 
-Если модуль отключен, этот код не компилируется и не попадает в билд.
+Folder-rename механика (переименование папок модулей в `~`) выведена из
+эксплуатации в Фазе 3 UPM-перехода: в immutable-пакете перемещение папок
+невозможно. Папки модулей всегда видимы; тогглы работают только через defines.
 
 ### 3. Управление зависимостями
 
-При сборке проекта система:
-- Временно отключает Dependencies.xml файлы для неактивных модулей
-- Это предотвращает загрузку Android/iOS зависимостей
-- После сборки файлы восстанавливаются автоматически
+- Нативные плагины (.jar/.aar/.so/.java/.mm) выключенных модулей исключаются из
+  билда делегатами `PluginImporter.SetIncludeInBuildDelegate`
+  (`NativePluginRegistry` + `NativePluginBuildFilter`).
+- EDM4U-зависимости: шаблоны `*DependenciesTemplate.xml` внутри SDK мержатся
+  генератором (`EdmDependencyGenerator`) в единый
+  `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml` — только для
+  включённых модулей. Перегенерация происходит при каждом применении тогглов и
+  перед билдом (`EdmDependencyBuildPreprocessor`).
 
 ## Использование
 
@@ -68,13 +77,15 @@
 - `IsModuleEnabled(string moduleDefine)` - проверяет, включен ли модуль
 - `GetActiveModuleDefines()` - получает список активных defines
 
-### DependencyPreprocessor
+### NativePluginRegistry / NativePluginBuildFilter
 
-Build preprocessor, который управляет файлами зависимостей.
+Реестр «define модуля → папки нативных плагинов» и build-фильтр, который
+вешает `SetIncludeInBuildDelegate` на PluginImporter'ы выключенных модулей.
 
-**Что делает:**
-- `OnPreprocessBuild` - отключает Dependencies.xml для неактивных модулей
-- `OnPostprocessBuild` - восстанавливает файлы после сборки
+### EdmDependencyGenerator / EdmDependencyBuildPreprocessor
+
+Генерация сводного EDM4U Dependencies.xml из шаблонов включённых модулей
+(в Assets потребителя, вне папки SDK — совместимо с immutable UPM-пакетом).
 
 ### ModuleStatusWindow
 
@@ -99,9 +110,9 @@ Unity Editor окно для просмотра статуса модулей и
 
 ### Файлы зависимостей
 
-Управляемые Dependencies.xml:
-- `Assets/AMZNGoDSDK/Runtime/Modules/Adjust/Adjust/Native/Editor/Dependencies.xml`
-- `Assets/AMZNGoDSDK/Editor/Modules/Appmetrica/Editor/AppMetricaDependencies.xml`
+Шаблоны EDM-зависимостей (`*DependenciesTemplate.xml`) лежат внутри модулей и
+перечислены в `EdmDependencyGenerator.Templates`; итоговый XML генерируется
+в `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml`.
 
 ### Автоматическое обновление
 

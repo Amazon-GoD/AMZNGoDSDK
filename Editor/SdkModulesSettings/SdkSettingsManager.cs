@@ -290,18 +290,14 @@ namespace AMZNGoDSDK.Editor
             File.WriteAllText(fullPath, json);
 
             AssetDatabase.Refresh();
-            
-            Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS STARTED =====");
 
-            // Обновляем define symbols для условной компиляции
-            Debug.Log("[SdkSettingsManager] Updating define symbols...");
+            // Тогглы модулей работают ТОЛЬКО через define symbols (asmdef
+            // defineConstraints + NativePluginBuildFilter + EdmDependencyGenerator,
+            // хуки внутри UpdateDefineSymbols). Folder-rename механика
+            // (ModuleFolderManager) выведена из эксплуатации в Фазе 3 UPM-перехода:
+            // в immutable-пакете перемещение папок невозможно.
             ModuleDefineManager.UpdateDefineSymbols(settings);
-            
-            // Обновляем папки модулей если включено авто-обновление
-            Debug.Log("[SdkSettingsManager] Calling ModuleFolderManager.OnSettingsSaved...");
-            ModuleFolderManager.OnSettingsSaved(settings);
-            
-            Debug.Log("[SdkSettingsManager] ===== SAVE SETTINGS COMPLETED =====");
+
             return true;
         }
 

@@ -67,8 +67,8 @@ namespace AMZNGoDSDK.Editor
         /// Returns the set of required bridge file names that are present as imported assets
         /// compiled for Android. Scans the Assets tree once.
         ///
-        /// Only files that are (a) not inside a Unity-ignored "~" folder — this repo's own
-        /// module-disable convention (see ModuleFolderManager) — and (b) located under a
+        /// Only files that are (a) not inside a Unity-ignored "~" folder (intentionally
+        /// hidden source stashes such as AmazonIapV2Compat~) and (b) located under a
         /// Plugins/Android folder, which is the only place Unity compiles loose .java, are
         /// considered. The path checks are case-sensitive on purpose: the AppMetrica module
         /// ships these paths with exact casing.

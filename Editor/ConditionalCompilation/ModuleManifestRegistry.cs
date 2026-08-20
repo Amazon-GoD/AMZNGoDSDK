@@ -15,7 +15,7 @@ namespace AMZNGoDSDK.Editor
     /// </summary>
     public class ModuleManifestFootprint
     {
-        /// <summary>Имя модуля — должно совпадать с ключами ModuleFolderManager.</summary>
+        /// <summary>Имя модуля — должно совпадать с ключами NativeDependencyValidator.ModuleRoots.</summary>
         public string ModuleName;
 
         /// <summary>
@@ -83,7 +83,7 @@ namespace AMZNGoDSDK.Editor
 
         /// <summary>
         /// Карта "имя модуля → включён ли" на основе текущих настроек SDK.
-        /// Зеркалит NativeDependencyValidator / ModuleFolderManager.
+        /// Зеркалит NativeDependencyValidator.ModuleRoots.
         /// </summary>
         public static Dictionary<string, bool> GetModuleEnabledMap(SdkSettingsData settings)
         {
