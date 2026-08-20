@@ -7,7 +7,9 @@
     рекламы. Сам класс оверлея тоже создаётся по строковому имени (AndroidJavaObject), поэтому
     сохраняем оба типа целиком. Дублирует атрибуты [UnityEngine.Scripting.Preserve] на методах.
   -->
-  <assembly fullname="AMZNGoD.Runtime">
+  <!-- После разрезания на per-module asmdef типы Cross-Promo живут в сборке
+       AMZNGoDSDK.Module.CrossPromo (раньше — AMZNGoD.Runtime). -->
+  <assembly fullname="AMZNGoDSDK.Module.CrossPromo">
     <type fullname="AMZNGoDSDK.Runtime.CrossPromoExoNativeOverlay" preserve="all"/>
     <type fullname="AMZNGoDSDK.Runtime.CrossPromoVideoPlayer" preserve="all"/>
   </assembly>
