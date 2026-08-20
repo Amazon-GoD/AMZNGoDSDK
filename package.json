@@ -16,7 +16,7 @@
     {
       "displayName": "SDKPrefab",
       "description": "Configuration prefab with sdk modules",
-      "path": "AmznGoDSDK~/SDKPrefab"
+      "path": "AmznGoDSDK/SDKPrefab"
     }
   ],
   "author": {
