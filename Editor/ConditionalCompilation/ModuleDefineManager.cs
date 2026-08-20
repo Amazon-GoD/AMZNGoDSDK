@@ -92,6 +92,10 @@ namespace AMZNGoDSDK.Editor
                 UpdateDefineSymbolsForTarget(targetGroup, settings);
             }
 
+            // Тогглы применены — сразу обновляем build-фильтр нативных плагинов,
+            // не дожидаясь domain reload (после reload он перерегистрируется сам).
+            NativePluginBuildFilter.Refresh();
+
             Debug.Log("[AMZN GoD SDK] Module define symbols updated successfully");
         }
 
@@ -193,6 +197,9 @@ namespace AMZNGoDSDK.Editor
                 var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
                 SetDefines(targetGroup, newDefines);
             }
+
+            // Все модули выключены — нативные плагины тоже не должны попасть в билд.
+            NativePluginBuildFilter.Refresh();
         }
     }
 }
