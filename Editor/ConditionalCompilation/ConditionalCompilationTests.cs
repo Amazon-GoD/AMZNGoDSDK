@@ -270,31 +270,18 @@ namespace AMZNGoDSDK.Editor
                 Debug.Log($"  • {define}");
             }
             
-            // Check dependency files
-            Debug.Log("\nDependency files status:");
-            CheckDependencyFile("Adjust", "Assets/AMZNGoDSDK/Runtime/Modules/Adjust/Adjust/Native/Editor/Dependencies.xml");
-            CheckDependencyFile("AppMetrica", "Assets/AMZNGoDSDK/Editor/Modules/Appmetrica/Editor/AppMetricaDependencies.xml");
-
-            Debug.Log("============================");
-        }
-        
-        private static void CheckDependencyFile(string moduleName, string path)
-        {
-            bool exists = System.IO.File.Exists(path);
-            bool existsDisabled = System.IO.File.Exists(path + ".disabled");
-            
-            if (exists)
+            // Check generated EDM dependencies file (built from templates of enabled modules)
+            Debug.Log("\nGenerated EDM dependencies:");
+            if (System.IO.File.Exists(EdmDependencyGenerator.GeneratedFilePath))
             {
-                Debug.Log($"  ✓ {moduleName}: Active (would be included in build)");
-            }
-            else if (existsDisabled)
-            {
-                Debug.Log($"  ✗ {moduleName}: Disabled (excluded from build)");
+                Debug.Log($"  ✓ {EdmDependencyGenerator.GeneratedFilePath} present");
             }
             else
             {
-                Debug.LogWarning($"  ⚠ {moduleName}: File not found");
+                Debug.Log("  ✗ Generated file absent (no enabled modules with EDM dependencies, or toggles not applied yet)");
             }
+
+            Debug.Log("============================");
         }
     }
 }

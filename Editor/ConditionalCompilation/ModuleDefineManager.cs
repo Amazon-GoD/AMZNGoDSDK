@@ -93,8 +93,10 @@ namespace AMZNGoDSDK.Editor
             }
 
             // Тогглы применены — сразу обновляем build-фильтр нативных плагинов,
-            // не дожидаясь domain reload (после reload он перерегистрируется сам).
+            // не дожидаясь domain reload (после reload он перерегистрируется сам),
+            // и перегенерируем сводный EDM Dependencies.xml включённых модулей.
             NativePluginBuildFilter.Refresh();
+            EdmDependencyGenerator.Regenerate();
 
             Debug.Log("[AMZN GoD SDK] Module define symbols updated successfully");
         }
@@ -198,8 +200,10 @@ namespace AMZNGoDSDK.Editor
                 SetDefines(targetGroup, newDefines);
             }
 
-            // Все модули выключены — нативные плагины тоже не должны попасть в билд.
+            // Все модули выключены — нативные плагины в билд не попадают,
+            // сгенерированный EDM XML удаляется.
             NativePluginBuildFilter.Refresh();
+            EdmDependencyGenerator.Regenerate();
         }
     }
 }
