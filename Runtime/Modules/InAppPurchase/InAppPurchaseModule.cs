@@ -714,18 +714,22 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            // Analytics берётся из реестра напрямую (фасад модулям недоступен после
+            // разрезания на per-module сборки); прежний фасадный гард был только `?.`.
+#if AMZN_ANALYTICS_ENABLED
             try
             {
                 var receiptIds = new List<string>(result.Receipts.Count);
                 foreach (var receipt in result.Receipts)
                     receiptIds.Add(receipt.ReceiptId);
 
-                AmznGoDSDKCore.Instance?.TrackAnalyticsIapLink(_amazonUserId, receiptIds);
+                SdkModuleRegistry.Get<AnalyticsModule>()?.TrackIapLink(_amazonUserId, receiptIds);
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[AMZNGoDSDK] iap_link report failed: {e.Message}");
             }
+#endif
         }
 
         private void ProcessRestoredReceipt(PurchaseReceipt receipt)

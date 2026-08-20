@@ -624,14 +624,15 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            var core = AmznGoDSDKCore.Instance;
+            // Статус ядра — из реестра (SdkModuleRegistry.SdkInitialized — зеркало
+            // AmznGoDSDKCore.IsInitialized; сборка фасада модулям недоступна).
             string storeMode = SimulatedAmazonStore.HasRealStore
                 ? "store: Amazon"
                 : SimulatedAmazonStore.IsAvailable ? "store: СИМУЛЯЦИЯ" : "store: НЕТ (не тот Build Target)";
 
             var lines = new List<string>
             {
-                $"SDK: {(core != null && core.IsInitialized ? "initialized" : "initializing…")}   " +
+                $"SDK: {(SdkModuleRegistry.SdkInitialized ? "initialized" : "initializing…")}   " +
                 $"IAP: {(module.Enabled ? "on" : "off")} / init={module.IsInitialized} / " +
                 $"restored={module.IsRestored}   {storeMode}",
                 $"Доверенное время: {(SdkTrustedTime.HasFreshTime ? SdkTrustedTime.UtcNow?.ToString("u") : "нет (периоды ждут сети)")}"

@@ -143,6 +143,14 @@ namespace AMZNGoDSDK.Runtime
             modules.Add(_inAppPurchaseModule);
 #endif
 
+            // Реестр — единственный канал межмодульных вызовов после разрезания на
+            // per-module сборки (модули не видят сборку фасада, см. SdkModuleRegistry).
+#if AMZN_INTERNETCONNECTION_ENABLED
+            SdkModuleRegistry.Register(_internetConnectionModule);
+#endif
+            foreach (var module in modules)
+                SdkModuleRegistry.Register(module);
+
             StartCoroutine(InitializeWhenReady(modules.ToArray()));
         }
         #endregion
@@ -616,6 +624,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             IsInitialized = true;
+            SdkModuleRegistry.SdkInitialized = true;
             OnInitializationComplete?.Invoke();
         }
         

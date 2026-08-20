@@ -33,14 +33,22 @@ namespace AMZNGoDSDK.Runtime
 
         private static void SafeReport(string eventName, string json)
         {
+            // Целевой модуль — из реестра (фасад AmznGoDSDKCore модулям недоступен после
+            // разрезания на per-module сборки); гарды повторяют прежние гарды фасада.
+#if AMZN_APPMETRICA_ENABLED
             try
             {
-                AmznGoDSDKCore.Instance?.ReportEventRawAppMetrica(eventName, json);
+                var appMetrica = SdkModuleRegistry.Get<AppMetricaModule>();
+                if (appMetrica == null || !appMetrica.Enabled || !appMetrica.Initialized)
+                    return;
+
+                appMetrica.ReportEventRaw(eventName, json);
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[AMZNGoDSDK] IAP analytics report failed for '{eventName}': {e.Message}");
             }
+#endif
         }
 
         /// <summary>Каждое нажатие «купить» — первой строкой BuyProduct (IAP-29).</summary>
