@@ -158,16 +158,25 @@ namespace AMZNGoDSDK.Editor
             {
                 Indent = true,
                 IndentChars = "    ",
-                Encoding = new UTF8Encoding(false),
             };
 
-            var sb = new StringBuilder();
-            using (var writer = XmlWriter.Create(sb, settings))
+            // XmlWriter поверх StringBuilder/StringWriter пишет декларацию по
+            // Encoding самого writer'а (для StringWriter это UTF-16) — подменяем,
+            // чтобы декларация совпадала с фактической UTF-8 записью на диск.
+            using (var writer = new Utf8StringWriter())
             {
-                doc.Save(writer);
-            }
+                using (var xmlWriter = XmlWriter.Create(writer, settings))
+                {
+                    doc.Save(xmlWriter);
+                }
 
-            return sb.ToString();
+                return writer.ToString();
+            }
+        }
+
+        private sealed class Utf8StringWriter : StringWriter
+        {
+            public override Encoding Encoding => Encoding.UTF8;
         }
 
         private static void WriteIfChanged(string content)
