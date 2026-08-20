@@ -56,6 +56,11 @@ namespace AMZNGoDSDK.Runtime
         // приходит ПОЗЖЕ ответа Amazon (старт без сети).
         private IReadOnlyList<PurchaseReceipt> _lastReceipts;
 
+        // App User ID Amazon-покупателя из последнего ответа стора (ТЗ «связка покупок и
+        // источника трафика»): читается из обоих колбэков, уходит в iap_link по завершении
+        // полной сверки — там же, где доступен список чеков всех страниц.
+        private string _amazonUserId;
+
         // IAP-21: SKU текущей покупки + отметка времени + защёлка «терминальное событие
         // воронки уже отправлено» (ветка catch шлёт failed, но нативка после этого всё ещё
         // может прислать ответ — иначе на один started пришлись бы и failed, и success).
@@ -285,6 +290,11 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnPurchaseResponseHandler(PurchaseResponse response)
         {
+            // Покупатель один на устройство — читаем из любого ответа, включая чужие/FAILED
+            // (AmazonUserData приходит и там). AmazonUserData — обычный C#-класс, ?. безопасен.
+            if (!string.IsNullOrEmpty(response.AmazonUserData?.UserId))
+                _amazonUserId = response.AmazonUserData.UserId;
+
             // Ответ ЧУЖОГО запроса (RequestId есть с обеих сторон и не совпал) — например,
             // покупка, брошенная на диалоге дольше 90-секундного окна, чей ответ пришёл уже
             // после старта следующей. Чек из него обрабатываем честно (деньги могли
@@ -607,6 +617,11 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
+            // После проверок принадлежности прогону и статуса: из ответов мёртвых прогонов
+            // и отказов ничего не читаем (тот же принцип, что для чеков).
+            if (!string.IsNullOrEmpty(response.AmazonUserData?.UserId))
+                _amazonUserId = response.AmazonUserData.UserId;
+
             // Нормализация ДО аккумуляции: снапшот прав считается по receipt.Sku, и term SKU
             // подписки должен быть приведён к настроенному родительскому уже здесь.
             if (response.Receipts != null)
@@ -679,6 +694,38 @@ namespace AMZNGoDSDK.Runtime
             CompleteRestoreCallbacks(true);
 
             Debug.Log($"[AMZNGoDSDK] Reconciled with Amazon: receipts={result.Receipts.Count}, active=[{string.Join(", ", result.ActiveSkus)}]");
+
+            // Связка device ↔ Amazon-покупатель — последним шагом: result.Receipts содержит
+            // чеки ВСЕХ страниц полного прогона, живая покупка сюда тоже приводит (каждая её
+            // ветка зовёт StartReconcile). Идемпотентность — на стороне AnalyticsModule.
+            ReportIapLink(result);
+        }
+
+        /// <summary>
+        /// Отправка связки iap_link через ядро (паттерн IapAnalytics.SafeReport): fire-and-forget
+        /// под try/catch — строка аналитики не может ломать сверку прав. Пустой список чеков
+        /// тоже отправляется: «у покупателя нет чеков» — валидная связка (требование ТЗ).
+        /// </summary>
+        private void ReportIapLink(IapReconcileResult result)
+        {
+            if (string.IsNullOrEmpty(_amazonUserId))
+            {
+                Debug.Log("[AMZNGoDSDK] iap_link skipped — AmazonUserData.UserId not received from store");
+                return;
+            }
+
+            try
+            {
+                var receiptIds = new List<string>(result.Receipts.Count);
+                foreach (var receipt in result.Receipts)
+                    receiptIds.Add(receipt.ReceiptId);
+
+                AmznGoDSDKCore.Instance?.TrackAnalyticsIapLink(_amazonUserId, receiptIds);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[AMZNGoDSDK] iap_link report failed: {e.Message}");
+            }
         }
 
         private void ProcessRestoredReceipt(PurchaseReceipt receipt)

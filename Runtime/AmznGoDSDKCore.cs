@@ -385,6 +385,11 @@ namespace AMZNGoDSDK.Runtime
         public void TrackAnalyticsImpression(string paidAppId) => _analyticsModule?.TrackImpression(paidAppId);
         public void TrackAnalyticsClick(string paidAppId) => _analyticsModule?.TrackClick(paidAppId);
 
+        /// <summary>Связка device ↔ Amazon-покупатель (событие iap_link). Зовётся из
+        /// InAppPurchaseModule по завершении полной сверки GetPurchaseUpdates.</summary>
+        public void TrackAnalyticsIapLink(string amazonUserId, IReadOnlyList<string> receiptIds) =>
+            _analyticsModule?.TrackIapLink(amazonUserId, receiptIds);
+
         public IEnumerator TrackAnalyticsClickRoutine(string paidAppId)
         {
             if (_analyticsModule != null)
@@ -393,6 +398,7 @@ namespace AMZNGoDSDK.Runtime
 #else
         public void TrackAnalyticsImpression(string paidAppId) { }
         public void TrackAnalyticsClick(string paidAppId) { }
+        public void TrackAnalyticsIapLink(string amazonUserId, IReadOnlyList<string> receiptIds) { }
         public IEnumerator TrackAnalyticsClickRoutine(string paidAppId) { yield break; }
 #endif
 

@@ -2,14 +2,18 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace AMZNGoDSDK.Runtime
 {
-    // Единственный владелец HTTP-канала /v1/events: first_open (paid/free) на инициализации
-    // и cp_impression / cp_click из CrossPromoModule через делегаты в AmznGoDSDKCore.
+    // Единственный владелец HTTP-канала /v1/events: first_open (paid/free) на инициализации,
+    // cp_impression / cp_click из CrossPromoModule через делегаты в AmznGoDSDKCore,
+    // iap_link из InAppPurchaseModule (связка device ↔ Amazon-покупатель, по завершении
+    // полной сверки GetPurchaseUpdates) и attribution (источник трафика из Adjust).
     // Идемпотентность first_open и кэш device_id_hash через PlayerPrefs с историческими
     // ключами cp_* — это намеренно: апгрейд с хотфикса не должен слать дубли и терять
     // закешированный device_id.
@@ -32,6 +36,21 @@ namespace AMZNGoDSDK.Runtime
         // неотличима от потерянного поля, поэтому отсутствие идентификатора кодируется явно.
         private const string UnattributedDeviceId = "unattributed";
 
+        // Идемпотентность iap_link: SHA-256 от amazon_user_id + отсортированного списка
+        // receipt_ids последней ДОСТАВЛЕННОЙ связки. Пишется только по HTTP 2xx — тот же
+        // принцип, что у флага first_open: Rejected/транзиент не должны хоронить связку.
+        private const string IapLinkHashKey = "amzn_iap_link_hash";
+
+        // Идемпотентность attribution: последний ДОСТАВЛЕННЫЙ TrackerToken. Смена токена
+        // (reattribution после переустановки по другой рекламе) → отправка заново.
+        private const string AttributionTokenKey = "amzn_attribution_tracker_token";
+
+        // Атрибуция Adjust резолвится асинхронно, иногда спустя десятки секунд после
+        // установки. Не успела за эти попытки — доберём на OnApplicationFocus и на
+        // следующем запуске (Adjust кэширует атрибуцию нативно).
+        private const int AttributionMaxAttempts = 15;
+        private const float AttributionRetryIntervalSeconds = 2f;
+
         private string _baseUrl;
         private string _apiKey;
         private string _appType;
@@ -40,6 +59,16 @@ namespace AMZNGoDSDK.Runtime
         private bool _deviceIdResolved;
         private bool _flushing;
         private bool _firstOpenInFlight;
+        private bool _attributionRoutineRunning;
+
+        // Связка, отправка которой уже в полёте: сверка IAP может завершиться несколько
+        // раз подряд (init + после покупки), и без этой защёлки одна и та же связка ушла
+        // бы параллельно дважды до того, как первая доставка запишет хеш в PlayerPrefs.
+        private string _iapLinkInFlightHash;
+
+#if AMZN_ADJUST_ENABLED
+        private AdjustSdk.AdjustAttribution _pendingAttribution;
+#endif
 
         private static string AppId => Application.identifier;
 
@@ -97,6 +126,11 @@ namespace AMZNGoDSDK.Runtime
             _firstOpenInFlight = true;
             yield return TrySendFirstOpen();
             _firstOpenInFlight = false;
+
+            // Отдельной корутиной: ожидание атрибуции Adjust (до десятков секунд) не должно
+            // задерживать флаш очереди. first_open сознательно НЕ ждёт атрибуции — он уходит
+            // рано и надёжно, источник трафика доезжает отдельным событием attribution.
+            StartCoroutine(ResolveAndSendAttribution());
 
             yield return FlushQueue();
         }
@@ -236,6 +270,199 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>
+        /// Связка device ↔ Amazon-покупатель (ТЗ «связка покупок и источника трафика», задача 1).
+        /// Вызывается из InAppPurchaseModule через AmznGoDSDKCore по завершении полной сверки
+        /// GetPurchaseUpdates — receiptIds уже содержит чеки ВСЕХ страниц. Фоновая, ничего не
+        /// блокирует; дедуп по хешу связки, отправка заново только при появлении нового чека.
+        /// </summary>
+        public void TrackIapLink(string amazonUserId, IReadOnlyList<string> receiptIds)
+        {
+            if (!Enabled)
+                return;
+
+            if (string.IsNullOrEmpty(amazonUserId))
+            {
+                Debug.LogWarning($"{Tag} iap_link skipped — amazon_user_id is empty");
+                return;
+            }
+
+            // ts фиксируем сразу, как в TrackImpression: ожидание резолва device_id не
+            // должно сдвигать время события.
+            long ts = GetTimestampMs();
+            if (ts < MinTimestampMs)
+                return;
+
+            // Копия + сортировка: канонический порядок нужен хешу идемпотентности, чтобы
+            // одинаковый набор чеков в другом порядке страниц не считался новой связкой.
+            var ids = new List<string>(receiptIds?.Count ?? 0);
+            if (receiptIds != null)
+                foreach (var id in receiptIds)
+                    if (!string.IsNullOrEmpty(id))
+                        ids.Add(id);
+            ids.Sort(StringComparer.Ordinal);
+
+            StartCoroutine(TrackIapLinkRoutine(amazonUserId, ids, ts));
+        }
+
+        private IEnumerator TrackIapLinkRoutine(string amazonUserId, List<string> receiptIds, long ts)
+        {
+            yield return WaitUntilDeviceIdResolved();
+
+            // В отличие от cp-событий, с сентинелом НЕ отправляем: 'unattributed' общий для
+            // многих устройств, такая связка бесполезна и вредна. Хеш не пишем — сверка
+            // перезапустится (форграунд/следующий старт) и попробует снова.
+            if (!_deviceIdResolved || string.IsNullOrEmpty(_deviceIdHash))
+            {
+                Debug.LogWarning($"{Tag} iap_link skipped — no Fire ID (would be '{UnattributedDeviceId}'), will retry on next reconcile");
+                yield break;
+            }
+
+            string linkHash = ComputeIapLinkHash(amazonUserId, receiptIds);
+
+            if (PlayerPrefs.GetString(IapLinkHashKey, "") == linkHash)
+            {
+                Debug.Log($"{Tag} iap_link already delivered (hash unchanged), skipping");
+                yield break;
+            }
+
+            if (_iapLinkInFlightHash == linkHash)
+                yield break;
+            _iapLinkInFlightHash = linkHash;
+
+            string eventId = NewEventId();
+            string json = BuildIapLinkJson(amazonUserId, receiptIds, _deviceIdHash, ts, eventId);
+            Debug.Log($"{Tag} >>> iap_link: amazon_user_id={amazonUserId}, receipts={receiptIds.Count}, device_id_hash={_deviceIdHash}, ts={ts}, event_id={eventId}");
+
+            var outcome = SendOutcome.Retry;
+            yield return SendEventWithRetry(json, eventId, o => outcome = o);
+            _iapLinkInFlightHash = null;
+
+            if (outcome == SendOutcome.Delivered)
+            {
+                PlayerPrefs.SetString(IapLinkHashKey, linkHash);
+                PlayerPrefs.Save();
+                Debug.Log($"{Tag} iap_link confirmed, idempotency hash saved");
+            }
+            else
+            {
+                // Транзиент: событие уже в очереди и доедет флашем, но хеш не записан —
+                // следующая сверка отправит связку заново. Дубль снимает идемпотентный
+                // апсерт на бэкенде. Rejected залогирован в SendEventWithRetry.
+                Debug.LogWarning($"{Tag} iap_link not confirmed ({outcome}) — hash NOT saved, will resend");
+            }
+        }
+
+        /// <summary>
+        /// Источник трафика (ТЗ, задача 2): опрашивает Adjust.GetAttribution с ретраями —
+        /// паттерн DeviceIdProvider.RequestDeviceId — и шлёт событие attribution, когда
+        /// атрибуция появилась. Реатрибуция (смена TrackerToken) отправляется заново.
+        /// </summary>
+        private IEnumerator ResolveAndSendAttribution()
+        {
+            if (_attributionRoutineRunning)
+                yield break;
+
+            _attributionRoutineRunning = true;
+            yield return ResolveAndSendAttributionInner();
+            _attributionRoutineRunning = false;
+        }
+
+        private IEnumerator ResolveAndSendAttributionInner()
+        {
+#if AMZN_ADJUST_ENABLED
+            yield return WaitUntilDeviceIdResolved();
+
+            // Как у iap_link: с сентинелом не шлём, токен не пишем — добор на форграунде
+            // и следующем запуске.
+            if (!_deviceIdResolved || string.IsNullOrEmpty(_deviceIdHash))
+            {
+                Debug.LogWarning($"{Tag} attribution skipped — no Fire ID (would be '{UnattributedDeviceId}')");
+                yield break;
+            }
+
+            for (int i = 0; i < AttributionMaxAttempts; i++)
+            {
+                RequestAttribution();
+
+                // WaitForSecondsRealtime — по уроку ResolveDeviceId: timeScale=0 на
+                // интерстишеле не должен вешать опрос.
+                yield return new WaitForSecondsRealtime(AttributionRetryIntervalSeconds);
+
+                var a = _pendingAttribution;
+                if (a == null || (string.IsNullOrEmpty(a.TrackerToken) && string.IsNullOrEmpty(a.Network)))
+                    continue;
+
+                // Дефолт null, а не "": у атрибуции без TrackerToken ключ — пустая строка,
+                // и дефолт "" ложно совпал бы с ней ещё ДО первой отправки.
+                string token = a.TrackerToken ?? string.Empty;
+                if (PlayerPrefs.GetString(AttributionTokenKey, null) == token)
+                {
+                    Debug.Log($"{Tag} attribution already delivered (tracker_token unchanged), skipping");
+                    yield break;
+                }
+
+                long ts = GetTimestampMs();
+                if (ts < MinTimestampMs)
+                {
+                    Debug.LogWarning($"{Tag} System clock appears incorrect (ts={ts}), skipping attribution");
+                    yield break;
+                }
+
+                string eventId = NewEventId();
+                string json = BuildAttributionJson(
+                    a.Network, a.Campaign, a.Adgroup, a.Creative,
+                    a.TrackerName, a.TrackerToken, a.CostAmount, a.CostCurrency,
+                    _deviceIdHash, ts, eventId);
+                Debug.Log($"{Tag} >>> attribution: network={a.Network}, campaign={a.Campaign}, tracker_token={a.TrackerToken}, " +
+                          $"cost={(a.CostAmount.HasValue ? a.CostAmount.Value.ToString(CultureInfo.InvariantCulture) : "null")} {a.CostCurrency}, " +
+                          $"device_id_hash={_deviceIdHash}, ts={ts}, event_id={eventId}");
+
+                var outcome = SendOutcome.Retry;
+                yield return SendEventWithRetry(json, eventId, o => outcome = o);
+
+                if (outcome == SendOutcome.Delivered)
+                {
+                    PlayerPrefs.SetString(AttributionTokenKey, token);
+                    PlayerPrefs.Save();
+                    Debug.Log($"{Tag} attribution confirmed, tracker_token saved");
+                }
+                else
+                {
+                    Debug.LogWarning($"{Tag} attribution not confirmed ({outcome}) — token NOT saved, will resend");
+                }
+
+                yield break;
+            }
+
+            Debug.Log($"{Tag} attribution not resolved after {AttributionMaxAttempts} attempts — will retry on focus / next launch");
+#else
+            // Без Adjust источника атрибуции нет — событие attribution недоступно в этой сборке.
+            Debug.Log($"{Tag} Adjust module disabled — attribution event unavailable");
+            yield break;
+#endif
+        }
+
+#if AMZN_ADJUST_ENABLED
+        private void RequestAttribution()
+        {
+            try
+            {
+                AdjustSdk.Adjust.GetAttribution(attribution =>
+                {
+                    // null — атрибуция ещё не готова (типично сразу после установки),
+                    // вердикт выносит цикл ретраев, как в DeviceIdProvider.
+                    if (attribution != null)
+                        _pendingAttribution = attribution;
+                });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"{Tag} Adjust.GetAttribution failed: {e.Message}");
+            }
+        }
+#endif
+
+        /// <summary>
         /// Ждёт резолва device_id (не дольше <see cref="DeviceIdWaitForEventSeconds"/>). Если так
         /// и не резолвился — событие всё равно уйдёт, но с device_id_hash='unattributed': это
         /// лучше, чем потерять его целиком.
@@ -253,7 +480,7 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"{Tag} device_id not resolved after {DeviceIdWaitForEventSeconds}s — sending event with '{UnattributedDeviceId}'");
         }
 
-        private IEnumerator SendEventWithRetry(string json, string eventId)
+        private IEnumerator SendEventWithRetry(string json, string eventId, Action<SendOutcome> onResult = null)
         {
             // Сначала кладём на диск, потом отправляем. Тогда, чем бы отправка ни закончилась
             // — в том числе если приложение убьют на середине запроса (игрок ушёл в стор) —
@@ -264,6 +491,7 @@ namespace AMZNGoDSDK.Runtime
             if (!IsInternetAvailable())
             {
                 Debug.LogWarning($"{Tag} No internet, event kept in queue (event_id={eventId})");
+                onResult?.Invoke(SendOutcome.Retry);
                 yield break;
             }
 
@@ -283,6 +511,12 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning($"{Tag} Send failed (transient), event stays in queue for retry (event_id={eventId})");
             }
+
+            // Исход нужен вызывающим, которые пишут флаги идемпотентности только по
+            // подтверждённой доставке (iap_link, attribution). Доставка транзиентного
+            // события ПОЗЖЕ через FlushQueue сюда не попадает — это осознанно: флаг не
+            // запишется, событие уйдёт повторно, дубль снимет идемпотентный апсерт бэкенда.
+            onResult?.Invoke(outcome);
         }
 
         /// <summary>Что делать с событием после попытки отправки.</summary>
@@ -450,6 +684,11 @@ namespace AMZNGoDSDK.Runtime
                 _firstOpenInFlight = false;
             }
 
+            // Добор атрибуции: на старте она могла не резолвиться (нет сети, Adjust не
+            // успел). Корутина сама выйдет мгновенно, если токен уже доставлен.
+            if (!_attributionRoutineRunning)
+                StartCoroutine(ResolveAndSendAttribution());
+
             yield return FlushQueue();
         }
 
@@ -487,6 +726,89 @@ namespace AMZNGoDSDK.Runtime
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
                    $"\"ts\":{ts}" +
                    "}";
+        }
+
+        private static string BuildIapLinkJson(
+            string amazonUserId, List<string> receiptIds, string deviceIdHash, long ts, string eventId)
+        {
+            return "{" +
+                   "\"event_name\":\"iap_link\"," +
+                   $"\"event_id\":\"{EscapeJson(eventId)}\"," +
+                   $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   $"\"app_id\":\"{EscapeJson(AppId)}\"," +
+                   $"\"amazon_user_id\":\"{EscapeJson(amazonUserId)}\"," +
+                   $"\"receipt_ids\":{BuildJsonStringArray(receiptIds)}," +
+                   $"\"ts\":{ts}" +
+                   "}";
+        }
+
+        private static string BuildAttributionJson(
+            string network, string campaign, string adgroup, string creative,
+            string trackerName, string trackerToken, double? costAmount, string costCurrency,
+            string deviceIdHash, long ts, string eventId)
+        {
+            // cost_amount: голое null, не строка "null" и не 0 — ноль означал бы бесплатный
+            // инсталл. InvariantCulture обязателен: локаль с запятой сломала бы JSON.
+            string cost = costAmount.HasValue
+                ? costAmount.Value.ToString("R", CultureInfo.InvariantCulture)
+                : "null";
+
+            return "{" +
+                   "\"event_name\":\"attribution\"," +
+                   $"\"event_id\":\"{EscapeJson(eventId)}\"," +
+                   $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   $"\"app_id\":\"{EscapeJson(AppId)}\"," +
+                   $"\"network\":{JsonStringOrNull(network)}," +
+                   $"\"campaign\":{JsonStringOrNull(campaign)}," +
+                   $"\"adgroup\":{JsonStringOrNull(adgroup)}," +
+                   $"\"creative\":{JsonStringOrNull(creative)}," +
+                   $"\"tracker_name\":{JsonStringOrNull(trackerName)}," +
+                   $"\"tracker_token\":{JsonStringOrNull(trackerToken)}," +
+                   $"\"cost_amount\":{cost}," +
+                   $"\"cost_currency\":{JsonStringOrNull(costCurrency)}," +
+                   $"\"ts\":{ts}" +
+                   "}";
+        }
+
+        /// <summary>Пустой список — как "[]", а не пропуск поля (требование ТЗ).</summary>
+        private static string BuildJsonStringArray(List<string> items)
+        {
+            if (items == null || items.Count == 0)
+                return "[]";
+
+            var sb = new StringBuilder(items.Count * 24 + 2);
+            sb.Append('[');
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append('"').Append(EscapeJson(items[i])).Append('"');
+            }
+            sb.Append(']');
+            return sb.ToString();
+        }
+
+        /// <summary>Отсутствующее строковое поле — голое null, а не пустая строка (требование ТЗ).</summary>
+        private static string JsonStringOrNull(string s) =>
+            string.IsNullOrEmpty(s) ? "null" : "\"" + EscapeJson(s) + "\"";
+
+        /// <summary>Канонический хеш связки: receiptIds уже отсортированы вызывающим.</summary>
+        private static string ComputeIapLinkHash(string amazonUserId, List<string> receiptIds)
+        {
+            var sb = new StringBuilder(amazonUserId.Length + receiptIds.Count * 24 + 1);
+            sb.Append(amazonUserId).Append('|');
+            for (int i = 0; i < receiptIds.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append(receiptIds[i]);
+            }
+
+            using (var sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+                return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+            }
         }
 
         private static string EscapeJson(string s)
