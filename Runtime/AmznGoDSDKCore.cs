@@ -228,6 +228,21 @@ namespace AMZNGoDSDK.Runtime
             if (_crossPromoModule == null || !_crossPromoModule.Enabled) return;
             _crossPromoModule.RefreshPreloadIfStale();
         }
+
+        /// <summary>
+        /// Supplies cross-promo banner callbacks: onClose and the no-ads predicate. The
+        /// predicate is re-checked on every rotation tick; calling this again forces an
+        /// immediate visibility re-evaluation (use it from IAP entitlement listeners).
+        /// Intentionally not gated on Enabled: the banner binds to the module regardless,
+        /// so the predicate must reach it even when cross-promo is turned off.
+        /// </summary>
+        public void SetCrossPromoBannerFuncs(Action onClose, Func<bool> isNoAds)
+        {
+            if (_crossPromoModule == null)
+                return;
+
+            _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
+        }
 #else
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
@@ -237,10 +252,37 @@ namespace AMZNGoDSDK.Runtime
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
         public void RefreshPreloadIfStale() { }
+        public void SetCrossPromoBannerFuncs(Action onClose, Func<bool> isNoAds) { }
 #endif
 
         #endregion
-        
+
+        #region Internet Connection
+
+#if AMZN_INTERNETCONNECTION_ENABLED
+        /// <summary>
+        /// Runtime toggle for the internet connection checker. Disabling stops monitoring,
+        /// hides the offline banner and restores the time scale if the module paused the game.
+        /// Enabling (re)starts monitoring with the settings from the SDK config.
+        /// </summary>
+        public void SetInternetConnectionCheckerEnabled(bool enabled)
+        {
+            if (_internetConnectionModule == null)
+                return;
+
+            _internetConnectionModule.SetEnabled(enabled);
+        }
+
+        /// <summary>True while the connection checker is running (config-enabled and not disabled at runtime).</summary>
+        public bool IsInternetConnectionCheckerEnabled =>
+            _internetConnectionModule != null && _internetConnectionModule.Enabled;
+#else
+        public void SetInternetConnectionCheckerEnabled(bool enabled) { }
+        public bool IsInternetConnectionCheckerEnabled => false;
+#endif
+
+        #endregion
+
         #region AppMetrica
 
 #if AMZN_APPMETRICA_ENABLED
