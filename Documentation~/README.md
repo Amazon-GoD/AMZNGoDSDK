@@ -11,10 +11,16 @@ Cross-Promo and In-App Purchases — in Amazon Appstore projects.
   installed in the consumer project — it resolves the Android/iOS dependencies
   that the SDK generates. Install it via UPM git URL:
   `https://github.com/googlesamples/unity-jar-resolver.git?path=upm`.
-- `com.unity.ugui` and `com.unity.textmeshpro` are pulled in automatically as
-  package dependencies.
+- `com.unity.ugui`, `com.unity.textmeshpro` and the required built-in engine
+  modules (`androidjni`, `imageconversion`, `unitywebrequest`,
+  `unitywebrequesttexture`, `video`) are pulled in automatically as package
+  dependencies.
 - Firebase module only: the consumer project must contain the Firebase Unity
-  SDK (Analytics/Crashlytics) — it is not bundled with this package.
+  SDK (Analytics/Crashlytics) — it is not bundled with this package. Install
+  it **before** enabling the module: without it the SDK refuses to set the
+  define (console warning `dependencies are missing — skipping define`), and
+  forcing `AMZN_FIREBASE_ENABLED` manually fails compilation with
+  `CS0246: 'Firebase' could not be found`.
 
 ## Installation
 
@@ -61,7 +67,42 @@ Open `AMZN GoD > SDK Settings`. Enabling/disabling a module:
 No files are moved or renamed inside the package — toggles are fully
 compatible with the immutable UPM package cache.
 
+EDM4U picks up the generated dependencies file automatically: on the first
+Android resolve it enables `Assets/Plugins/Android/mainTemplate.gradle` (plus
+`gradleTemplate.properties` / `settingsTemplate.gradle`) in the consumer
+project and injects the Maven dependencies of the enabled modules there.
+
+### Build-time notes
+
+- **Analytics App Type is reset on every Unity Editor start** (so a paid build
+  cannot silently inherit yesterday's free type). Re-select it in
+  `AMZN GoD > SDK Settings` before building — otherwise the build stops with a
+  clear error message.
+- Enabled IAP subscriptions must have `Term (days)` set, or the build stops.
+- With Cross-Promo disabled, IL2CPP builds may log a harmless warning about
+  the `AMZNGoDSDK.Module.CrossPromo` assembly referenced from the package
+  `link.xml`.
+
+## Verified configurations
+
+Android gradle exports from a clean Unity 2022.3.60f1 consumer project with
+the package installed from the `Releases` branch and EDM4U 1.2.187 (verified
+2026-08-23):
+
+| Configuration | Result |
+|---|---|
+| All modules ON except Firebase | Export OK: IAP jars/.so, UniWebView.aar, ExoPlayer bridge sources, AppMetrica Java bridge, IngameDebugConsole.aar present; IAP receivers + bootstrap provider injected into the manifest; EDM file lists adjust / installreferrer / appmetrica / exoplayer |
+| IAP OFF (rest ON) | Export OK: 9 IAP natives excluded, no Amazon IAP manifest entries |
+| Cross-Promo OFF (rest ON) | Export OK: 7 CP natives excluded (incl. the module's AndroidManifest.xml), no CP manifest entries, no exoplayer in EDM file |
+| All modules OFF | Export OK: only `unity-classes.jar`, EDM file removed, manifest clean |
+| Firebase ON without Firebase SDK | Define skipped with a console warning (project keeps compiling); forcing the define fails compilation with CS0246 as designed |
+
+The runtime IAP purchase flow on a real Amazon device is **not** covered by
+these checks and must be verified on hardware.
+
 ## Migration from the .unitypackage distribution
+
+See `Documentation~/MIGRATION.md` for the full guide (RU + EN). Short version:
 
 1. Save your configuration file `Assets/Resources/amzn_god_sdk.json`
    (it lives outside the SDK folder and is normally not affected).
