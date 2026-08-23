@@ -54,6 +54,22 @@ namespace AdjustSdk
             // If not, use already predefined AdjustAndroidManifest.xml as default one.
             if (!File.Exists(appManifestPath))
             {
+                // The AdjustAndroidManifest.xml template ships only in Adjust's standalone
+                // .unitypackage layout (Assets/Adjust/...). In the AMZN GoD SDK layout
+                // (both the legacy Assets/AMZNGoDSDK delivery and the UPM package) that
+                // path never exists: without this guard the raw File.Copy below threw
+                // DirectoryNotFoundException into the build log of every consumer project
+                // that has no Assets/Plugins/Android/AndroidManifest.xml (verified in the
+                // Phase 6 UPM consumer-stand build test). Unity's generated manifest plus
+                // gradle manifest merging cover the Adjust SDK needs, so just skip.
+                if (!File.Exists(adjustManifestPath))
+                {
+                    Debug.Log("[Adjust]: No user AndroidManifest.xml in Plugins/Android and no " +
+                              "AdjustAndroidManifest.xml template in this SDK layout — skipping " +
+                              "Adjust manifest preprocessing.");
+                    return;
+                }
+
                 if (!Directory.Exists(androidPluginsPath))
                 {
                     Directory.CreateDirectory(androidPluginsPath);
