@@ -8,7 +8,12 @@
   "licensesUrl": "",
   "dependencies": {
     "com.unity.ugui": "1.0.0",
-    "com.unity.textmeshpro": "3.0.7"
+    "com.unity.textmeshpro": "3.0.7",
+    "com.unity.modules.androidjni": "1.0.0",
+    "com.unity.modules.imageconversion": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequesttexture": "1.0.0",
+    "com.unity.modules.video": "1.0.0"
   },
   "samples": [
     {
