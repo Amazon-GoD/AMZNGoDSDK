@@ -65,7 +65,11 @@ namespace AMZNGoDSDK.Editor
 
         /// <summary>
         /// Returns the set of required bridge file names that are present as imported assets
-        /// compiled for Android. Scans the Assets tree once.
+        /// compiled for Android. Enumerates PluginImporter.GetAllImporters() so both install
+        /// layouts are covered: Assets/AMZNGoDSDK (legacy .unitypackage) and
+        /// Packages/com.amzngod.amzngodsdk (UPM) — a Directory.GetFiles scan over
+        /// Application.dataPath used before Phase 6 missed the package layout entirely and
+        /// failed every Android build with AppMetrica enabled from the UPM package.
         ///
         /// Only files that are (a) not inside a Unity-ignored "~" folder (intentionally
         /// hidden source stashes such as AmazonIapV2Compat~) and (b) located under a
@@ -77,40 +81,27 @@ namespace AMZNGoDSDK.Editor
         {
             var required = new HashSet<string>(RequiredBridgeFiles);
             var found = new HashSet<string>();
-            string dataPath = Application.dataPath.Replace('\\', '/');
 
-            string[] javaFiles;
-            try
+            foreach (var importer in PluginImporter.GetAllImporters())
             {
-                javaFiles = Directory.GetFiles(Application.dataPath, "*.java", SearchOption.AllDirectories);
-            }
-            catch (System.Exception e)
-            {
-                // Keep failure messaging consistent with the guard's intent instead of surfacing
-                // a raw IO/access exception mid-build.
-                throw new BuildFailedException(
-                    "[AMZNGoDSDK] Failed to scan the project for AppMetrica Android bridge sources: " + e.Message);
-            }
-
-            foreach (var raw in javaFiles)
-            {
-                string path = raw.Replace('\\', '/');
-                string fileName = Path.GetFileName(path);
+                string assetPath = importer.assetPath.Replace('\\', '/');
+                string fileName = Path.GetFileName(assetPath);
 
                 if (!required.Contains(fileName))
                     continue;
-                if (path.Contains("~/"))
+                if (assetPath.Contains("~/"))
                     continue;
-                if (!path.Contains("/Plugins/Android/"))
+                if (!assetPath.Contains("/Plugins/Android/"))
                     continue;
 
-                string assetPath = "Assets" + path.Substring(dataPath.Length);
-                if (AssetImporter.GetAtPath(assetPath) is PluginImporter importer)
+                // Самолечение: файл на месте, но платформа Android выключена — типично
+                // после переупаковки SDK, когда .meta пересоздались с чужими настройками.
+                // Ронять сборку ради галочки, которую можем поставить сами, незачем.
+                // В immutable UPM-пакете запись .meta невозможна — тогда честно падаем
+                // штатным сообщением гарда (метаданные пакета обязаны ехать корректными).
+                if (!importer.GetCompatibleWithPlatform(BuildTarget.Android))
                 {
-                    // Самолечение: файл на месте, но платформа Android выключена — типично
-                    // после переупаковки SDK, когда .meta пересоздались с чужими настройками.
-                    // Ронять сборку ради галочки, которую можем поставить сами, незачем.
-                    if (!importer.GetCompatibleWithPlatform(BuildTarget.Android))
+                    try
                     {
                         importer.SetCompatibleWithPlatform(BuildTarget.Android, true);
                         importer.SaveAndReimport();
@@ -118,9 +109,16 @@ namespace AMZNGoDSDK.Editor
                             $"[AMZNGoDSDK] AppMetrica bridge source {assetPath} was not enabled for " +
                             "Android — enabled automatically before the build.");
                     }
-
-                    found.Add(fileName);
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning(
+                            $"[AMZNGoDSDK] AppMetrica bridge source {assetPath} is not enabled for " +
+                            $"Android and could not be re-enabled automatically: {e.Message}");
+                        continue;
+                    }
                 }
+
+                found.Add(fileName);
             }
 
             return found;
