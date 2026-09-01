@@ -173,6 +173,15 @@ namespace AMZNGoDSDK.Runtime
         public bool IsVideoReady => _crossPromoModule.IsVideoReady;
 
         /// <summary>
+        /// True while cross-promo still has creatives left to serve: the remote config was
+        /// delivered AND at least one creative has not yet burned its per-creative show cap.
+        /// Goes false for good once every creative is capped out — that is the hand-off point
+        /// to mediation. A config that never arrived does NOT report false here: that is a
+        /// transient network problem the background refetch recovers from.
+        /// </summary>
+        public bool IsCrossPromoFilled => _crossPromoModule != null && _crossPromoModule.HasFill;
+
+        /// <summary>
         /// True when the next creative is actually sitting in the on-disk cache, so the show
         /// starts without buffering. Diagnostic signal for debug / QA builds — do NOT gate ad
         /// display on it: if the device cache is unavailable it stays false forever and ads
@@ -247,6 +256,7 @@ namespace AMZNGoDSDK.Runtime
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
+        public bool IsCrossPromoFilled => false;
         public bool IsPreloadedVideoCached => false;
         public float LastPreloadRequestedRealtime => -1f;
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
