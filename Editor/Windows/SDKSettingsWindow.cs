@@ -258,10 +258,32 @@ namespace AMZNGoDSDK.Editor
                             "Подробный лог MAX. В релизных сборках держать выключенным."),
                             _currentSettings.AppLovin.VerboseLogging);
 
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
+
+                    bool registryConfigured = AppLovinPackageInstaller.IsRegistryConfigured();
+                    var allowedAdapters = AppLovinPackageInstaller.AllowedAdapterPackageIds();
+                    var blockedNetworks = AppLovinPackageInstaller.BlockedNetworkNames();
+
+                    EditorGUILayout.LabelField(
+                        "Scoped registry",
+                        registryConfigured ? "прописан в Packages/manifest.json" : "не прописан");
+
+                    EditorGUILayout.BeginHorizontal();
+                    if (GUILayout.Button("Install MAX Plugin"))
+                        AppLovinPackageInstaller.InstallMaxPluginMenu();
+
+                    if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
+                        AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
+                    EditorGUILayout.EndHorizontal();
+
                     GUILayout.Space(6);
                     EditorGUILayout.HelpBox(
-                        "Сам плагин MAX в пакет SDK не входит — ставится отдельно через AppLovin Integration Manager. " +
-                        "Запрещённые сетки перечислены в ForbiddenAdNetworks и проверяются перед каждым билдом.",
+                        "Плагин и адаптеры ставятся из scoped registry AppLovin " +
+                        "(" + AppLovinPackageInstaller.RegistryUrl + "), Integration Manager для этого не нужен.\n\n" +
+                        "Исключены по стоп-листу: " +
+                        (blockedNetworks.Count == 0 ? "—" : string.Join(", ", blockedNetworks)) +
+                        ". Тот же список проверяется перед каждым билдом (ForbiddenAdNetworks).",
                         MessageType.Info);
                 });
         }
