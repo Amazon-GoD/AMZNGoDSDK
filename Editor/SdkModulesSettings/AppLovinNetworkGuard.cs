@@ -35,6 +35,10 @@ namespace AMZNGoDSDK.Editor
         private static readonly Regex AndroidPackageSpec =
             new Regex("spec\\s*=\\s*\"([^\"]+)\"", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        // "com.applovin.mediation.adapters.fyber.android": "8.3.1"
+        private static readonly Regex PackageId =
+            new Regex("\"(com\\.[^\"]+)\"\\s*:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         public void OnPreprocessBuild(BuildReport report)
         {
             var settings = SdkSettingsManager.LoadSettings();
@@ -45,6 +49,7 @@ namespace AMZNGoDSDK.Editor
             var findings = new List<string>();
 
             ScanMaxAdapterFolders(findings);
+            ScanUpmManifest(findings);
             ScanDependencyManifests(findings);
             ScanResolvedAndroidLibraries(findings);
 
@@ -78,6 +83,41 @@ namespace AMZNGoDSDK.Editor
 
                 if (network != null)
                     findings.Add($"адаптер MAX «{network.DisplayName}»: {directory}");
+            }
+        }
+
+        /// <summary>
+        /// Зависимости Packages/manifest.json. Начиная с MAX 8.0 адаптеры ставятся не
+        /// папкой в Assets, а UPM-пакетом из scoped registry AppLovin — тогда единственный
+        /// след запрещённой сетки до резолва зависимостей лежит именно здесь.
+        /// </summary>
+        private static void ScanUpmManifest(List<string> findings)
+        {
+            const string manifestPath = "Packages/manifest.json";
+
+            if (!File.Exists(manifestPath))
+                return;
+
+            string content;
+            try
+            {
+                content = File.ReadAllText(manifestPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AppLovinNetworkGuard] Не удалось прочитать {manifestPath}: {ex.Message}");
+                return;
+            }
+
+            // Полноценный парсер здесь не нужен: имена пакетов — это ключи-строки, и
+            // ложное срабатывание на URL реестра невозможно (он не содержит имён сеток).
+            foreach (Match match in PackageId.Matches(content))
+            {
+                string packageId = match.Groups[1].Value;
+                var network = ForbiddenAdNetworks.MatchByGroup(packageId);
+
+                if (network != null)
+                    findings.Add($"UPM-пакет «{network.DisplayName}»: {packageId} ({manifestPath})");
             }
         }
 

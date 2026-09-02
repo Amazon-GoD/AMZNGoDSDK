@@ -51,6 +51,15 @@ namespace AMZNGoDSDK.Editor
         public ForbiddenArtifact[] Artifacts = Array.Empty<ForbiddenArtifact>();
 
         /// <summary>
+        /// Фрагменты id UPM-пакетов адаптеров в реестре AppLovin
+        /// (com.applovin.mediation.adapters.&lt;сетка&gt;.&lt;платформа&gt;). Начиная с MAX 8.0
+        /// адаптеры ставятся через scoped registry, и в манифесте проекта они выглядят
+        /// именно так — ни на maven-группу, ни на имя .aar это не похоже, поэтому нужен
+        /// отдельный признак. Пусто — адаптера этой сетки в реестре нет.
+        /// </summary>
+        public string[] UpmPackageTokens = Array.Empty<string>();
+
+        /// <summary>
         /// Имена папок адаптеров MAX (Assets/MaxSdk/Mediation/&lt;Network&gt;). Сравнение
         /// точное, без учёта регистра. Пусто — у сетки нет адаптера MAX.
         /// </summary>
@@ -91,6 +100,7 @@ namespace AMZNGoDSDK.Editor
                     new ForbiddenArtifact(MaxMediationGroup, "inneractive-adapter"),
                     new ForbiddenArtifact(MaxMediationGroup, "dtexchange-adapter"),
                 },
+                UpmPackageTokens = new[] { "mediation.adapters.fyber." },
                 AdapterFolderNames = new[] { "Fyber", "Inneractive", "DTExchange" },
             },
             new ForbiddenAdNetwork
@@ -129,6 +139,7 @@ namespace AMZNGoDSDK.Editor
                     new ForbiddenArtifact("com.yandex.android", "mobileads"),
                     new ForbiddenArtifact(MaxMediationGroup, "yandex-adapter"),
                 },
+                UpmPackageTokens = new[] { "mediation.adapters.yandex." },
                 AdapterFolderNames = new[] { "Yandex" },
             },
             new ForbiddenAdNetwork
@@ -140,6 +151,7 @@ namespace AMZNGoDSDK.Editor
                     new ForbiddenArtifact(MaxMediationGroup, "mytarget-adapter"),
                     new ForbiddenArtifact(MaxMediationGroup, "vkads-adapter"),
                 },
+                UpmPackageTokens = new[] { "mediation.adapters.mytarget.", "mediation.adapters.vkads." },
                 AdapterFolderNames = new[] { "VKAds", "MyTarget" },
             },
             new ForbiddenAdNetwork
@@ -147,6 +159,7 @@ namespace AMZNGoDSDK.Editor
                 DisplayName = "BidMachine",
                 MavenGroups = new[] { "io.bidmachine" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "bidmachine-adapter") },
+                UpmPackageTokens = new[] { "mediation.adapters.bidmachine." },
                 AdapterFolderNames = new[] { "BidMachine" },
             },
         };
@@ -193,6 +206,12 @@ namespace AMZNGoDSDK.Editor
                 foreach (var artifact in network.Artifacts)
                 {
                     if (Contains(value, artifact.Group) && Contains(value, artifact.Module))
+                        return network;
+                }
+
+                foreach (var token in network.UpmPackageTokens)
+                {
+                    if (Contains(value, token))
                         return network;
                 }
             }
