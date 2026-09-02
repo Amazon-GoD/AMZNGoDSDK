@@ -83,6 +83,7 @@ namespace AMZNGoDSDK.Editor
 
             DrawInternetConnectionSettings();
             DrawCrossPromoSettings();
+            DrawAppLovinSettings();
             DrawAppMetricaSettings();
             DrawFirebaseSettings();
             DrawAdjustSettings();
@@ -233,6 +234,38 @@ namespace AMZNGoDSDK.Editor
                 });
         }
         
+        private void DrawAppLovinSettings()
+        {
+            _currentSettings.AppLovin.Enabled = DrawModuleSection(
+                "AppLovin MAX",
+                "Медиация AppLovin. Включается автоматически, когда кросс-промо исчерпало cap'ы всех креативов.",
+                _currentSettings.AppLovin.Enabled,
+                () =>
+                {
+                    _currentSettings.AppLovin.SdkKey = EditorGUILayout
+                        .TextField(new GUIContent("SDK Key",
+                            "Необязательно: если пусто, берётся ключ из AppLovin Integration Manager."),
+                            _currentSettings.AppLovin.SdkKey);
+
+                    _currentSettings.AppLovin.InterstitialAdUnitId = EditorGUILayout
+                        .TextField("Interstitial Ad Unit", _currentSettings.AppLovin.InterstitialAdUnitId);
+
+                    _currentSettings.AppLovin.RewardedAdUnitId = EditorGUILayout
+                        .TextField("Rewarded Ad Unit", _currentSettings.AppLovin.RewardedAdUnitId);
+
+                    _currentSettings.AppLovin.VerboseLogging = EditorGUILayout
+                        .Toggle(new GUIContent("Verbose Logging",
+                            "Подробный лог MAX. В релизных сборках держать выключенным."),
+                            _currentSettings.AppLovin.VerboseLogging);
+
+                    GUILayout.Space(6);
+                    EditorGUILayout.HelpBox(
+                        "Сам плагин MAX в пакет SDK не входит — ставится отдельно через AppLovin Integration Manager. " +
+                        "Запрещённые сетки перечислены в ForbiddenAdNetworks и проверяются перед каждым билдом.",
+                        MessageType.Info);
+                });
+        }
+
         private void DrawAppMetricaSettings()
         {
             _currentSettings.AppMetrica.Enabled = DrawModuleSection(

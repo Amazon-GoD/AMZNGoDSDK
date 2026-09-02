@@ -60,6 +60,14 @@ namespace AMZNGoDSDK.Editor
                 {
                     "Assets/AMZNGoDSDK/Runtime/Modules/Analytics"
                 }
+            },
+            {
+                // Только наша обёртка. Сам плагин MAX лежит вне SDK (Assets/MaxSdk либо
+                // UPM-пакет) и переименованием папки модуля не управляется — как Firebase.
+                "AppLovin", new[]
+                {
+                    "Assets/AMZNGoDSDK/Runtime/Modules/AppLovin"
+                }
             }
         };
 

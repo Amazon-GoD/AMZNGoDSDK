@@ -30,6 +30,16 @@ namespace AMZNGoDSDK.Editor
             public string[] RequiredAssemblies;
             public string[] RequiredDlls;
             public string[] RequiredFolders;
+
+            /// <summary>
+            /// Полные имена типов, которые обязаны существовать в проекте. Нужны там, где
+            /// SDK можно поставить несколькими способами и путь/имя сборки не фиксированы:
+            /// AppLovin MAX ставится и как Assets/MaxSdk, и как UPM-пакет, и без asmdef —
+            /// тогда его типы попадают в Assembly-CSharp, по которой ничего не отличить.
+            /// Наличие самого типа — единственный устойчивый признак.
+            /// </summary>
+            public string[] RequiredTypes;
+
             public string Description;
         }
 
@@ -107,6 +117,17 @@ namespace AMZNGoDSDK.Editor
                 }
             },
             {
+                ModuleDefineManager.APPLOVIN_DEFINE,
+                new ModuleSpec
+                {
+                    Name = "AppLovin MAX",
+                    RequiredAssemblies = Array.Empty<string>(),
+                    RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/AppLovin" },
+                    RequiredTypes = new[] { "MaxSdk", "MaxSdkCallbacks" },
+                    Description = "AppLovin MAX Unity plugin (внешний: Assets/MaxSdk или UPM-пакет)"
+                }
+            },
+            {
                 ModuleDefineManager.ANALYTICS_DEFINE,
                 new ModuleSpec
                 {
@@ -177,7 +198,41 @@ namespace AMZNGoDSDK.Editor
                 }
             }
 
+            if (spec.RequiredTypes != null)
+            {
+                foreach (var typeName in spec.RequiredTypes)
+                {
+                    if (!TypeExists(typeName))
+                        return false;
+                }
+            }
+
             return true;
+        }
+
+        /// <summary>
+        /// Ищет тип по короткому имени во всех загруженных сборках домена. Плагин, лежащий
+        /// вне нашего define, к этому моменту уже скомпилирован редактором, поэтому его типы
+        /// в домене есть — а вот полное имя сборки зависит от способа установки, и брать
+        /// Type.GetType с квалификацией нельзя.
+        /// </summary>
+        private static bool TypeExists(string typeName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    if (assembly.GetType(typeName, throwOnError: false) != null)
+                        return true;
+                }
+                catch (Exception)
+                {
+                    // Сборку могло не получиться прочитать (динамическая, битая ссылка) —
+                    // это не повод валить всю детекцию.
+                }
+            }
+
+            return false;
         }
 
         private static HashSet<string> GetProjectAssemblyNames()

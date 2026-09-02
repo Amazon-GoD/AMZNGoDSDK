@@ -15,5 +15,6 @@ namespace AMZNGoDSDK.Editor
         public InternetConnectionSettingData InternetConnection = new();
         public DebugConsoleSettingData DebugConsole = new();
         public AnalyticsSettingData Analytics = new();
+        public AppLovinSettingData AppLovin = new();
     }
 }

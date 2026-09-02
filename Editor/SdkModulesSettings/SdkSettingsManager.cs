@@ -95,7 +95,8 @@ namespace AMZNGoDSDK.Editor
                 Firebase = ConvertFirebaseSettingsToEditor(runtimeSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettingsToEditor(runtimeSettings.InternetConnection),
                 DebugConsole = ConvertDebugConsoleSettingsToEditor(runtimeSettings.DebugConsole),
-                Analytics = ConvertAnalyticsSettingsToEditor(runtimeSettings.Analytics)
+                Analytics = ConvertAnalyticsSettingsToEditor(runtimeSettings.Analytics),
+                AppLovin = ConvertAppLovinSettingsToEditor(runtimeSettings.AppLovin)
             };
 
             return editorSettings;
@@ -178,6 +179,23 @@ namespace AMZNGoDSDK.Editor
             }
 
             return editorSettings;
+        }
+
+        private static AppLovinSettingData ConvertAppLovinSettingsToEditor(Runtime.AppLovinSettingData runtimeSettings)
+        {
+            // Блока может не быть вовсе: конфиг, сохранённый версией SDK без медиации,
+            // отдаёт здесь null, и без подстановки дефолта окно настроек падало бы на первом
+            // же обращении к полям.
+            runtimeSettings ??= new Runtime.AppLovinSettingData();
+
+            return new AppLovinSettingData
+            {
+                Enabled = runtimeSettings.Enabled,
+                SdkKey = runtimeSettings.SdkKey,
+                InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
+                RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
+                VerboseLogging = runtimeSettings.VerboseLogging
+            };
         }
 
         private static FirebaseSettingData ConvertFirebaseSettingsToEditor(Runtime.FirebaseSettingData runtimeSettings)
@@ -317,7 +335,8 @@ namespace AMZNGoDSDK.Editor
                 Firebase = ConvertFirebaseSettings(editorSettings.Firebase),
                 InternetConnection = ConvertInternetConnectionSettings(editorSettings.InternetConnection),
                 DebugConsole = ConvertDebugConsoleSettings(editorSettings.DebugConsole),
-                Analytics = ConvertAnalyticsSettings(editorSettings.Analytics)
+                Analytics = ConvertAnalyticsSettings(editorSettings.Analytics),
+                AppLovin = ConvertAppLovinSettings(editorSettings.AppLovin)
             };
 
             return runtimeSettings;
@@ -399,6 +418,20 @@ namespace AMZNGoDSDK.Editor
             }
 
             return runtimeSettings;
+        }
+
+        private static Runtime.AppLovinSettingData ConvertAppLovinSettings(AppLovinSettingData editorSettings)
+        {
+            editorSettings ??= new AppLovinSettingData();
+
+            return new Runtime.AppLovinSettingData
+            {
+                Enabled = editorSettings.Enabled,
+                SdkKey = editorSettings.SdkKey,
+                InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
+                RewardedAdUnitId = editorSettings.RewardedAdUnitId,
+                VerboseLogging = editorSettings.VerboseLogging
+            };
         }
 
         private static Runtime.FirebaseSettingData ConvertFirebaseSettings(FirebaseSettingData editorSettings)

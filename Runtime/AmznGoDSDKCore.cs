@@ -32,6 +32,9 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_ANALYTICS_ENABLED
         [SerializeField] private AnalyticsModule _analyticsModule;
 #endif
+#if AMZN_APPLOVIN_ENABLED
+        [SerializeField] private AppLovinModule _appLovinModule;
+#endif
 
         public bool Enabled { get; private set; }
         public bool IsInitialized { get; private set; }
@@ -58,6 +61,7 @@ namespace AMZNGoDSDK.Runtime
             var appMetricaSettings = sdkSettingsData.AppMetrica;
             var adjustSettings = sdkSettingsData.Adjust;
             var inAppPurchaseSettings = sdkSettingsData.InAppPurchase;
+            var appLovinSettings = sdkSettingsData.AppLovin;
 
             // Доверенное время для периодов подписки (IAP-14) ходит за заголовком Date на
             // бэкенд аналитики — подставляем настроенный адрес, а не только дефолтный.
@@ -121,6 +125,15 @@ namespace AMZNGoDSDK.Runtime
             _inAppPurchaseModule.Construct(inAppPurchaseSettings);
 #endif
 
+#if AMZN_APPLOVIN_ENABLED
+            _appLovinModule.Construct(
+                appLovinSettings.Enabled,
+                appLovinSettings.SdkKey,
+                appLovinSettings.InterstitialAdUnitId,
+                appLovinSettings.RewardedAdUnitId,
+                appLovinSettings.VerboseLogging);
+#endif
+
             #endregion
             
             var modules = new List<ModuleBase>();
@@ -142,30 +155,140 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_IAP_ENABLED
             modules.Add(_inAppPurchaseModule);
 #endif
+#if AMZN_APPLOVIN_ENABLED
+            modules.Add(_appLovinModule);
+#endif
 
             StartCoroutine(InitializeWhenReady(modules.ToArray()));
         }
         #endregion
 
-        #region Cross Promo
+        #region Ads (cross-promo -> AppLovin mediation)
+
+        // Порядок источников фиксирован: пока у кросс-промо остаются креативы с незакрытым
+        // cap'ом, показывает оно. Как только капы выбраны всеми креативами, HasFill гаснет
+        // и показы уходят в медиацию AppLovin.
+        //
+        // Решение принимается ДО передачи запроса в модуль. Войдя в CrossPromoModule.Show*,
+        // отыграть назад уже нельзя: не найдя что показать, модуль сам закрывает запрос через
+        // onClose, и подставить медиацию было бы поздно — показ бы просто пропал.
+
+        /// <summary>
+        /// Shows an ad: cross-promo while it still has creatives left, AppLovin mediation
+        /// once every creative has burned its cap. <paramref name="onClose"/> always fires
+        /// exactly once — including when neither source can serve.
+        /// </summary>
+        public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
+        {
+            if (TryShowCrossPromoVideo(onClose, onCTAClick)) return;
+            if (TryShowMediationInterstitial(onClose)) return;
+            onClose?.Invoke();
+        }
+
+        /// <summary>Shows an interstitial: cross-promo first, AppLovin mediation as the fallback.</summary>
+        public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
+        {
+            if (TryShowCrossPromoInterstitial(onClose, onCTAClick)) return;
+            if (TryShowMediationInterstitial(onClose)) return;
+            onClose?.Invoke();
+        }
+
+        /// <summary>
+        /// Shows a rewarded ad: cross-promo first, AppLovin mediation as the fallback.
+        /// <paramref name="onRewarded"/> fires when the video completes (cross-promo) or when
+        /// MAX grants the reward (mediation), always before <paramref name="onClose"/>.
+        /// </summary>
+        public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null)
+        {
+            if (TryShowCrossPromoRewarded(onClose, onCTAClick, onRewarded)) return;
+            if (TryShowMediationRewarded(onClose, onRewarded)) return;
+            onClose?.Invoke();
+        }
 
 #if AMZN_CROSSPROMO_ENABLED
         /// <summary>
-        /// Shows a weighted-random video cross-promo from remote config.
+        /// Может ли кросс-промо закрыть запрос прямо сейчас. Побочный эффект намеренный:
+        /// при отсутствии фила подталкивает фоновую дозагрузку конфига — уйдя в медиацию,
+        /// кросс-промо больше не попадёт в свой no_fill-путь и сам себя не разбудит.
         /// </summary>
-        /// <param name="onClose">Called when the overlay is closed.</param>
-        /// <param name="onCTAClick">Called when the user taps the CTA button.</param>
-        public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
+        private bool CanServeCrossPromo()
         {
-            if (!_crossPromoModule.Enabled)
-            {
-                onClose?.Invoke();
-                return;
-            }
+            if (_crossPromoModule == null || !_crossPromoModule.Enabled)
+                return false;
 
-            _crossPromoModule.ShowVideoPromo(onClose, onCTAClick);
+            if (_crossPromoModule.HasFill)
+                return true;
+
+            _crossPromoModule.EnsureConfigRefresh("показ ушёл в медиацию");
+            return false;
         }
 
+        private bool TryShowCrossPromoVideo(Action onClose, Action onCTAClick)
+        {
+            if (!CanServeCrossPromo()) return false;
+
+            _crossPromoModule.ShowVideoPromo(onClose, onCTAClick);
+            return true;
+        }
+
+        private bool TryShowCrossPromoInterstitial(Action onClose, Action onCTAClick)
+        {
+            if (!CanServeCrossPromo()) return false;
+
+            _crossPromoModule.ShowInterstitial(onClose, onCTAClick);
+            return true;
+        }
+
+        private bool TryShowCrossPromoRewarded(Action onClose, Action onCTAClick, Action onRewarded)
+        {
+            if (!CanServeCrossPromo()) return false;
+
+            _crossPromoModule.ShowRewarded(onClose, onCTAClick, onRewarded);
+            return true;
+        }
+#else
+        private bool TryShowCrossPromoVideo(Action onClose, Action onCTAClick) => false;
+        private bool TryShowCrossPromoInterstitial(Action onClose, Action onCTAClick) => false;
+        private bool TryShowCrossPromoRewarded(Action onClose, Action onCTAClick, Action onRewarded) => false;
+#endif
+
+#if AMZN_APPLOVIN_ENABLED
+        /// <summary>
+        /// Отдаёт показ в медиацию. false — готового ad'а нет; тогда запрос закрывается без
+        /// рекламы, а не ждёт загрузки: держать игрока перед чёрным экраном хуже, чем
+        /// пропустить один показ. Модуль догрузит ad к следующему запросу сам.
+        /// </summary>
+        private bool TryShowMediationInterstitial(Action onClose)
+        {
+            if (_appLovinModule == null || !_appLovinModule.Enabled)
+                return false;
+
+            return _appLovinModule.ShowInterstitial(onClose);
+        }
+
+        private bool TryShowMediationRewarded(Action onClose, Action onRewarded)
+        {
+            if (_appLovinModule == null || !_appLovinModule.Enabled)
+                return false;
+
+            return _appLovinModule.ShowRewarded(onClose, onRewarded);
+        }
+
+        /// <summary>True when AppLovin has an interstitial loaded and ready to show.</summary>
+        public bool IsMediationInterstitialReady =>
+            _appLovinModule != null && _appLovinModule.Enabled && _appLovinModule.IsInterstitialReady;
+
+        /// <summary>True when AppLovin has a rewarded ad loaded and ready to show.</summary>
+        public bool IsMediationRewardedReady =>
+            _appLovinModule != null && _appLovinModule.Enabled && _appLovinModule.IsRewardedReady;
+#else
+        private bool TryShowMediationInterstitial(Action onClose) => false;
+        private bool TryShowMediationRewarded(Action onClose, Action onRewarded) => false;
+        public bool IsMediationInterstitialReady => false;
+        public bool IsMediationRewardedReady => false;
+#endif
+
+#if AMZN_CROSSPROMO_ENABLED
         /// <summary>True if a video promo overlay is currently visible.</summary>
         public bool IsVideoPromoVisible => _crossPromoModule.IsVideoPromoVisible;
 
@@ -199,35 +322,6 @@ namespace AMZNGoDSDK.Runtime
         public float LastPreloadRequestedRealtime => _crossPromoModule.LastPreloadRequestedRealtime;
 
         /// <summary>
-        /// Shows a cross-promo video as an interstitial.
-        /// </summary>
-        public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
-        {
-            if (!_crossPromoModule.Enabled)
-            {
-                onClose?.Invoke();
-                return;
-            }
-
-            _crossPromoModule.ShowInterstitial(onClose, onCTAClick);
-        }
-
-        /// <summary>
-        /// Shows a cross-promo video as a rewarded ad.
-        /// <paramref name="onRewarded"/> fires when the video completes.
-        /// </summary>
-        public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null)
-        {
-            if (!_crossPromoModule.Enabled)
-            {
-                onClose?.Invoke();
-                return;
-            }
-
-            _crossPromoModule.ShowRewarded(onClose, onCTAClick, onRewarded);
-        }
-
-        /// <summary>
         /// Safety hook: ensures the next-video preload is alive and warmed up. No-op if a
         /// preload is already healthy. Intended to be called on scene transitions to
         /// recover from rare cases where the preload was lost mid-flight.
@@ -253,14 +347,11 @@ namespace AMZNGoDSDK.Runtime
             _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
         }
 #else
-        public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
         public bool IsCrossPromoFilled => false;
         public bool IsPreloadedVideoCached => false;
         public float LastPreloadRequestedRealtime => -1f;
-        public void ShowInterstitial(Action onClose = null, Action onCTAClick = null) { onClose?.Invoke(); }
-        public void ShowRewarded(Action onClose = null, Action onCTAClick = null, Action onRewarded = null) { onClose?.Invoke(); }
         public void RefreshPreloadIfStale() { }
         public void SetCrossPromoBannerFuncs(Action onClose, Func<bool> isNoAds) { }
 #endif
@@ -589,6 +680,10 @@ namespace AMZNGoDSDK.Runtime
                 case "AnalyticsModule": return 1;
                 case "FirebaseModule": return 2;
                 case "AppMetricaModule": return 3;
+                // AppLovin до кросс-промо: MAX поднимается асинхронно и ему нужно время
+                // прогреть interstitial/rewarded ДО того, как кросс-промо исчерпает капы
+                // и первый же показ уйдёт в медиацию.
+                case "AppLovinModule": return 4;
                 case "CrossPromoModule": return 5;
                 case "InAppPurchaseModule": return 6;
                 default: return 100;

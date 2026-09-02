@@ -79,6 +79,18 @@ namespace AMZNGoDSDK.Editor
                     "com.amazon.device.drm.",
                 },
             },
+            new ModuleManifestFootprint
+            {
+                // Activity/service самого MAX и его адаптеров приходят из AAR и оседают
+                // в слитом манифесте. С выключенной медиацией их надо вырезать: без
+                // соответствующих classes они всё равно мертвы, а на сканах магазина
+                // светятся как рекламные компоненты.
+                ModuleName = "AppLovin",
+                ComponentNamePrefixes = new[]
+                {
+                    "com.applovin.",
+                },
+            },
         };
 
         /// <summary>
@@ -97,6 +109,7 @@ namespace AMZNGoDSDK.Editor
                 { "InternetConnection", settings.InternetConnection.Enabled },
                 { "InGameDebugConsole", settings.DebugConsole.Enabled },
                 { "Analytics",          settings.Analytics.Enabled },
+                { "AppLovin",           settings.AppLovin.Enabled },
             };
         }
 

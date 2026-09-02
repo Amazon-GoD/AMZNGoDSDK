@@ -379,6 +379,17 @@ namespace AMZNGoDSDK.Runtime
         /// no_fill может прилетать на каждый запрос показа, но параллельные корутины не
         /// плодятся и частота запросов от этого не растёт.
         /// </summary>
+        /// <summary>
+        /// Публичный вход в фоновую дозагрузку конфига. Нужен роутеру рекламы: когда показ
+        /// уходит в медиацию из-за отсутствия фила, кросс-промо больше не попадает в свой
+        /// no_fill-путь и сам себя не подтолкнёт. Все проверки (конфиг уже доехал, ретрай уже
+        /// идёт, модуль выключен) — внутри, вызывать безопасно сколько угодно раз.
+        /// </summary>
+        public void EnsureConfigRefresh(string reason)
+        {
+            EnsureConfigRetryRunning(reason);
+        }
+
         private void EnsureConfigRetryRunning(string reason)
         {
             if (!Enabled) return;
