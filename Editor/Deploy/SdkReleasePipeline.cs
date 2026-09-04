@@ -39,7 +39,10 @@ namespace AMZNGoDSDK.Editor.Deploy
             public string Version;      // "1.0.0"
             public string Note;         // строка для changelog-заметки в теле коммита
             public bool   DryRun;
-            /// <summary>Куда складывать временное дерево; null → системный temp.</summary>
+            /// <summary>
+            /// Родительская папка для уникальной временной папки запуска;
+            /// null → системный temp. Сама переданная папка никогда не удаляется.
+            /// </summary>
             public string StagingRoot;
             /// <summary>Оставить staging-папку после прогона (для инспекции dry-run).</summary>
             public bool   KeepStaging;
@@ -62,6 +65,7 @@ namespace AMZNGoDSDK.Editor.Deploy
 
         private static readonly Regex VersionRegex = new Regex(@"^(\d+)\.(\d+)\.(\d+)$", RegexOptions.Compiled);
         private static readonly Regex TagRegex = new Regex(@"^v(\d+)\.(\d+)\.(\d+)$", RegexOptions.Compiled);
+        private const string StagingDirectoryPrefix = "AmznGoDSdkRelease_";
 
         /// <summary>Абсолютный путь к корню SDK-репозитория (dev: Assets/AMZNGoDSDK).</summary>
         public static string RepoRoot =>
@@ -124,9 +128,19 @@ namespace AMZNGoDSDK.Editor.Deploy
             }
 
             // --- Staging ---
-            string stagingRoot = string.IsNullOrWhiteSpace(req.StagingRoot)
-                ? Path.Combine(Path.GetTempPath(), "AmznGoDSdkRelease_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"))
-                : req.StagingRoot;
+            string stagingParent = null;
+            string stagingRoot = null;
+            try
+            {
+                stagingParent = ResolveStagingParent(req.StagingRoot);
+                stagingRoot = CreateOwnedStagingDirectory(stagingParent);
+            }
+            catch (Exception e)
+            {
+                result.Error = $"Cannot create staging directory: {e.Message}";
+                return result;
+            }
+
             string tree = Path.Combine(stagingRoot, "tree");
 
             try
@@ -170,10 +184,60 @@ namespace AMZNGoDSDK.Editor.Deploy
                 }
                 else
                 {
-                    try { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true); }
+                    try { DeleteOwnedStagingDirectory(stagingParent, stagingRoot); }
                     catch { /* staging в temp, ОС приберёт */ }
                 }
             }
+        }
+
+        private static string ResolveStagingParent(string requestedRoot)
+        {
+            string parent = string.IsNullOrWhiteSpace(requestedRoot)
+                ? Path.GetTempPath()
+                : requestedRoot.Trim();
+
+            parent = Path.GetFullPath(parent);
+            if (File.Exists(parent))
+                throw new IOException($"Staging parent points to a file: {parent}");
+
+            Directory.CreateDirectory(parent);
+            return parent;
+        }
+
+        private static string CreateOwnedStagingDirectory(string stagingParent)
+        {
+            string directoryName = StagingDirectoryPrefix
+                + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff_")
+                + Guid.NewGuid().ToString("N");
+            string stagingRoot = Path.Combine(stagingParent, directoryName);
+
+            if (Directory.Exists(stagingRoot) || File.Exists(stagingRoot))
+                throw new IOException($"Generated staging path already exists: {stagingRoot}");
+
+            Directory.CreateDirectory(stagingRoot);
+            return stagingRoot;
+        }
+
+        private static void DeleteOwnedStagingDirectory(string stagingParent, string stagingRoot)
+        {
+            if (string.IsNullOrWhiteSpace(stagingParent) || string.IsNullOrWhiteSpace(stagingRoot))
+                return;
+
+            string parentFullPath = Path.GetFullPath(stagingParent)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string rootFullPath = Path.GetFullPath(stagingRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var rootInfo = new DirectoryInfo(rootFullPath);
+            string actualParent = rootInfo.Parent?.FullName
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            bool isDirectChild = string.Equals(actualParent, parentFullPath, StringComparison.OrdinalIgnoreCase);
+            bool hasOwnedName = rootInfo.Name.StartsWith(StagingDirectoryPrefix, StringComparison.Ordinal);
+            if (!isDirectChild || !hasOwnedName)
+                throw new InvalidOperationException($"Refusing to delete unowned staging path: {rootFullPath}");
+
+            if (Directory.Exists(rootFullPath))
+                Directory.Delete(rootFullPath, recursive: true);
         }
 
         /// <summary>Собирает релизное дерево: git archive HEAD → exclusions → sample~ → версия.</summary>

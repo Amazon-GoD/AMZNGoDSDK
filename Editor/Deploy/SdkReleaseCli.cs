@@ -10,7 +10,7 @@ namespace AMZNGoDSDK.Editor.Deploy
     ///   Unity -batchmode -projectPath ... -executeMethod
     ///     AMZNGoDSDK.Editor.Deploy.SdkReleaseCli.Run
     ///     -amznReleaseVersion 1.0.0 [-amznReleaseNote "text"] [-amznDryRun]
-    ///     [-amznStagingRoot /path] [-amznKeepStaging]
+    ///     [-amznStagingRoot /parent/path] [-amznKeepStaging]
     ///
     /// Завершается EditorApplication.Exit: 0 — успех, 1 — ошибка
     /// (флаг -quit не нужен). Push НЕ выполняется никогда.
@@ -23,6 +23,8 @@ namespace AMZNGoDSDK.Editor.Deploy
 
             string version = GetArgValue(args, "-amznReleaseVersion");
             string note = GetArgValue(args, "-amznReleaseNote");
+            // Параметр задаёт только родительскую папку. Пайплайн создаёт внутри
+            // уникальную папку запуска и удаляет только её.
             string stagingRoot = GetArgValue(args, "-amznStagingRoot");
             bool dryRun = HasArg(args, "-amznDryRun");
             bool keepStaging = HasArg(args, "-amznKeepStaging");
