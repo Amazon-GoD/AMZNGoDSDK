@@ -48,12 +48,13 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void Refresh()
         {
-            // Папки модулей, чей define сейчас ВЫКЛЮЧЕН.
-            var disabledFolders = new List<string[]>();
-            foreach (var entry in NativePluginRegistry.ModuleNativeFolders)
+            // Спецификации модулей, чей define сейчас ВЫКЛЮЧЕН. Реестр включает
+            // не только vendored-файлы SDK, но и внешние плагины Firebase/MAX.
+            var disabledModules = new List<ModuleBuildArtifactSpec>();
+            foreach (var spec in ModuleBuildArtifactRegistry.All)
             {
-                if (!ModuleDefineManager.IsModuleEnabled(entry.Key))
-                    disabledFolders.Add(entry.Value);
+                if (!ModuleDefineManager.IsModuleEnabled(spec.Define))
+                    disabledModules.Add(spec);
             }
 
             int excluded = 0;
@@ -62,9 +63,9 @@ namespace AMZNGoDSDK.Editor
                 string assetPath = importer.assetPath;
 
                 bool underDisabled = false;
-                foreach (var folders in disabledFolders)
+                foreach (var module in disabledModules)
                 {
-                    if (NativePluginRegistry.IsUnderFolders(assetPath, folders))
+                    if (ModuleBuildArtifactRegistry.OwnsAssetPath(module, assetPath))
                     {
                         underDisabled = true;
                         break;

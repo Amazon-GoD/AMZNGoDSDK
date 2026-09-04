@@ -19,7 +19,9 @@
 | In-App Purchase | `AMZN_IAP_ENABLED` |
 | Firebase | `AMZN_FIREBASE_ENABLED` |
 | Internet Connection | `AMZN_INTERNETCONNECTION_ENABLED` |
+| In-Game Debug Console | `AMZN_DEBUGCONSOLE_ENABLED` |
 | Analytics | `AMZN_ANALYTICS_ENABLED` |
+| AppLovin MAX | `AMZN_APPLOVIN_ENABLED` |
 
 ### 2. Условная компиляция кода
 
@@ -49,6 +51,22 @@ Folder-rename механика (переименование папок моду
   `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml` — только для
   включённых модулей. Перегенерация происходит при каждом применении тогглов и
   перед билдом (`EdmDependencyBuildPreprocessor`).
+- Внешние Firebase/MAX PluginImporter'ы также входят в фильтр выключенного
+  модуля. Для MAX его UPM-пакеты и адаптеры удаляются из `Packages/manifest.json`
+  с сохранением точных версий в `ProjectSettings`; при обратном включении они
+  восстанавливаются.
+- Firebase `*Dependencies.xml` при выключении обратимо получают нейтральное
+  расширение, поэтому EDM4U не добавляет ни Android Maven artifacts, ни iOS Pods.
+- `Resources` выключенного модуля запрещены: prefab InternetConnection создаётся
+  в generated Resources только при включённом модуле, а `AppLovinSettings.asset`
+  при выключении переносится под `Editor`.
+- Перед сборкой `DisabledModuleBuildGuard` проверяет player assemblies и
+  always-included Resources. После генерации Android-проекта последний guard
+  удаляет оставшиеся Gradle/native следы и повторно сканирует результат. Любая
+  недоказуемая очистка останавливает билд (`fail-closed`).
+- `DisabledModuleSceneStripper` вырезает из временной копии build-сцен компоненты
+  и prefab-инстансы выключенных модулей. Это не даёт ссылкам legacy
+  `AmznGoDSDK.prefab` протащить UI/спрайты Cross-Promo или debug console.
 
 ## Использование
 
@@ -58,6 +76,8 @@ Folder-rename механика (переименование папок моду
 2. Снимите галочку с модуля, который хотите отключить
 3. Нажмите **Save Settings**
 4. Unity автоматически перекомпилирует скрипты
+5. Для AppLovin дождитесь завершения UPM Resolve; прежние версии пакетов будут
+   восстановлены автоматически при следующем включении
 
 ### Проверка статуса модулей
 
@@ -86,6 +106,12 @@ Folder-rename механика (переименование папок моду
 
 Генерация сводного EDM4U Dependencies.xml из шаблонов включённых модулей
 (в Assets потребителя, вне папки SDK — совместимо с immutable UPM-пакетом).
+
+### DisabledModuleBuildGuard / DisabledModuleAndroidArtifactGuard
+
+Проверяют инвариант «выключено = отсутствует в Player»: managed assemblies,
+Resources, Gradle-зависимости и нативные файлы. Если артефакт нельзя убрать
+безопасно, сборка завершается ошибкой с именем модуля и найденным следом.
 
 ### ModuleStatusWindow
 
@@ -204,7 +230,9 @@ ModuleDefineManager.CROSSPROMO_DEFINE            // "AMZN_CROSSPROMO_ENABLED"
 ModuleDefineManager.IAP_DEFINE                   // "AMZN_IAP_ENABLED"
 ModuleDefineManager.FIREBASE_DEFINE              // "AMZN_FIREBASE_ENABLED"
 ModuleDefineManager.INTERNETCONNECTION_DEFINE    // "AMZN_INTERNETCONNECTION_ENABLED"
+ModuleDefineManager.DEBUGCONSOLE_DEFINE          // "AMZN_DEBUGCONSOLE_ENABLED"
 ModuleDefineManager.ANALYTICS_DEFINE             // "AMZN_ANALYTICS_ENABLED"
+ModuleDefineManager.APPLOVIN_DEFINE              // "AMZN_APPLOVIN_ENABLED"
 ```
 
 ## Лучшие практики

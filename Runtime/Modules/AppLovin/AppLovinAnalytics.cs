@@ -120,6 +120,7 @@ namespace AMZNGoDSDK.Runtime
 
             // Собственный бэкенд: mediation_click. Отдельный тип события, потому что cp_click
             // требует paid_app_id, которого у показа медиации нет.
+#if AMZN_ANALYTICS_ENABLED
             var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
             if (analytics == null || adInfo == null)
                 return;
@@ -132,6 +133,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 Debug.LogWarning($"[AppLovinAnalytics] backend mediation_click failed: {ex.Message}");
             }
+#endif
         }
 
         public static void ReportHidden(string placement, MaxSdkBase.AdInfo adInfo)
@@ -179,6 +181,7 @@ namespace AMZNGoDSDK.Runtime
             // Собственный бэкенд (/v1/events, событие mediation_impression). Шлём именно здесь,
             // а не по OnAdDisplayedEvent: MAX отдаёт OnAdRevenuePaidEvent ровно один раз на показ,
             // и только в нём есть выручка — иначе понадобился бы второй запрос ради суммы.
+#if AMZN_ANALYTICS_ENABLED
             var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
             if (analytics != null)
             {
@@ -196,6 +199,7 @@ namespace AMZNGoDSDK.Runtime
                     Debug.LogWarning($"[AppLovinAnalytics] backend mediation_impression failed: {ex.Message}");
                 }
             }
+#endif
 
             // Плюс плоское событие в AppMetrica — там сумма показа нужна рядом с остальной воронкой.
             Report("mediation_ad_revenue", BuildArgs(placement, adInfo), alsoAdjust: false);

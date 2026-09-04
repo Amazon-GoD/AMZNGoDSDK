@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PackageManager;
@@ -35,6 +36,27 @@ namespace AMZNGoDSDK.Editor
 
         private const string ManifestPath = "Packages/manifest.json";
         private const string BackupDirectory = "Library/AmznGoDSDK";
+        private const string DisabledStatePath = "ProjectSettings/AMZNGoDSDK/AppLovinPackages.disabled.json";
+        private const string AppLovinSettingsPath = "Assets/MaxSdk/Resources/AppLovinSettings.asset";
+        private const string DisabledAppLovinSettingsPath =
+            "Assets/MaxSdk/Editor/AMZNGoDSDKDisabled/AppLovinSettings.asset";
+
+        [Serializable]
+        private sealed class DisabledPackageState
+        {
+            public List<DisabledPackageEntry> Packages = new List<DisabledPackageEntry>();
+        }
+
+        [Serializable]
+        private sealed class DisabledPackageEntry
+        {
+            public string Id;
+            public string Version;
+        }
+
+        private static readonly Regex AppLovinDependencyLine = new Regex(
+            "^[ \\t]*\\\"(?<id>com\\.applovin\\.[^\\\"]+)\\\"[ \\t]*:[ \\t]*\\\"(?<version>[^\\\"]+)\\\"[ \\t]*,?[ \\t]*(?:\\r?\\n|$)",
+            RegexOptions.Multiline | RegexOptions.Compiled);
 
         /// <summary>
         /// Сетки, у которых в реестре AppLovin есть адаптер. Снимок реестра на 2026-09-01
@@ -118,6 +140,27 @@ namespace AMZNGoDSDK.Editor
         }
 
         #region Public API
+
+        /// <summary>
+        /// Делает состояние внешнего MAX симметричным тогглу модуля. При выключении
+        /// точные версии пакетов сохраняются в ProjectSettings и удаляются из UPM
+        /// manifest; Resources-настройка переносится под Editor. При включении всё
+        /// восстанавливается без потери конфигурации.
+        /// </summary>
+        public static void SynchronizeWithModule(bool enabled)
+        {
+            try
+            {
+                bool manifestChanged = enabled ? RestoreDisabledPackages() : StashAndRemovePackages();
+                SynchronizeSettingsAsset(enabled);
+                if (manifestChanged)
+                    Client.Resolve();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AppLovinInstaller] Не удалось синхронизировать MAX с тогглом: {ex.Message}");
+            }
+        }
 
         /// <summary>
         /// Id адаптеров, которые разрешено ставить: всё из реестра за вычетом запрещённых
@@ -249,6 +292,138 @@ namespace AMZNGoDSDK.Editor
             }
 
             Debug.Log($"[AppLovinInstaller] Готово: обработано адаптеров {adapters.Count}.");
+        }
+
+        #endregion
+
+        #region Disable / restore
+
+        private static bool StashAndRemovePackages()
+        {
+            if (!File.Exists(ManifestPath))
+                return false;
+
+            string manifest = File.ReadAllText(ManifestPath);
+            MatchCollection matches = AppLovinDependencyLine.Matches(manifest);
+            if (matches.Count == 0)
+                return false;
+
+            var state = LoadDisabledState();
+            foreach (Match match in matches)
+            {
+                string id = match.Groups["id"].Value;
+                string version = match.Groups["version"].Value;
+                var existing = state.Packages.FirstOrDefault(entry =>
+                    string.Equals(entry.Id, id, StringComparison.Ordinal));
+                if (existing == null)
+                    state.Packages.Add(new DisabledPackageEntry { Id = id, Version = version });
+                else
+                    existing.Version = version;
+            }
+
+            SaveDisabledState(state);
+            if (!BackupManifest(manifest))
+                throw new IOException("не удалось создать резервную копию Packages/manifest.json");
+
+            string updated = AppLovinDependencyLine.Replace(manifest, string.Empty);
+            // После удаления последней зависимости не оставляем trailing comma.
+            updated = Regex.Replace(updated, @",(?=\s*})", string.Empty);
+            File.WriteAllText(ManifestPath, updated);
+            Debug.Log($"[AppLovinInstaller] AppLovin выключен: из manifest удалено пакетов {matches.Count}.");
+            return true;
+        }
+
+        private static bool RestoreDisabledPackages()
+        {
+            var state = LoadDisabledState();
+            if (state.Packages.Count == 0 || !File.Exists(ManifestPath))
+                return false;
+
+            string manifest = File.ReadAllText(ManifestPath);
+            var missing = state.Packages
+                .Where(entry => manifest.IndexOf($"\"{entry.Id}\"", StringComparison.Ordinal) < 0)
+                .ToList();
+            if (missing.Count == 0)
+            {
+                DeleteDisabledState();
+                return false;
+            }
+
+            int dependenciesIndex = manifest.IndexOf("\"dependencies\"", StringComparison.Ordinal);
+            int objectStart = dependenciesIndex < 0 ? -1 : manifest.IndexOf('{', dependenciesIndex);
+            int objectEnd = objectStart < 0 ? -1 : manifest.IndexOf('}', objectStart);
+            if (objectStart < 0 || objectEnd < 0)
+                throw new InvalidDataException("в Packages/manifest.json не найден объект dependencies");
+
+            bool hasExistingDependencies = !string.IsNullOrWhiteSpace(
+                manifest.Substring(objectStart + 1, objectEnd - objectStart - 1));
+            var insertion = new StringBuilder();
+            insertion.AppendLine();
+            for (int i = 0; i < missing.Count; i++)
+            {
+                bool needsComma = hasExistingDependencies || i < missing.Count - 1;
+                insertion.Append("        \"").Append(missing[i].Id).Append("\": \"")
+                    .Append(missing[i].Version).Append('"');
+                if (needsComma)
+                    insertion.Append(',');
+                insertion.AppendLine();
+            }
+
+            if (!BackupManifest(manifest))
+                throw new IOException("не удалось создать резервную копию Packages/manifest.json");
+
+            manifest = manifest.Insert(objectStart + 1, insertion.ToString());
+            File.WriteAllText(ManifestPath, manifest);
+            DeleteDisabledState();
+            Debug.Log($"[AppLovinInstaller] AppLovin включён: восстановлено пакетов {missing.Count}.");
+            return true;
+        }
+
+        private static DisabledPackageState LoadDisabledState()
+        {
+            if (!File.Exists(DisabledStatePath))
+                return new DisabledPackageState();
+
+            return JsonUtility.FromJson<DisabledPackageState>(File.ReadAllText(DisabledStatePath))
+                   ?? new DisabledPackageState();
+        }
+
+        private static void SaveDisabledState(DisabledPackageState state)
+        {
+            string directory = Path.GetDirectoryName(DisabledStatePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(DisabledStatePath, JsonUtility.ToJson(state, true));
+        }
+
+        private static void DeleteDisabledState()
+        {
+            if (File.Exists(DisabledStatePath))
+                File.Delete(DisabledStatePath);
+        }
+
+        private static void SynchronizeSettingsAsset(bool enabled)
+        {
+            string source = enabled ? DisabledAppLovinSettingsPath : AppLovinSettingsPath;
+            string destination = enabled ? AppLovinSettingsPath : DisabledAppLovinSettingsPath;
+            // Когда MAX уже удалён, тип ScriptableObject недоступен и
+            // LoadMainAssetAtPath возвращает null даже для существующего файла.
+            if (!File.Exists(source))
+                return;
+            if (File.Exists(destination))
+                throw new IOException($"целевой asset уже существует: {destination}");
+
+            string directory = Path.GetDirectoryName(destination)?.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                AssetDatabase.Refresh();
+            }
+
+            string error = AssetDatabase.MoveAsset(source, destination);
+            if (!string.IsNullOrEmpty(error))
+                throw new IOException(error);
+            Debug.Log($"[AppLovinInstaller] {source} -> {destination}");
         }
 
         #endregion

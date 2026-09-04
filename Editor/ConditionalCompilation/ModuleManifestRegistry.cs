@@ -87,6 +87,25 @@ namespace AMZNGoDSDK.Editor
                     "com.applovin.",
                 },
             },
+            new ModuleManifestFootprint
+            {
+                ModuleName = "Adjust",
+                ComponentNamePrefixes = new[] { "com.adjust.sdk." },
+            },
+            new ModuleManifestFootprint
+            {
+                ModuleName = "Firebase",
+                ComponentNamePrefixes = new[] { "com.google.firebase." },
+            },
+            new ModuleManifestFootprint
+            {
+                ModuleName = "Cross-Promo",
+                ComponentNamePrefixes = new[]
+                {
+                    "com.amzngod.exoplayer.",
+                    "com.onevcat.uniwebview.",
+                },
+            },
         };
 
         /// <summary>
@@ -95,17 +114,19 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static Dictionary<string, bool> GetModuleEnabledMap(SdkSettingsData settings)
         {
+            bool sdkEnabled = settings != null && settings.Enabled;
+
             return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
             {
-                { "Cross-Promo",        settings.CrossPromo.Enabled },
-                { "Adjust",             settings.Adjust.Enabled },
-                { "AppMetrica",         settings.AppMetrica.Enabled },
-                { "Firebase",           settings.Firebase.Enabled },
-                { "InAppPurchase",      settings.InAppPurchase.Enabled },
-                { "InternetConnection", settings.InternetConnection.Enabled },
-                { "InGameDebugConsole", settings.DebugConsole.Enabled },
-                { "Analytics",          settings.Analytics.Enabled },
-                { "AppLovin",           settings.AppLovin.Enabled },
+                { "Cross-Promo",        sdkEnabled && settings.CrossPromo != null && settings.CrossPromo.Enabled },
+                { "Adjust",             sdkEnabled && settings.Adjust != null && settings.Adjust.Enabled },
+                { "AppMetrica",         sdkEnabled && settings.AppMetrica != null && settings.AppMetrica.Enabled },
+                { "Firebase",           sdkEnabled && settings.Firebase != null && settings.Firebase.Enabled },
+                { "InAppPurchase",      sdkEnabled && settings.InAppPurchase != null && settings.InAppPurchase.Enabled },
+                { "InternetConnection", sdkEnabled && settings.InternetConnection != null && settings.InternetConnection.Enabled },
+                { "InGameDebugConsole", sdkEnabled && settings.DebugConsole != null && settings.DebugConsole.Enabled },
+                { "Analytics",          sdkEnabled && settings.Analytics != null && settings.Analytics.Enabled },
+                { "AppLovin",           sdkEnabled && settings.AppLovin != null && settings.AppLovin.Enabled },
             };
         }
 

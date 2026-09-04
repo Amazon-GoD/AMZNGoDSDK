@@ -82,6 +82,18 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void UpdateDefineSymbols(SdkSettingsData settings)
         {
+            bool appLovinRequested = settings != null
+                                     && settings.Enabled
+                                     && settings.AppLovin != null
+                                     && settings.AppLovin.Enabled;
+            bool firebaseRequested = settings != null
+                                     && settings.Enabled
+                                     && settings.Firebase != null
+                                     && settings.Firebase.Enabled;
+            AppLovinPackageInstaller.SynchronizeWithModule(appLovinRequested);
+            ExternalDependencyAssetSynchronizer.SynchronizeFirebase(firebaseRequested);
+            ModuleResourceSynchronizer.Synchronize(settings);
+
             // Обновляем для всех платформ
             var buildTargetGroups = new[]
             {
@@ -198,6 +210,10 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void RemoveAllSdkDefines()
         {
+            AppLovinPackageInstaller.SynchronizeWithModule(false);
+            ExternalDependencyAssetSynchronizer.SynchronizeFirebase(false);
+            ModuleResourceSynchronizer.Synchronize(null);
+
             var buildTargetGroups = new[]
             {
                 BuildTargetGroup.Android,

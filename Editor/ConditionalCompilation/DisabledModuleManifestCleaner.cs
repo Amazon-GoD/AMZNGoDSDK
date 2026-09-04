@@ -6,6 +6,7 @@ using System.Text;
 using System.Xml;
 using UnityEditor;
 using UnityEditor.Android;
+using UnityEditor.Build;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Editor
@@ -67,8 +68,9 @@ namespace AMZNGoDSDK.Editor
             }
             catch (Exception e)
             {
-                // Никогда не роняем сборку из-за очистки — только предупреждаем.
-                Debug.LogWarning($"{LogTag} Cleanup skipped due to error: {e.Message}");
+                // Полное исключение — обязательный инвариант. Если очистку нельзя
+                // доказуемо применить, продолжать сборку небезопасно.
+                throw new BuildFailedException($"{LogTag} cleanup failed: {e.Message}");
             }
         }
 
