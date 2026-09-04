@@ -1,5 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+# Source template. ModuleResourceSynchronizer imports a generated .prefab only while Cross-Promo is enabled.
 --- !u!1 &258620279489833134
 GameObject:
   m_ObjectHideFlags: 0

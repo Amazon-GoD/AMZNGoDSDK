@@ -49,6 +49,10 @@ namespace AMZNGoDSDK.Editor
                     Name = "Cross-Promo",
                     Define = ModuleDefineManager.CROSSPROMO_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/Cross-Promo",
+                    ExternalAssetPrefixes = new[]
+                    {
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/CrossPromoBanner.prefab"
+                    },
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.CrossPromo", "UniWebView-CSharp" },
                     AndroidTextFingerprints = new[]
                     {
@@ -97,7 +101,7 @@ namespace AMZNGoDSDK.Editor
                     RelativeModuleFolder = "Runtime/Modules/InternetConnection",
                     ExternalAssetPrefixes = new[]
                     {
-                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/"
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/OfflineBanner.prefab"
                     },
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.InternetConnection" },
                 },
@@ -106,6 +110,10 @@ namespace AMZNGoDSDK.Editor
                     Name = "InGameDebugConsole",
                     Define = ModuleDefineManager.DEBUGCONSOLE_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/InGameDebugConsole",
+                    ExternalAssetPrefixes = new[]
+                    {
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/IngameDebugConsole.prefab"
+                    },
                     ManagedAssemblies = new[] { "IngameDebugConsole.Runtime" },
                     AndroidTextFingerprints = new[] { "IngameDebugConsole" },
                     AndroidFileFingerprints = new[] { "ingamedebugconsole" },

@@ -12,28 +12,28 @@ namespace AMZNGoDSDK.Runtime
 
 
 #if AMZN_ADJUST_ENABLED
-        [SerializeField] private AdjustModule _adjustModule;
+        private AdjustModule _adjustModule;
 #endif
 #if AMZN_APPMETRICA_ENABLED
-        [SerializeField] private AppMetricaModule _appMetricaModule;
+        private AppMetricaModule _appMetricaModule;
 #endif
 #if AMZN_CROSSPROMO_ENABLED
-        [SerializeField] private CrossPromoModule _crossPromoModule;
+        private CrossPromoModule _crossPromoModule;
 #endif
 #if AMZN_IAP_ENABLED
-        [SerializeField] private InAppPurchaseModule _inAppPurchaseModule;
+        private InAppPurchaseModule _inAppPurchaseModule;
 #endif
 #if AMZN_FIREBASE_ENABLED
-        [SerializeField] private FirebaseModule _firebaseModule;
+        private FirebaseModule _firebaseModule;
 #endif
 #if AMZN_INTERNETCONNECTION_ENABLED
-        [SerializeField] private InternetConnectionModule _internetConnectionModule;
+        private InternetConnectionModule _internetConnectionModule;
 #endif
 #if AMZN_ANALYTICS_ENABLED
-        [SerializeField] private AnalyticsModule _analyticsModule;
+        private AnalyticsModule _analyticsModule;
 #endif
 #if AMZN_APPLOVIN_ENABLED
-        [SerializeField] private AppLovinModule _appLovinModule;
+        private AppLovinModule _appLovinModule;
 #endif
 
         public bool Enabled { get; private set; }
@@ -79,6 +79,22 @@ namespace AMZNGoDSDK.Runtime
 #endif
 #if AMZN_APPLOVIN_ENABLED
             EnsureAppLovinModule();
+#endif
+#if AMZN_ADJUST_ENABLED
+            EnsureAdjustModule();
+#endif
+#if AMZN_APPMETRICA_ENABLED
+            EnsureAppMetricaModule();
+#endif
+#if AMZN_CROSSPROMO_ENABLED
+            EnsureCrossPromoModule();
+            EnsureOptionalPrefab("AMZNGoDSDK/CrossPromoBanner", "Banner");
+#endif
+#if AMZN_IAP_ENABLED
+            EnsureInAppPurchaseModule();
+#endif
+#if AMZN_DEBUGCONSOLE_ENABLED
+            EnsureOptionalPrefab("AMZNGoDSDK/IngameDebugConsole", "IngameDebugConsole");
 #endif
 
             #region Constructs
@@ -609,6 +625,63 @@ namespace AMZNGoDSDK.Runtime
         #endregion
 
         #region Private Members
+
+        /// <summary>
+        /// Опциональные модули не сериализуются в общем prefab: при снятии define их
+        /// типы исчезают из Editor, и Unity повреждает layout prefab при реимпорте.
+        /// Компоненты создаются только в конфигурации, где их assembly скомпилирована.
+        /// </summary>
+#if AMZN_ADJUST_ENABLED
+        private void EnsureAdjustModule()
+        {
+            _adjustModule = GetComponent<AdjustModule>();
+            if (_adjustModule == null)
+                _adjustModule = gameObject.AddComponent<AdjustModule>();
+        }
+#endif
+
+#if AMZN_APPMETRICA_ENABLED
+        private void EnsureAppMetricaModule()
+        {
+            _appMetricaModule = GetComponent<AppMetricaModule>();
+            if (_appMetricaModule == null)
+                _appMetricaModule = gameObject.AddComponent<AppMetricaModule>();
+        }
+#endif
+
+#if AMZN_CROSSPROMO_ENABLED
+        private void EnsureCrossPromoModule()
+        {
+            _crossPromoModule = GetComponent<CrossPromoModule>();
+            if (_crossPromoModule == null)
+                _crossPromoModule = gameObject.AddComponent<CrossPromoModule>();
+        }
+#endif
+
+#if AMZN_IAP_ENABLED
+        private void EnsureInAppPurchaseModule()
+        {
+            _inAppPurchaseModule = GetComponent<InAppPurchaseModule>();
+            if (_inAppPurchaseModule == null)
+                _inAppPurchaseModule = gameObject.AddComponent<InAppPurchaseModule>();
+        }
+#endif
+
+        private void EnsureOptionalPrefab(string resourcePath, string instanceName)
+        {
+            if (transform.Find(instanceName) != null)
+                return;
+
+            GameObject prefab = Resources.Load<GameObject>(resourcePath);
+            if (prefab == null)
+            {
+                Debug.LogError($"[AMZNGoDSDK] Optional module prefab not found: Resources/{resourcePath}.");
+                return;
+            }
+
+            GameObject instance = Instantiate(prefab, transform, false);
+            instance.name = instanceName;
+        }
 
 #if AMZN_ANALYTICS_ENABLED
         private void EnsureAnalyticsModule()

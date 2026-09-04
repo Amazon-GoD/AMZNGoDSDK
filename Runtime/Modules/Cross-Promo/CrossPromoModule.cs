@@ -160,6 +160,11 @@ namespace AMZNGoDSDK.Runtime
 
         public void Construct(CrossPromoSettingData settings)
         {
+            if (_configurationManager == null)
+                _configurationManager = GetComponent<CrossPromoConfigurationManager>();
+            if (_configurationManager == null)
+                _configurationManager = gameObject.AddComponent<CrossPromoConfigurationManager>();
+
             Debug.Log($"[CrossPromoModule] Construct() called. Enabled={settings.Enabled}, ConfigUrl='{settings.ConfigUrl}', VideoBackend={settings.VideoBackend}");
             Enabled = settings.Enabled;
             _configUrl = settings.ConfigUrl;

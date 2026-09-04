@@ -13,7 +13,8 @@ Cross-Promo and In-App Purchases — in Amazon Appstore projects.
   `https://github.com/googlesamples/unity-jar-resolver.git?path=upm`.
 - `com.unity.ugui`, `com.unity.textmeshpro` and the required built-in engine
   modules (`androidjni`, `imageconversion`, `unitywebrequest`,
-  `unitywebrequesttexture`, `video`) are pulled in automatically as package
+  `unitywebrequesttexture`, `jsonserialize`, `video`) are pulled in
+  automatically as package
   dependencies.
 - Firebase module only: the consumer project must contain the Firebase Unity
   SDK (Analytics/Crashlytics) — it is not bundled with this package. Install
@@ -52,6 +53,11 @@ The configured SDK prefab ships as a package sample: open
 `Window > Package Manager`, select **AMZN GoD SDK**, expand **Samples** and
 import **SDKPrefab**. Drop `AmznGoDSDK.prefab` into your boot scene.
 
+The sample prefab contains only the permanent SDK core and Unity's neutral
+`EventSystem` components. Optional module components are attached at runtime
+only when their `AMZN_<MODULE>_ENABLED` define is compiled. This makes it safe
+to keep the same prefab in a scene while modules are switched on and off.
+
 ## Module toggles
 
 Open `AMZN GoD > SDK Settings`. Enabling/disabling a module:
@@ -63,6 +69,13 @@ Open `AMZN GoD > SDK Settings`. Enabling/disabling a module:
   disabled;
 - regenerates `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml`
   so EDM4U resolves only the dependencies of enabled modules.
+- creates module-owned UI prefabs under
+  `Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK` only while the owning
+  assembly is enabled. Disabling InternetConnection, Cross-Promo or
+  InGameDebugConsole removes its generated prefab before the define is
+  removed, preventing stale serialized components and excluding the resource
+  from the Player. If none remain, the generated `Resources` folder is removed
+  as well.
 
 No files are moved or renamed inside the package — toggles are fully
 compatible with the immutable UPM package cache.
@@ -96,6 +109,11 @@ the package installed from the `Releases` branch and EDM4U 1.2.187 (verified
 | Cross-Promo OFF (rest ON) | Export OK: 7 CP natives excluded (incl. the module's AndroidManifest.xml), no CP manifest entries, no exoplayer in EDM file |
 | All modules OFF | Export OK: only `unity-classes.jar`, EDM file removed, manifest clean |
 | Firebase ON without Firebase SDK | Define skipped with a console warning (project keeps compiling); forcing the define fails compilation with CS0246 as designed |
+
+The all-off transition was additionally rechecked on 2026-09-04 after the
+prefab isolation change: clean import and post-toggle domain reload complete
+without `Scripted Object has unknown format`, prefab-layout or missing-script
+errors; no optional module assemblies or generated module resources remain.
 
 The runtime IAP purchase flow on a real Amazon device is **not** covered by
 these checks and must be verified on hardware.
