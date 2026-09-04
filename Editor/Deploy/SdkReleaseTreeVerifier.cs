@@ -35,6 +35,7 @@ namespace AMZNGoDSDK.Editor.Deploy
         /// </summary>
         public static readonly string[] RequiredAsmdefPaths =
         {
+            "Bootstrap/Editor/AMZNGoD.Bootstrap.Editor.asmdef",
             "Runtime/AMZNGoDSDK.Runtime.asmdef",
             "Runtime/Core/AMZNGoDSDK.Core.asmdef",
             "Editor/AMZNGoDSDK.Editor.asmdef",
@@ -51,6 +52,7 @@ namespace AMZNGoDSDK.Editor.Deploy
             "Runtime/Modules/InGameDebugConsole/Plugins/IngameDebugConsole/IngameDebugConsole.Runtime.asmdef",
             "Runtime/Modules/InGameDebugConsole/Plugins/IngameDebugConsole/Editor/IngameDebugConsole.Editor.asmdef",
             "Runtime/Modules/InternetConnection/AMZNGoDSDK.Module.InternetConnection.asmdef",
+            "Runtime/Modules/AppLovin/AMZNGoDSDK.Module.AppLovin.asmdef",
         };
 
         public const string ExpectedPackageName = "com.amzngod.amzngodsdk";

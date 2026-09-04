@@ -83,6 +83,7 @@ namespace AMZNGoDSDK.Editor
 
             DrawInternetConnectionSettings();
             DrawCrossPromoSettings();
+            DrawAppLovinSettings();
             DrawAppMetricaSettings();
             DrawFirebaseSettings();
             DrawAdjustSettings();
@@ -233,6 +234,78 @@ namespace AMZNGoDSDK.Editor
                 });
         }
         
+        private void DrawAppLovinSettings()
+        {
+            _currentSettings.AppLovin.Enabled = DrawModuleSection(
+                "AppLovin MAX",
+                "Медиация AppLovin. Включается автоматически, когда кросс-промо исчерпало cap'ы всех креативов.",
+                _currentSettings.AppLovin.Enabled,
+                () =>
+                {
+                    _currentSettings.AppLovin.SdkKey = EditorGUILayout
+                        .TextField(new GUIContent("SDK Key",
+                            "Необязательно: если пусто, берётся ключ из AppLovin Integration Manager."),
+                            _currentSettings.AppLovin.SdkKey);
+
+                    _currentSettings.AppLovin.InterstitialAdUnitId = EditorGUILayout
+                        .TextField("Interstitial Ad Unit", _currentSettings.AppLovin.InterstitialAdUnitId);
+
+                    _currentSettings.AppLovin.RewardedAdUnitId = EditorGUILayout
+                        .TextField("Rewarded Ad Unit", _currentSettings.AppLovin.RewardedAdUnitId);
+
+                    _currentSettings.AppLovin.VerboseLogging = EditorGUILayout
+                        .Toggle(new GUIContent("Verbose Logging",
+                            "Подробный лог MAX. В релизных сборках держать выключенным."),
+                            _currentSettings.AppLovin.VerboseLogging);
+
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
+
+                    bool registryConfigured = AppLovinPackageInstaller.IsRegistryConfigured();
+                    var allowedAdapters = AppLovinPackageInstaller.AllowedAdapterPackageIds();
+                    var blockedNetworks = AppLovinPackageInstaller.BlockedNetworkNames();
+
+                    EditorGUILayout.LabelField(
+                        "Scoped registry",
+                        registryConfigured ? "прописан в Packages/manifest.json" : "не прописан");
+
+                    EditorGUILayout.LabelField(
+                        "Версия плагина",
+                        AppLovinPackageInstaller.Pins.TryGetValue(
+                            AppLovinPackageInstaller.MaxPluginPackageId, out var maxPin)
+                            ? maxPin + " (закреплена)"
+                            : "latest");
+
+                    EditorGUILayout.BeginHorizontal();
+                    if (GUILayout.Button("Install MAX Plugin"))
+                        AppLovinPackageInstaller.InstallMaxPluginMenu();
+
+                    if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
+                        AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
+                    EditorGUILayout.EndHorizontal();
+
+                    var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
+                    if (pinnedAdapters.Count > 0)
+                    {
+                        GUILayout.Space(4);
+                        EditorGUILayout.HelpBox(
+                            "Адаптеры с закреплённой версией — свежие релизы требуют compileSdk 35/36 " +
+                            "или minSdk 24, чего проект (minSdk 23, compileSdk 34, AGP 7.4.2) не даёт:\n" +
+                            string.Join("\n", pinnedAdapters),
+                            MessageType.None);
+                    }
+
+                    GUILayout.Space(6);
+                    EditorGUILayout.HelpBox(
+                        "Плагин и адаптеры ставятся из scoped registry AppLovin " +
+                        "(" + AppLovinPackageInstaller.RegistryUrl + "), Integration Manager для этого не нужен.\n\n" +
+                        "Исключены по стоп-листу: " +
+                        (blockedNetworks.Count == 0 ? "—" : string.Join(", ", blockedNetworks)) +
+                        ". Тот же список проверяется перед каждым билдом (ForbiddenAdNetworks).",
+                        MessageType.Info);
+                });
+        }
+
         private void DrawAppMetricaSettings()
         {
             _currentSettings.AppMetrica.Enabled = DrawModuleSection(

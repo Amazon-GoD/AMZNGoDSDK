@@ -10,6 +10,7 @@
         "AMZNGoDSDK.Module.Firebase",
         "AMZNGoDSDK.Module.InternetConnection",
         "AMZNGoDSDK.Module.Analytics",
+        "AMZNGoDSDK.Module.AppLovin",
         "AdjustSdk.Scripts",
         "UnityEngine.UI"
     ],

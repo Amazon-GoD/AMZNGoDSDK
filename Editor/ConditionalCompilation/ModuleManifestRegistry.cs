@@ -79,6 +79,14 @@ namespace AMZNGoDSDK.Editor
                     "com.amazon.device.drm.",
                 },
             },
+            new ModuleManifestFootprint
+            {
+                ModuleName = "AppLovin",
+                ComponentNamePrefixes = new[]
+                {
+                    "com.applovin.",
+                },
+            },
         };
 
         /// <summary>
@@ -97,6 +105,7 @@ namespace AMZNGoDSDK.Editor
                 { "InternetConnection", settings.InternetConnection.Enabled },
                 { "InGameDebugConsole", settings.DebugConsole.Enabled },
                 { "Analytics",          settings.Analytics.Enabled },
+                { "AppLovin",           settings.AppLovin.Enabled },
             };
         }
 

@@ -44,23 +44,11 @@ namespace AMZNGoDSDK.Runtime
                 if (Videos == null || Videos.Count == 0)
                     return;
 
-                var videosToDelete = new List<PromoConfiguration>();
-                foreach (var videoInfo in Videos)
-                {
-                    if (videoInfo.MaxShowCount <= 0)
-                        continue;
+                var videosToDelete = Videos.Where(v => v.IsShowLimitReached()).ToList();
 
-                    int videoShowCount = PlayerPrefs.GetInt(videoInfo.Title, 0);
-                    if (videoShowCount >= videoInfo.MaxShowCount)
-                    {
-                        videosToDelete.Add(videoInfo);
-                    }
-                }
-
-                foreach (var video in videosToDelete)
+                foreach (var vid in videosToDelete)
                 {
-                    var vid = Videos.FirstOrDefault(x => x.Title == video.Title);
-                    if (vid == null) continue;
+                    Debug.Log($"[CrossPromoLimit] drop '{vid.Title}' — показов {PlayerPrefs.GetInt(vid.Title, 0)}/{vid.EffectiveShowLimit}");
 
                     foreach (var other in Videos)
                     {
@@ -69,6 +57,9 @@ namespace AMZNGoDSDK.Runtime
                     }
 
                     Videos.Remove(vid);
+
+                    // Из master — обязательно: ApplyCooldownFilter пересобирает пул именно
+                    // из него, и оставленный там креатив вернулся бы в ротацию сверх лимита.
                     RemoveFromMaster(vid.Title);
                 }
 
@@ -78,14 +69,51 @@ namespace AMZNGoDSDK.Runtime
                 }
             }
 
+            /// <summary>
+            /// Остался ли в пуле хоть один креатив, не выбравший свой лимит показов.
+            /// <para>
+            /// НЕ мутирует состояние — в отличие от <see cref="CheckVideosShowLimit"/> и
+            /// <see cref="ApplyCooldownFilter"/>, которые пересобирают списки и рассчитаны
+            /// на вызов только из пути показа. Смотрит в master (полный пул), а не в Videos:
+            /// Videos — это прорежённый кулдауном срез одного круга, и его опустошение
+            /// означает лишь «в этом круге пока нечего», а не «показывать больше нечего».
+            /// Кулдаун здесь сознательно не учитывается: он откладывает показ внутри круга,
+            /// пул не исчерпывает.
+            /// </para>
+            /// </summary>
+            public bool HasAvailableVideos()
+            {
+                // До первого ApplyCooldownFilter master ещё не создан — тогда полный пул
+                // это сам Videos (сразу после фетча он не прорежен кулдауном).
+                var source = _masterVideos ?? Videos;
+                if (source == null)
+                    return false;
+
+                for (int i = 0; i < source.Count; i++)
+                {
+                    if (!source[i].IsShowLimitReached())
+                        return true;
+                }
+
+                return false;
+            }
+
             public void ApplyCooldownFilter(string lastShownTitle)
             {
-                if (Videos == null || Videos.Count == 0) return;
-
                 // Master-список инициализируется ОДИН РАЗ из полного Videos (после CheckVideosShowLimit)
                 if (_masterVideos == null)
+                {
+                    // Инициализировать не из чего: конфиг ещё не доехал либо пуст.
+                    if (Videos == null || Videos.Count == 0) return;
                     _masterVideos = Videos.Select(v => v.Copy()).ToList();
+                }
 
+                // ВАЖНО: выход по пустому Videos переехал внутрь инициализации master и больше
+                // не блокирует пересборку пула. Videos — это срез ОДНОГО круга, и вычеркнуть
+                // из него последние креативы мог только что отработавший CheckVideosShowLimit.
+                // Раньше в этом случае метод выходил здесь, пул из master уже не пересобирался
+                // никогда, и кросс-промо уходило в no_fill навсегда — хотя в master оставались
+                // креативы с незакрытым лимитом, просто сидевшие на кулдауне.
                 if (_masterVideos.Count == 0) return;
 
                 // Фильтруем из master-списка (не из Videos!); используем копии, чтобы
@@ -180,6 +208,39 @@ namespace AMZNGoDSDK.Runtime
             public List<string> AppPackageName = new();
             public int MaxShowCount;
 
+            [Tooltip("Сколько показов этого креатива разрешено ЗА ВСЁ ВРЕМЯ (не за сессию). " +
+                     "0 — без лимита. Имя поля в нижнем регистре: JsonUtility сопоставляет " +
+                     "поля по точному совпадению, а в конфиге бэкенда оно приходит как \"cap\".")]
+            public int cap;
+
+            /// <summary>
+            /// Действующий лимит показов за всё время. <see cref="cap"/> — основной источник;
+            /// <see cref="MaxShowCount"/> оставлен фолбэком для старых конфигов, где cap ещё нет
+            /// (JsonUtility молча оставит отсутствующее поле нулём, и без фолбэка такой креатив
+            /// внезапно стал бы безлимитным). 0 и меньше — лимита нет.
+            /// </summary>
+            public int EffectiveShowLimit => cap > 0 ? cap : MaxShowCount;
+
+            /// <summary>
+            /// Креатив выбрал свой лимит показов и больше показываться не должен.
+            /// <para>
+            /// Счётчик показов ведётся в PlayerPrefs по СЫРОМУ Title (см. IncrementShowCount
+            /// в оверлеях), поэтому креатив без Title не накапливает показы вообще — такой
+            /// считаем безлимитным, иначе он выпал бы из ротации на первом же вызове.
+            /// </para>
+            /// </summary>
+            public bool IsShowLimitReached()
+            {
+                int limit = EffectiveShowLimit;
+                if (limit <= 0)
+                    return false;
+
+                if (string.IsNullOrWhiteSpace(Title))
+                    return false;
+
+                return PlayerPrefs.GetInt(Title, 0) >= limit;
+            }
+
             public PromoConfiguration Copy()
             {
                 return new PromoConfiguration
@@ -201,7 +262,8 @@ namespace AMZNGoDSDK.Runtime
                     FileExtension = FileExtension,
                     Weight = Weight,
                     AppPackageName = AppPackageName != null ? new List<string>(AppPackageName) : new List<string>(),
-                    MaxShowCount = MaxShowCount
+                    MaxShowCount = MaxShowCount,
+                    cap = cap
                 };
             }
         }

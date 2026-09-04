@@ -12,6 +12,8 @@ namespace AMZNGoDSDK.Runtime
 {
     // Единственный владелец HTTP-канала /v1/events: first_open (paid/free) на инициализации,
     // cp_impression / cp_click из CrossPromoModule через делегаты в AmznGoDSDKCore,
+    // mediation_impression / mediation_click из AppLovinAnalytics (показы медиации: у них нет
+    // paid_app_id, поэтому схема своя),
     // iap_link из InAppPurchaseModule (связка device ↔ Amazon-покупатель, по завершении
     // полной сверки GetPurchaseUpdates) и attribution (источник трафика из Adjust).
     // Идемпотентность first_open и кэш device_id_hash через PlayerPrefs с историческими
@@ -245,6 +247,67 @@ namespace AMZNGoDSDK.Runtime
             if (ts < MinTimestampMs)
                 yield break;
             yield return TrackCrossPromoEvent("cp_click", paidAppId, ts);
+        }
+
+        /// <summary>
+        /// Показ рекламы из медиации AppLovin (событие <c>mediation_impression</c>).
+        ///
+        /// <para>Отдельный тип события, а не <c>cp_impression</c>: у показа медиации нет
+        /// промотируемого приложения, а <c>cp_impression</c> требует <c>paid_app_id</c> и без него
+        /// вообще не отправляется. Подстановка <c>DefaultPromotedAppId</c> записала бы в отчёты
+        /// кросс-промо показы приложения, которого никто не показывал.</para>
+        ///
+        /// <para>Зовётся из обработчика <c>OnAdRevenuePaidEvent</c>: MAX присылает его ровно один
+        /// раз на показ, и это единственное событие, где есть выручка. Отправка по
+        /// <c>OnAdDisplayedEvent</c> дала бы показ без денег и второй запрос ради revenue.</para>
+        /// </summary>
+        public void TrackMediationImpression(string network, string adUnit, string placement, double revenue, string precision)
+        {
+            // ts фиксируем сразу, как в TrackImpression: ожидание резолва device_id не должно
+            // сдвигать время события.
+            long ts = GetTimestampMs();
+            if (ts < MinTimestampMs)
+                return;
+
+            StartCoroutine(TrackMediationEvent("mediation_impression", network, adUnit, placement, revenue, precision, ts));
+        }
+
+        /// <summary>
+        /// Клик по рекламе из медиации (событие <c>mediation_click</c>). Та же причина отдельного
+        /// типа, что и у показа: <c>cp_click</c> завязан на <c>paid_app_id</c>.
+        /// <para>
+        /// Выручки у клика нет — шлём 0 и пустой precision, чтобы схема события совпадала с
+        /// показом и бэкенду не приходилось разбирать два формата.
+        /// </para>
+        /// </summary>
+        public void TrackMediationClick(string network, string adUnit, string placement)
+        {
+            long ts = GetTimestampMs();
+            if (ts < MinTimestampMs)
+                return;
+
+            StartCoroutine(TrackMediationEvent("mediation_click", network, adUnit, placement, 0d, null, ts));
+        }
+
+        private IEnumerator TrackMediationEvent(
+            string eventName, string network, string adUnit, string placement, double revenue, string precision, long ts)
+        {
+            // Как и в кросс-промо: не теряем событие из первых секунд сессии, ждём резолва
+            // device_id ограниченное время вместо раннего выхода.
+            yield return WaitUntilDeviceIdResolved();
+
+            string deviceIdHash = EventDeviceIdHash;
+            string eventId = NewEventId();
+
+            string revenueText = revenue.ToString("R", CultureInfo.InvariantCulture);
+            Debug.Log($"{Tag} >>> {eventName}: network={network}, ad_unit={adUnit}, placement={placement}, " +
+                      $"revenue={revenueText}, app_id={AppId}, " +
+                      $"device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
+
+            string json = BuildMediationEventJson(
+                eventName, network, adUnit, placement, revenue, precision, AppId, deviceIdHash, ts, eventId);
+
+            yield return SendEventWithRetry(json, eventId);
         }
 
         private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts)
@@ -724,6 +787,33 @@ namespace AMZNGoDSDK.Runtime
                    $"\"paid_app_id\":\"{EscapeJson(paidAppId)}\"," +
                    $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   $"\"ts\":{ts}" +
+                   "}";
+        }
+
+        /// <summary>
+        /// Схема показа/клика медиации. <c>revenue</c> — числом, а не строкой: на бэкенде это
+        /// сумма, и приводить её из строки к числу пришлось бы в каждом запросе.
+        /// InvariantCulture обязателен — локаль с запятой сломала бы JSON.
+        /// </summary>
+        private static string BuildMediationEventJson(
+            string eventName, string network, string adUnit, string placement, double revenue, string precision,
+            string appId, string deviceIdHash, long ts, string eventId)
+        {
+            // Форматируем до интерполяции — как в BuildAttributionJson: InvariantCulture
+            // обязателен, локаль с запятой в разделителе сломала бы JSON.
+            string revenueText = revenue.ToString("R", CultureInfo.InvariantCulture);
+
+            return "{" +
+                   $"\"event_name\":\"{EscapeJson(eventName)}\"," +
+                   $"\"event_id\":\"{EscapeJson(eventId)}\"," +
+                   $"\"app_id\":\"{EscapeJson(appId)}\"," +
+                   $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   $"\"network\":\"{EscapeJson(network ?? string.Empty)}\"," +
+                   $"\"ad_unit\":\"{EscapeJson(adUnit ?? string.Empty)}\"," +
+                   $"\"placement\":\"{EscapeJson(placement ?? string.Empty)}\"," +
+                   $"\"revenue\":{revenueText}," +
+                   $"\"revenue_precision\":\"{EscapeJson(precision ?? string.Empty)}\"," +
                    $"\"ts\":{ts}" +
                    "}";
         }

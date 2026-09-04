@@ -89,11 +89,19 @@ namespace AMZNGoDSDK.Editor
         {
             var addRequest = Client.Add(packageUrl);
             await WaitForRequestAsync(addRequest);
-            
+
             if (addRequest.Status == StatusCode.Success)
+            {
                 Debug.Log($"AMZN GoD: {packageName} installed successfully");
-                
-            throw new Exception($"Failed to install {packageName}: {addRequest.Error.message}");
+                return;
+            }
+
+            // Раньше throw стоял без else и срабатывал ДАЖЕ после успешной установки,
+            // причём addRequest.Error в этом случае null — падало NullReferenceException,
+            // его ловил вызывающий и писал «installation were canceled by error».
+            // В цикле по нескольким пакетам это обрывало установку на первом же.
+            string error = addRequest.Error != null ? addRequest.Error.message : "неизвестная ошибка";
+            throw new Exception($"Failed to install {packageName}: {error}");
         }
         
         public static async Task InstallDependency(string dependency)

@@ -78,6 +78,24 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         private bool _configFetchReturnedVideos;
 
+        /// <summary>
+        /// Кросс-промо ещё может показать креатив: конфиг доехал И в пуле остался хотя бы
+        /// один креатив, не выбравший свой cap.
+        /// <para>
+        /// Сигнал для роутера рекламы: false — показ уводится в медиацию AppLovin. Именно
+        /// поэтому проверка составная. <c>_configFetchReturnedVideos</c> отсекает случай
+        /// «конфиг не доехал» (провалившийся фетч возвращает ПУСТОЙ конфиг, а не ошибку) —
+        /// это временная проблема сети, которую лечит фоновая дозагрузка, а не повод
+        /// навсегда переключить приложение на медиацию.
+        /// </para>
+        /// <para>
+        /// Не путать с <see cref="IsVideoReady"/>: тот про готовность конкретного ролика
+        /// стартовать без буферизации, а не про наличие фила.
+        /// </para>
+        /// </summary>
+        public bool HasFill =>
+            _configFetchReturnedVideos && (_crossPromoConfig?.HasAvailableVideos() ?? false);
+
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
 
@@ -361,6 +379,17 @@ namespace AMZNGoDSDK.Runtime
         /// no_fill может прилетать на каждый запрос показа, но параллельные корутины не
         /// плодятся и частота запросов от этого не растёт.
         /// </summary>
+        /// <summary>
+        /// Публичный вход в фоновую дозагрузку конфига. Нужен роутеру рекламы: когда показ
+        /// уходит в медиацию из-за отсутствия фила, кросс-промо больше не попадает в свой
+        /// no_fill-путь и сам себя не подтолкнёт. Все проверки (конфиг уже доехал, ретрай уже
+        /// идёт, модуль выключен) — внутри, вызывать безопасно сколько угодно раз.
+        /// </summary>
+        public void EnsureConfigRefresh(string reason)
+        {
+            EnsureConfigRetryRunning(reason);
+        }
+
         private void EnsureConfigRetryRunning(string reason)
         {
             if (!Enabled) return;
@@ -446,7 +475,7 @@ namespace AMZNGoDSDK.Runtime
                     for (int i = 0; i < _crossPromoConfig.Videos.Count; i++)
                     {
                         var v = _crossPromoConfig.Videos[i];
-                        Debug.Log($"[CrossPromoModule]   Video[{i}]: Title='{v.Title}', URL='{v.VideoUrl}', Weight={v.Weight}, MaxShow={v.MaxShowCount}, Packages=[{string.Join(",", v.AppPackageName ?? new())}]");
+                        Debug.Log($"[CrossPromoModule]   Video[{i}]: Title='{v.Title}', URL='{v.VideoUrl}', Weight={v.Weight}, cap={v.cap}, MaxShow={v.MaxShowCount}, limit={v.EffectiveShowLimit}, shown={PlayerPrefs.GetInt(v.Title ?? string.Empty, 0)}, Packages=[{string.Join(",", v.AppPackageName ?? new())}]");
                         CrossPromoAdjustTracking.LogConfigWarnings(v);
                     }
                 }

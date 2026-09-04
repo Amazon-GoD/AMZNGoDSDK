@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using AMZNGoDSDK.Bootstrap;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -34,6 +35,7 @@ namespace AMZNGoDSDK.Editor
             "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection",
             "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole",
             "Assets/AMZNGoDSDK/Runtime/Modules/Analytics",
+            "Assets/AMZNGoDSDK/Runtime/Modules/AppLovin",
         };
 
         /// <summary>
@@ -108,12 +110,17 @@ namespace AMZNGoDSDK.Editor
             var hiddenFolders = new List<string>();
             var hiddenExcluded = new List<string>();
             string backupConfigPath = null;
+            bool restoreAppLovinReference = false;
 
             SessionState.SetBool(ExportInProgressKey, true);
             EditorApplication.LockReloadAssemblies();
 
             try
             {
+                restoreAppLovinReference = SdkAsmdefReferenceGuard.HasAppLovinReference();
+                if (restoreAppLovinReference)
+                    SdkAsmdefReferenceGuard.SetAppLovinReference(false, importAsset: false);
+
                 // 1. Раскрываем скрытые папки модулей (убираем ~).
                 // С Фазы 3 UPM-перехода модули ВСЕГДА видимы (folder-rename
                 // тогглы выведены из эксплуатации), так что цикл в норме no-op.
@@ -236,6 +243,9 @@ namespace AMZNGoDSDK.Editor
                         File.Move(backupMeta, ConfigMetaPath);
                     }
                 }
+
+                if (restoreAppLovinReference)
+                    SdkAsmdefReferenceGuard.SetAppLovinReference(true, importAsset: false);
 
                 AssetDatabase.Refresh();
                 EditorApplication.UnlockReloadAssemblies();

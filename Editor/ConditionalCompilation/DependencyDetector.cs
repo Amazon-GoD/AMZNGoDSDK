@@ -106,6 +106,15 @@ namespace AMZNGoDSDK.Editor
                 }
             },
             {
+                ModuleDefineManager.APPLOVIN_DEFINE,
+                new ModuleSpec
+                {
+                    Name = "AppLovin MAX",
+                    RequiredAsmdefs = new[] { "AMZNGoDSDK.Module.AppLovin", "MaxSdk.Scripts" },
+                    Description = "AppLovin MAX Unity plugin (external: com.applovin.mediation.ads or Assets/MaxSdk)"
+                }
+            },
+            {
                 ModuleDefineManager.ANALYTICS_DEFINE,
                 new ModuleSpec
                 {
@@ -124,7 +133,8 @@ namespace AMZNGoDSDK.Editor
             foreach (var kvp in ModuleSpecs)
             {
                 bool present = CheckDependencies(kvp.Value, dllCache);
-                bool hasExternal = kvp.Value.RequiredDlls != null && kvp.Value.RequiredDlls.Length > 0;
+                bool hasExternal = kvp.Value.RequiredDlls != null && kvp.Value.RequiredDlls.Length > 0
+                                   || kvp.Key == ModuleDefineManager.APPLOVIN_DEFINE;
 
                 result.Add(new ModuleDependencyInfo
                 {
