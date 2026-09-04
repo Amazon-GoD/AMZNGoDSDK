@@ -9,7 +9,8 @@
         "GUID:08d1c582746949b40ba6a45cdb776bdf",
         "GUID:fe25561d224ed4743af4c60938a59d0b",
         "GUID:4e20c7306599b442b84e265cb179eddc",
-        "GUID:1f613da493e88413786955ac61fc9673"
+        "GUID:1f613da493e88413786955ac61fc9673",
+        "MaxSdk.Scripts"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

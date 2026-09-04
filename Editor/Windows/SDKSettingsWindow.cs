@@ -269,6 +269,13 @@ namespace AMZNGoDSDK.Editor
                         "Scoped registry",
                         registryConfigured ? "прописан в Packages/manifest.json" : "не прописан");
 
+                    EditorGUILayout.LabelField(
+                        "Версия плагина",
+                        AppLovinPackageInstaller.Pins.TryGetValue(
+                            AppLovinPackageInstaller.MaxPluginPackageId, out var maxPin)
+                            ? maxPin + " (закреплена)"
+                            : "latest");
+
                     EditorGUILayout.BeginHorizontal();
                     if (GUILayout.Button("Install MAX Plugin"))
                         AppLovinPackageInstaller.InstallMaxPluginMenu();
@@ -276,6 +283,17 @@ namespace AMZNGoDSDK.Editor
                     if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
                         AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
                     EditorGUILayout.EndHorizontal();
+
+                    var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
+                    if (pinnedAdapters.Count > 0)
+                    {
+                        GUILayout.Space(4);
+                        EditorGUILayout.HelpBox(
+                            "Адаптеры с закреплённой версией — свежие релизы требуют compileSdk 35/36 " +
+                            "или minSdk 24, чего проект (minSdk 23, compileSdk 34, AGP 7.4.2) не даёт:\n" +
+                            string.Join("\n", pinnedAdapters),
+                            MessageType.None);
+                    }
 
                     GUILayout.Space(6);
                     EditorGUILayout.HelpBox(

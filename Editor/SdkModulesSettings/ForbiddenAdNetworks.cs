@@ -156,6 +156,31 @@ namespace AMZNGoDSDK.Editor
             },
             new ForbiddenAdNetwork
             {
+                // Причина техническая, а не политическая. play-services-ads регистрирует
+                // MobileAdsInitProvider — ContentProvider, который Android поднимает при старте
+                // ПРОЦЕССА, до первой Activity. Без meta-data com.google.android.gms.ads.APPLICATION_ID
+                // он бросает IllegalStateException, и приложение падает чёрным экраном ещё до
+                // загрузки Unity (инцидент 2026-09-03). Сборка идёт под Amazon Appstore, где
+                // Google Play Services нет вообще: AdMob там не даёт филла, а крашит гарантированно.
+                //
+                // ВАЖНО: группу com.google.android.gms целиком запрещать НЕЛЬЗЯ — в ней
+                // play-services-base (Firebase) и play-services-ads-identifier (GAID для MAX),
+                // которые остаются в SDK. Поэтому только точечные запреты адаптеров MAX.
+                DisplayName = "Google AdMob / Ad Manager",
+                Artifacts = new[]
+                {
+                    new ForbiddenArtifact(MaxMediationGroup, "google-adapter"),
+                    new ForbiddenArtifact(MaxMediationGroup, "google-ad-manager-adapter"),
+                },
+                UpmPackageTokens = new[]
+                {
+                    "mediation.adapters.google.",
+                    "mediation.adapters.googleadmanager.",
+                },
+                AdapterFolderNames = new[] { "Google", "GoogleAdManager" },
+            },
+            new ForbiddenAdNetwork
+            {
                 DisplayName = "BidMachine",
                 MavenGroups = new[] { "io.bidmachine" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "bidmachine-adapter") },

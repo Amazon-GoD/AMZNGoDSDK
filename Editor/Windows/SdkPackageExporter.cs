@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using AMZNGoDSDK.Bootstrap;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -109,12 +110,21 @@ namespace AMZNGoDSDK.Editor
             var hiddenFolders = new List<string>();
             var hiddenExcluded = new List<string>();
             string backupConfigPath = null;
+            bool restoreAppLovinReference = false;
 
             SessionState.SetBool(ExportInProgressKey, true);
             EditorApplication.LockReloadAssemblies();
 
             try
             {
+                // 0. Снимаем ссылку asmdef на внешний MaxSdk.Scripts. У партнёра плагина MAX
+                // в проекте нет, и неразрезолвленная ссылка уронит компиляцию AMZNGoD.Runtime
+                // сразу на импорте — вместе с редакторной сборкой, то есть чинить будет нечем.
+                // Ссылку вернёт ModuleDefineManager при включении модуля; локально — finally.
+                restoreAppLovinReference = SdkAsmdefReferenceGuard.HasAppLovinReference();
+                if (restoreAppLovinReference)
+                    SdkAsmdefReferenceGuard.SetAppLovinReference(false, importAsset: false);
+
                 // 1. Раскрываем скрытые папки модулей (убираем ~)
                 foreach (var folder in ModuleFolders)
                 {
@@ -233,6 +243,12 @@ namespace AMZNGoDSDK.Editor
                         File.Move(backupMeta, ConfigMetaPath);
                     }
                 }
+
+                // 7. Возвращаем ссылку на MaxSdk.Scripts в asmdef рантайма — иначе локальный
+                // проект после экспорта остался бы с включённым AMZN_APPLOVIN_ENABLED, но без
+                // ссылки, то есть с CS0246 в AppLovinModule.
+                if (restoreAppLovinReference)
+                    SdkAsmdefReferenceGuard.SetAppLovinReference(true, importAsset: false);
 
                 AssetDatabase.Refresh();
                 EditorApplication.UnlockReloadAssemblies();

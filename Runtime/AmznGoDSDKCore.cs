@@ -77,6 +77,9 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_ANALYTICS_ENABLED
             EnsureAnalyticsModule();
 #endif
+#if AMZN_APPLOVIN_ENABLED
+            EnsureAppLovinModule();
+#endif
 
             #region Constructs
 
@@ -435,6 +438,16 @@ namespace AMZNGoDSDK.Runtime
         public void TrackAnalyticsImpression(string paidAppId) => _analyticsModule?.TrackImpression(paidAppId);
         public void TrackAnalyticsClick(string paidAppId) => _analyticsModule?.TrackClick(paidAppId);
 
+        /// <summary>Показ рекламы из медиации (mediation_impression). Зовётся из AppLovinAnalytics
+        /// по OnAdRevenuePaidEvent — там же, где известна выручка показа.</summary>
+        public void TrackAnalyticsMediationImpression(
+            string network, string adUnit, string placement, double revenue, string precision) =>
+            _analyticsModule?.TrackMediationImpression(network, adUnit, placement, revenue, precision);
+
+        /// <summary>Клик по рекламе из медиации (mediation_click).</summary>
+        public void TrackAnalyticsMediationClick(string network, string adUnit, string placement) =>
+            _analyticsModule?.TrackMediationClick(network, adUnit, placement);
+
         /// <summary>Связка device ↔ Amazon-покупатель (событие iap_link). Зовётся из
         /// InAppPurchaseModule по завершении полной сверки GetPurchaseUpdates.</summary>
         public void TrackAnalyticsIapLink(string amazonUserId, IReadOnlyList<string> receiptIds) =>
@@ -448,6 +461,9 @@ namespace AMZNGoDSDK.Runtime
 #else
         public void TrackAnalyticsImpression(string paidAppId) { }
         public void TrackAnalyticsClick(string paidAppId) { }
+        public void TrackAnalyticsMediationImpression(
+            string network, string adUnit, string placement, double revenue, string precision) { }
+        public void TrackAnalyticsMediationClick(string network, string adUnit, string placement) { }
         public void TrackAnalyticsIapLink(string amazonUserId, IReadOnlyList<string> receiptIds) { }
         public IEnumerator TrackAnalyticsClickRoutine(string paidAppId) { yield break; }
 #endif
@@ -595,6 +611,25 @@ namespace AMZNGoDSDK.Runtime
             _analyticsModule = GetComponent<AnalyticsModule>();
             if (_analyticsModule == null)
                 _analyticsModule = gameObject.AddComponent<AnalyticsModule>();
+        }
+#endif
+
+#if AMZN_APPLOVIN_ENABLED
+        /// <summary>
+        /// Компонент модуля добавляется в рантайме — как у Internet/Firebase/Analytics.
+        /// Обёртка AppLovin появилась позже AmznGoDSDK.prefab, и ссылки на неё в префабе нет:
+        /// без этого _appLovinModule остаётся null, Construct роняет OnAwake
+        /// NullReferenceException'ом, и SDK не поднимается ЦЕЛИКОМ — вместе с кросс-промо,
+        /// аналитикой и IAP (инцидент 2026-09-03: не работала ни одна кнопка тестового стенда).
+        /// </summary>
+        private void EnsureAppLovinModule()
+        {
+            if (_appLovinModule != null)
+                return;
+
+            _appLovinModule = GetComponent<AppLovinModule>();
+            if (_appLovinModule == null)
+                _appLovinModule = gameObject.AddComponent<AppLovinModule>();
         }
 #endif
 

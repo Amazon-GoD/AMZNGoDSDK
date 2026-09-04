@@ -186,6 +186,7 @@ namespace AMZNGoDSDK.Editor
             settings.InternetConnection.Enabled = GetToggle(ModuleDefineManager.INTERNETCONNECTION_DEFINE);
             settings.DebugConsole.Enabled = GetToggle(ModuleDefineManager.DEBUGCONSOLE_DEFINE);
             settings.Analytics.Enabled = GetToggle(ModuleDefineManager.ANALYTICS_DEFINE);
+            settings.AppLovin.Enabled = GetToggle(ModuleDefineManager.APPLOVIN_DEFINE);
 
             if (!SdkSettingsManager.SaveSettings(settings))
                 return;

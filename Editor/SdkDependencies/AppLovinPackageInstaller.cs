@@ -55,6 +55,68 @@ namespace AMZNGoDSDK.Editor
         // и в этом проекте только раздували бы зависимости, поэтому ставим только .android.
         private const string AdapterIdFormat = "com.applovin.mediation.adapters.{0}.android";
 
+        /// <summary>
+        /// Потолки версий для пакетов, чьи свежие релизы не собираются в этом проекте.
+        /// Без пина Client.Add ставит latest, и одно нажатие кнопки установки молча
+        /// возвращает сборку в нерабочее состояние.
+        /// <para>
+        /// Проект: minSdk 23, compileSdk = targetSdk = 34, AGP 7.4.2 (потолок Unity 2022.3 —
+        /// bundled Gradle 7.5.1 + JDK 11; AGP 8.9 требует Gradle 8.11+ и JDK 17).
+        /// Версии ниже — последние, которые в эти рамки укладываются (проверено по
+        /// AndroidManifest.xml и aar-metadata.properties самих артефактов, 2026-09-03):
+        /// </para>
+        /// <list type="bullet">
+        /// <item>ads 8.6.3 → applovin-sdk 13.6.2, minSdk 23. С 13.6.3 AppLovin поднял minSdk до 24.</item>
+        /// <item>facebook 6210000.0.0 → facebook-adapter 6.21.0.0, minSdk 16. Следующий (6.22.0.0)
+        /// сам объявляет minSdk 24 и тянет audience-network-sdk 6.22.0 → androidx.browser 1.9.0,
+        /// которому нужны compileSdk 36 и AGP 8.9.1.</item>
+        /// <item>line 300000010.0.0 → line-adapter 3000.0.1.0 → fivead 3.0.1 → androidx.activity 1.9.3.
+        /// Следующий тянет fivead 3.1.1 → activity 1.10.1, а ей нужен compileSdk 35.</item>
+        /// <item>ogurypresage 6020200.0.0 → ogury-presage-adapter 6.2.2.0 → ogury-sdk 6.2.2 без
+        /// ограничения по compileSdk. У 6.3.1 в aar-metadata стоит minCompileSdk 35.</item>
+        /// </list>
+        /// <para>
+        /// Снимать пин можно только вместе с поднятием compileSdk/minSdk — и только проверив
+        /// сборку, а не по номеру версии.
+        /// </para>
+        /// </summary>
+        private static readonly Dictionary<string, string> PinnedVersions = new Dictionary<string, string>
+        {
+            { "com.applovin.mediation.ads", "8.6.3" },
+            { "com.applovin.mediation.adapters.facebook.android", "6210000.0.0" },
+            { "com.applovin.mediation.adapters.line.android", "300000010.0.0" },
+            { "com.applovin.mediation.adapters.ogurypresage.android", "6020200.0.0" },
+        };
+
+        /// <summary>
+        /// Спецификация пакета для UPM: <c>id@version</c>, если версия закреплена, иначе голый id
+        /// (тогда UPM ставит latest). Используется и при установке, и в UI — чтобы в диалоге
+        /// было видно, какая именно версия поедет в проект.
+        /// </summary>
+        public static string PackageSpec(string packageId)
+        {
+            return PinnedVersions.TryGetValue(packageId, out string pinned)
+                ? $"{packageId}@{pinned}"
+                : packageId;
+        }
+
+        /// <summary>Закреплённые версии (id → version) — для отображения в окне настроек.</summary>
+        public static IReadOnlyDictionary<string, string> Pins => PinnedVersions;
+
+        /// <summary>Закреплённые пакеты из переданного списка, в виде <c>id@version</c>.</summary>
+        public static List<string> PinnedSpecsIn(IEnumerable<string> packageIds)
+        {
+            var result = new List<string>();
+
+            foreach (var id in packageIds)
+            {
+                if (PinnedVersions.ContainsKey(id))
+                    result.Add(PackageSpec(id));
+            }
+
+            return result;
+        }
+
         #region Public API
 
         /// <summary>
@@ -119,7 +181,9 @@ namespace AMZNGoDSDK.Editor
             if (!EditorUtility.DisplayDialog(
                     "AppLovin MAX",
                     $"Будет прописан scoped registry {RegistryUrl} в {ManifestPath} " +
-                    $"и установлен пакет {MaxPluginPackageId}.\n\nПродолжить?",
+                    $"и установлен пакет {PackageSpec(MaxPluginPackageId)}.\n\n" +
+                    "Версия закреплена намеренно: начиная с applovin-sdk 13.6.3 плагин требует " +
+                    "minSdk 24, а проект собирается с 23 (см. PinnedVersions).\n\nПродолжить?",
                     "Установить", "Отмена"))
                 return;
 
@@ -131,11 +195,16 @@ namespace AMZNGoDSDK.Editor
         {
             var adapters = AllowedAdapterPackageIds();
             var blocked = BlockedNetworkNames();
+            var pinned = PinnedSpecsIn(adapters);
 
             if (!EditorUtility.DisplayDialog(
                     "AppLovin MAX",
                     $"Будет установлено адаптеров: {adapters.Count}.\n\n" +
                     $"Исключены по стоп-листу: {(blocked.Count == 0 ? "—" : string.Join(", ", blocked))}\n\n" +
+                    (pinned.Count == 0
+                        ? string.Empty
+                        : "С закреплённой версией (свежие ломают minSdk 23 / compileSdk 34):\n" +
+                          string.Join("\n", pinned) + "\n\n") +
                     "Установка нескольких пакетов занимает время, редактор будет подвисать. Продолжить?",
                     "Установить", "Отмена"))
                 return;
@@ -341,8 +410,14 @@ namespace AMZNGoDSDK.Editor
                 return;
             }
 
-            Debug.Log($"[AppLovinInstaller] Установка {packageId}...");
-            var request = Client.Add(packageId);
+            // UPM понимает форму name@version; без неё Client.Add тянет latest.
+            string requestSpec = PackageSpec(packageId);
+
+            if (requestSpec != packageId)
+                Debug.Log($"[AppLovinInstaller] {packageId}: версия закреплена ({requestSpec}) — см. PinnedVersions.");
+
+            Debug.Log($"[AppLovinInstaller] Установка {requestSpec}...");
+            var request = Client.Add(requestSpec);
 
             while (!request.IsCompleted)
                 await Task.Delay(100);

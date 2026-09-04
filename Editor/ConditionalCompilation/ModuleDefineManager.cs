@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using AMZNGoDSDK.Bootstrap;
 #if UNITY_2023_1_OR_NEWER
 using UnityEditor.Build;
 #endif
@@ -94,6 +95,11 @@ namespace AMZNGoDSDK.Editor
                 UpdateDefineSymbolsForTarget(targetGroup, settings);
             }
 
+            // Ссылка asmdef на внешний плагин MAX живёт вместе с define'ом модуля: одного
+            // AMZN_APPLOVIN_ENABLED обёртке мало (asmdef не видит чужую сборку без reference),
+            // а держать ссылку постоянно нельзя — в проекте без MAX она роняет компиляцию.
+            SdkAsmdefReferenceGuard.SetAppLovinReference(IsAppLovinActive(settings));
+
             Debug.Log("[AMZN GoD SDK] Module define symbols updated successfully");
         }
 
@@ -139,6 +145,22 @@ namespace AMZNGoDSDK.Editor
 
             var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
             SetDefines(targetGroup, newDefines);
+        }
+
+        /// <summary>
+        /// Повторяет условие, по которому <see cref="TryAddModuleDefine"/> выставляет
+        /// APPLOVIN_DEFINE: модуль включён в настройках, SDK включён целиком и плагин MAX
+        /// реально присутствует в проекте. Ссылка asmdef должна появляться и исчезать
+        /// синхронно с define'ом, иначе получится либо CS0246 на MaxSdkBase (define есть,
+        /// ссылки нет), либо неразрезолвленная ссылка (плагина нет, ссылка есть).
+        /// </summary>
+        private static bool IsAppLovinActive(SdkSettingsData settings)
+        {
+            return settings != null
+                   && settings.Enabled
+                   && settings.AppLovin != null
+                   && settings.AppLovin.Enabled
+                   && DependencyDetector.AreDependenciesPresent(APPLOVIN_DEFINE);
         }
 
         private static void TryAddModuleDefine(List<string> definesList, string define, bool enabledInSettings)
@@ -196,6 +218,9 @@ namespace AMZNGoDSDK.Editor
                 var newDefines = string.Join(";", definesList.Where(d => !string.IsNullOrEmpty(d)).Distinct());
                 SetDefines(targetGroup, newDefines);
             }
+
+            // Все модули выключены — внешних ссылок в asmdef быть не должно.
+            SdkAsmdefReferenceGuard.SetAppLovinReference(false);
         }
     }
 }

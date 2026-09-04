@@ -121,10 +121,16 @@ namespace AMZNGoDSDK.Editor
                 new ModuleSpec
                 {
                     Name = "AppLovin MAX",
-                    RequiredAssemblies = Array.Empty<string>(),
+                    // Плагин обязан быть ОТДЕЛЬНОЙ сборкой: обёртка живёт в asmdef
+                    // AMZNGoD.Runtime, а asmdef не может ссылаться на предопределённые
+                    // сборки. Установка старым .unitypackage без asmdef (типы уезжают в
+                    // Assembly-CSharp) для модуля бесполезна — типы есть, а сослаться на них
+                    // нельзя. Критерий совпадает с SdkAsmdefReferenceGuard: разойдись они —
+                    // сторож и ModuleDefineManager начнут спорить и гонять перекомпиляцию.
+                    RequiredAssemblies = new[] { "MaxSdk.Scripts" },
                     RequiredFolders = new[] { "Assets/AMZNGoDSDK/Runtime/Modules/AppLovin" },
                     RequiredTypes = new[] { "MaxSdk", "MaxSdkCallbacks" },
-                    Description = "AppLovin MAX Unity plugin (внешний: Assets/MaxSdk или UPM-пакет)"
+                    Description = "AppLovin MAX Unity plugin (внешний: UPM-пакет com.applovin.mediation.ads или Assets/MaxSdk)"
                 }
             },
             {
