@@ -65,7 +65,10 @@ namespace AMZNGoDSDK.Editor.Deploy
 
         private static readonly Regex VersionRegex = new Regex(@"^(\d+)\.(\d+)\.(\d+)$", RegexOptions.Compiled);
         private static readonly Regex TagRegex = new Regex(@"^v(\d+)\.(\d+)\.(\d+)$", RegexOptions.Compiled);
-        private const string StagingDirectoryPrefix = "AmznGoDSdkRelease_";
+        // Keep the owned directory name short: System.IO.Compression under Unity 2022
+        // still hits the Windows MAX_PATH limit while extracting deep xcframework paths.
+        // The full GUID preserves collision resistance and the ownership check below.
+        private const string StagingDirectoryPrefix = "AGDR_";
 
         /// <summary>Абсолютный путь к корню SDK-репозитория (dev: Assets/AMZNGoDSDK).</summary>
         public static string RepoRoot =>
@@ -206,9 +209,7 @@ namespace AMZNGoDSDK.Editor.Deploy
 
         private static string CreateOwnedStagingDirectory(string stagingParent)
         {
-            string directoryName = StagingDirectoryPrefix
-                + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff_")
-                + Guid.NewGuid().ToString("N");
+            string directoryName = StagingDirectoryPrefix + Guid.NewGuid().ToString("N");
             string stagingRoot = Path.Combine(stagingParent, directoryName);
 
             if (Directory.Exists(stagingRoot) || File.Exists(stagingRoot))
