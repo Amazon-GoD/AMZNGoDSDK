@@ -1,0 +1,19 @@
+{
+    "name": "AMZNGoDSDK.Module.Analytics",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AdjustSdk.Scripts"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_ANALYTICS_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

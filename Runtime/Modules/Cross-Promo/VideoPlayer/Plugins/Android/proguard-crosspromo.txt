@@ -1,0 +1,21 @@
+# Cross-Promo ExoPlayer overlay: keep-правила для R8/ProGuard.
+#
+# Класс создаётся из C# по строковому имени (new AndroidJavaObject("com.amzngod.exoplayer.CrossPromoExoOverlay")),
+# а его методы вызываются рефлексией через AndroidJavaObject.Call(...). При включённой
+# минификации в сборке игры R8 может удалить/переименовать класс или методы — тогда
+# нативный оверлей перестаёт создаваться и ломаются клики/показы/закрытие рекламы.
+#
+# ВАЖНО: чтобы это правило применилось, оно должно попасть в ProGuard/R8-конфиг сборки ИГРЫ.
+# В Unity: Player Settings → Publishing Settings → включить "Custom Proguard File" и добавить
+# содержимое этого файла в Assets/Plugins/Android/proguard-user.txt (либо смёржить в gradle).
+-keep class com.amzngod.exoplayer.CrossPromoExoOverlay { *; }
+
+# Дисковый кэш/прелоад роликов: зовётся из C# как AndroidJavaClass(...).CallStatic("preload", url),
+# то есть тоже по строковому имени. Без keep прелоад молча перестаёт работать — показ при этом
+# продолжает жить (стримом), поэтому поломка незаметна до анализа логов.
+-keep class com.amzngod.exoplayer.CrossPromoExoCache { *; }
+
+# Callback-мост Unity, если R8 включён и в проекте (обычно и так keep, но на всякий случай).
+-keepclassmembers class * {
+    @com.unity3d.player.* <methods>;
+}

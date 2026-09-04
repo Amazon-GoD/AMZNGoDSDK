@@ -1,0 +1,31 @@
+{
+  "name": "com.amzngod.amzngodsdk",
+  "version": "1.0.0",
+  "displayName": "AMZN GoD SDK",
+  "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
+  "unity": "2022.3",
+  "documentationUrl": "https://coda.io/d/_dwWWk6nd-8s/AMZN-GoD-SDK-Documentation_su2Px_kE",
+  "licensesUrl": "",
+  "dependencies": {
+    "com.unity.ugui": "1.0.0",
+    "com.unity.textmeshpro": "3.0.7",
+    "com.unity.modules.androidjni": "1.0.0",
+    "com.unity.modules.imageconversion": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequesttexture": "1.0.0",
+    "com.unity.modules.video": "1.0.0"
+  },
+  "samples": [
+    {
+      "displayName": "SDKPrefab",
+      "description": "Configuration prefab with sdk modules",
+      "path": "AmznGoDSDK~/SDKPrefab"
+    }
+  ],
+  "author": {
+    "name": "AMZN GoD",
+    "email": "info@amzngod.space",
+    "url": ""
+  }
+}

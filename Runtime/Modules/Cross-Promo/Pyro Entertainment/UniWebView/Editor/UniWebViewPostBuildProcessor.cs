@@ -1,0 +1,1 @@
+// This file is kept to ensure backward compatibility when upgrading from older versions of UniWebView.

@@ -1,0 +1,13 @@
+{
+    "name": "AdjustSdk.Editor",
+    "references": [
+        "AdjustSdk.Scripts"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "defineConstraints": [
+        "AMZN_ADJUST_ENABLED"
+    ]
+}

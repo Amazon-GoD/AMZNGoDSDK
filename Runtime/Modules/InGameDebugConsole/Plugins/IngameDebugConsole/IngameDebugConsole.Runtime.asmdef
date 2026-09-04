@@ -1,0 +1,9 @@
+﻿{
+    "name": "IngameDebugConsole.Runtime",
+    "references": [
+        "Unity.InputSystem"
+    ],
+    "defineConstraints": [
+        "AMZN_DEBUGCONSOLE_ENABLED"
+    ]
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dependencies>
+    <androidPackages>
+        <!-- Google ExoPlayer 2.19.1 (legacy, package com.google.android.exoplayer2).
+             Umbrella artifact pulls core + dash + hls + smoothstreaming + rtsp + ui.
+             Used by com.amzngod.exoplayer.CrossPromoExoOverlay (VideoPlayerBackend.ExoPlayer). -->
+        <androidPackage spec="com.google.android.exoplayer:exoplayer:2.19.1">
+        </androidPackage>
+    </androidPackages>
+</dependencies>

@@ -1,0 +1,21 @@
+{
+    "name": "AMZNGoDSDK.Module.InAppPurchase",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.Analytics",
+        "AMZNGoDSDK.Module.AppMetrica",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_IAP_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

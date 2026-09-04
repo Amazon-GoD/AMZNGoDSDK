@@ -1,0 +1,26 @@
+{
+    "name": "AMZNGoDSDK.Core",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.Adjust",
+        "AMZNGoDSDK.Module.AppMetrica",
+        "AMZNGoDSDK.Module.CrossPromo",
+        "AMZNGoDSDK.Module.InAppPurchase",
+        "AMZNGoDSDK.Module.Firebase",
+        "AMZNGoDSDK.Module.InternetConnection",
+        "AMZNGoDSDK.Module.Analytics",
+        "AMZNGoDSDK.Module.AppLovin",
+        "AdjustSdk.Scripts",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

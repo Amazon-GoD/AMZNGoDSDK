@@ -1,0 +1,23 @@
+{
+    "name": "AMZNGoDSDK.Module.AppLovin",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.Analytics",
+        "AMZNGoDSDK.Module.AppMetrica",
+        "AMZNGoDSDK.Module.Adjust",
+        "AdjustSdk.Scripts",
+        "MaxSdk.Scripts"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_APPLOVIN_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
