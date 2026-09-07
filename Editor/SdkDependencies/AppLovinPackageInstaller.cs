@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -18,7 +20,7 @@ namespace AMZNGoDSDK.Editor
     /// Начиная с MAX 8.0 плагин раздаётся не только .unitypackage'ом, но и через собственный
     /// npm-совместимый scoped registry AppLovin. Это позволяет обойтись без ручного скачивания
     /// и без Integration Manager: регистрируем реестр в манифесте проекта и добавляем пакеты
-    /// обычным Client.Add.
+    /// через Client.Add / Client.AddAndRemove.
     /// </para>
     /// <para>
     /// Молча при загрузке редактора ничего не ставится — в отличие от EDM4U
@@ -94,17 +96,18 @@ namespace AMZNGoDSDK.Editor
         }
 
         /// <summary>
-        /// Сетки, у которых в реестре AppLovin есть адаптер. Снимок реестра на 2026-09-01
-        /// (28 штук, получены через /-/v1/search). Список намеренно статический: набор пакетов
+        /// Сетки, у которых в реестре AppLovin есть именно Android-адаптер (25 на 2026-09-07).
+        /// CSJ, Pangle и Tencent GDT представлены только iOS-пакетами и сюда не входят.
+        /// Список проверен через /-/v1/search и оставлен статическим: набор пакетов
         /// должен быть воспроизводимым и не зависеть от того, доступна ли сеть в момент сборки.
         /// Появилась новая сетка — дописать сюда.
         /// </summary>
         private static readonly string[] RegistryNetworks =
         {
-            "bidmachine", "bigoads", "bytedance", "chartboost", "csj", "facebook", "fyber",
+            "bidmachine", "bigoads", "bytedance", "chartboost", "facebook", "fyber",
             "google", "googleadmanager", "hyprmx", "inmobi", "ironsource", "line", "maio",
-            "mintegral", "mobilefuse", "moloco", "mytarget", "ogurypresage", "pangle",
-            "pubmatic", "smaato", "tencentgdt", "unityads", "verve", "vungle", "yandex",
+            "mintegral", "mobilefuse", "moloco", "mytarget", "ogurypresage",
+            "pubmatic", "smaato", "unityads", "verve", "vungle", "yandex",
             "ysonetwork",
         };
 
@@ -316,7 +319,6 @@ namespace AMZNGoDSDK.Editor
             bool locked = false;
             bool backedUp = false;
             bool upmTouched = false;
-            var attemptedIds = new HashSet<string>();
             AppLovinLegacyInstallation legacy = null;
             PackageInfo[] installed = null;
             try
@@ -362,18 +364,19 @@ namespace AMZNGoDSDK.Editor
                 if (adaptersOnly)
                 {
                     var allowed = AllowedAdapterPackageIds();
-                    for (int i = 0; i < allowed.Count; i++)
+                    if (allowed.Count > 0)
                     {
-                        EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка " + allowed[i], (float)i / allowed.Count);
-                        attemptedIds.Add(allowed[i]);
+                        EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка адаптеров…", 0.5f);
                         upmTouched = true;
-                        await InstallPackageAsync(allowed[i]);
-                        if (PinnedVersions.TryGetValue(allowed[i], out string pin)) expected[allowed[i]] = pin;
+                        // Один расчёт зависимостей для всего набора: ошибка пакета не оставляет
+                        // цепочку ранее установленных адаптеров от последовательных Client.Add.
+                        await WaitForRequest(Client.AddAndRemove(allowed.Select(PackageSpec).ToArray(), Array.Empty<string>()));
                     }
+                    foreach (string id in allowed)
+                        expected[id] = PinnedVersions.TryGetValue(id, out string pin) ? pin : null;
                 }
                 else if (!replace)
                 {
-                    attemptedIds.Add(MaxPluginPackageId);
                     upmTouched = true;
                     await InstallPackageAsync(MaxPluginPackageId);
                 }
@@ -393,15 +396,14 @@ namespace AMZNGoDSDK.Editor
                         if (!specifications.Contains(PackageSpec(adapter))) specifications.Add(PackageSpec(adapter));
                     }
                     EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка " + PackageSpec(MaxPluginPackageId), 0.5f);
-                    attemptedIds.UnionWith(expected.Keys);
                     upmTouched = true;
                     await WaitForRequest(Client.AddAndRemove(specifications.ToArray(), Array.Empty<string>()));
                 }
                 var check = Client.List(true, true);
                 await WaitForRequest(check);
                 foreach (var package in expected)
-                    if (!check.Result.Any(item => item.name == package.Key && item.version == package.Value))
-                        throw new IOException("UPM не подтвердил версию " + package.Key + "@" + package.Value);
+                    if (!check.Result.Any(item => item.name == package.Key && (package.Value == null || item.version == package.Value)))
+                        throw new IOException("UPM не подтвердил пакет " + package.Key + (package.Value == null ? "" : "@" + package.Value));
                 if (replace && check.Result.Any(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) && !expected.ContainsKey(package.name)))
                     throw new IOException("UPM изменил состав адаптеров. Замена отменена.");
                 SessionState.EraseString(PendingKey);
@@ -415,26 +417,40 @@ namespace AMZNGoDSDK.Editor
                 {
                     try
                     {
-                        AssetDatabase.DisallowAutoRefresh();
-                        try { legacy.Restore(); }
-                        finally { AssetDatabase.AllowAutoRefresh(); }
+                        try
+                        {
+                            if (upmTouched)
+                            {
+                                var previousPackages = installed.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).ToArray();
+                                var restoreSpecs = previousPackages.Where(package => package.source != PackageSource.Embedded)
+                                    .Select(package => package.source == PackageSource.Registry ? package.packageId :
+                                        package.packageId.Substring(package.name.Length + 1)).ToArray();
+                                var removeIds = RollbackRemovalIds(File.ReadAllText(ManifestPath), installed.Select(package => package.name));
+                                // UPM меняем до восстановления manifest: удалять можно только
+                                // реально записанные в него пакеты, а не все попытки установки.
+                                if (restoreSpecs.Length != 0 || removeIds.Length != 0)
+                                    await WaitForRequest(Client.AddAndRemove(restoreSpecs, removeIds));
+                            }
+                        }
+                        finally
+                        {
+                            // Даже ошибка UPM не должна помешать восстановлению файлов на диске.
+                            AssetDatabase.DisallowAutoRefresh();
+                            try { legacy.Restore(); }
+                            finally { AssetDatabase.AllowAutoRefresh(); }
+                        }
                         if (upmTouched)
                         {
-                            var previousPackages = installed.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).ToArray();
-                            var restoreSpecs = previousPackages.Where(package => package.source != PackageSource.Embedded)
-                                .Select(package => package.source == PackageSource.Registry ? package.packageId :
-                                    package.packageId.Substring(package.name.Length + 1)).ToArray();
-                            var removeIds = attemptedIds.Where(id => !installed.Any(package => package.name == id)).ToArray();
-                            // AddAndRemove требует хотя бы одно действие: в legacy-only проекте удаляем добавленный core.
-                            if (restoreSpecs.Length != 0 || removeIds.Length != 0)
-                                await WaitForRequest(Client.AddAndRemove(restoreSpecs, removeIds));
                             var check = Client.List(true, true);
-                            await WaitForRequest(check);
-                            if (!new HashSet<string>(previousPackages.Select(package => package.packageId)).SetEquals(
-                                    check.Result.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).Select(package => package.packageId)))
-                                throw new IOException("UPM не восстановил исходный состав и версии AppLovin.");
-                            // Возвращаем и исходную форму manifest: recovery не превращает transitive adapters в direct.
-                            legacy.RestorePackageFiles();
+                            try
+                            {
+                                await WaitForRequest(check);
+                                if (!new HashSet<string>(installed.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).Select(package => package.packageId)).SetEquals(
+                                        check.Result.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).Select(package => package.packageId)))
+                                    throw new IOException("UPM не восстановил исходный состав и версии AppLovin.");
+                            }
+                            // Сохраняем исходную форму manifest/lock и при ошибке проверки.
+                            finally { legacy.RestorePackageFiles(); }
                         }
                         recovery = "Исходные файлы и версии AppLovin восстановлены.";
                     }
@@ -607,6 +623,26 @@ namespace AMZNGoDSDK.Editor
         #endregion
 
         #region Packages
+
+        [DataContract]
+        private sealed class ManifestDependencies
+        {
+            [DataMember(Name = "dependencies", IsRequired = true)]
+            public Dictionary<string, string> Dependencies;
+        }
+
+        internal static string[] RollbackRemovalIds(string manifest, IEnumerable<string> previousPackageNames)
+        {
+            var serializer = new DataContractJsonSerializer(typeof(ManifestDependencies),
+                new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(manifest)))
+            {
+                var parsed = (ManifestDependencies)serializer.ReadObject(stream);
+                if (parsed?.Dependencies == null) throw new IOException("Не удалось прочитать зависимости manifest для отката.");
+                var previous = new HashSet<string>(previousPackageNames, StringComparer.Ordinal);
+                return parsed.Dependencies.Keys.Where(id => id.StartsWith("com.applovin.", StringComparison.Ordinal) && !previous.Contains(id)).ToArray();
+            }
+        }
 
         private static async Task InstallPackageAsync(string packageId)
         {
