@@ -404,7 +404,9 @@ namespace AMZNGoDSDK.Editor.Deploy
                 File.Delete(tempIndex);
 
             var env = new Dictionary<string, string> { ["GIT_INDEX_FILE"] = tempIndex };
-            string baseArgs = $"--git-dir=\"{gitDir}\" --work-tree=\"{tree}\"";
+            // Deep xcframework paths must also survive Git indexing on Windows;
+            // otherwise add can succeed while silently omitting files after a warning.
+            string baseArgs = $"-c core.longpaths=true --git-dir=\"{gitDir}\" --work-tree=\"{tree}\"";
 
             if (!GitRunner.TryRun(tree, $"{baseArgs} add -A .", out _, out string err, env))
             {
