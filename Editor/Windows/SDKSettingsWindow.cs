@@ -15,7 +15,7 @@ namespace AMZNGoDSDK.Editor
 
         private Vector2 _settingsScrollPosition;
         private Vector2 _dependenciesScrollPosition;
-        private SdkSettingsData _currentSettings;
+        [SerializeField] private SdkSettingsData _currentSettings;
 
         [MenuItem("AMZN GoD/SDK Settings", false, 0)]
         public static void ShowWindow()
@@ -23,9 +23,6 @@ namespace AMZNGoDSDK.Editor
             var window = GetWindow<SDKSettingsWindow>("AMZN GoD SDK Settings");
             window.minSize = new Vector2(400, 600);
             window._currentSettings = SdkSettingsManager.LoadSettings();
-            
-            // Load dependencies info asynchronously
-            LoadDependenciesAsync();
         }
         
         //[MenuItem("AMZN GoD/Settings/Open SDK Settings", false, 0)]
@@ -34,11 +31,12 @@ namespace AMZNGoDSDK.Editor
             ShowWindow();
         }
 
-        // _currentSettings не сериализуется, поэтому после domain reload (рекомпиляция,
-        // вход в Play mode) окно осталось бы с null и падало в OnGUI.
+        // Сериализация сохраняет несохранённые настройки при reload после установки SDK.
+        // Впервые открытое окно получает конфиг с диска.
         private void OnEnable()
         {
             _currentSettings ??= SdkSettingsManager.LoadSettings();
+            LoadDependenciesAsync();
         }
 
         /// <summary>
@@ -58,8 +56,10 @@ namespace AMZNGoDSDK.Editor
         
         private static async void LoadDependenciesAsync()
         {
-            _dependenciesInfo = 
+            _dependenciesInfo =
                 await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
+            foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>())
+                window.Repaint();
         }
 
         private void OnGUI()
@@ -331,6 +331,24 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Enable Analytics", _currentSettings.Firebase.EnableAnalytics);
                     _currentSettings.Firebase.EnableCrashlytics = EditorGUILayout
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
+
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.LabelField("Версия Unity SDK", FirebasePackageInstaller.UnityVersion + " (закреплена)");
+                    EditorGUILayout.HelpBox(FirebasePackageInstaller.InstalledStatus, MessageType.None);
+                    EditorGUILayout.HelpBox(
+                        "Analytics 22.4.0; Remote Config 22.1.0; Crashlytics / NDK 19.4.2; Common 21.0.0.\n" +
+                        "Устанавливаются Analytics, Remote Config и Crashlytics. Firebase Unity требует Android minSdk 23.", MessageType.Info);
+                    if ((int)PlayerSettings.Android.minSdkVersion < FirebasePackageInstaller.MinimumAndroidSdk)
+                        EditorGUILayout.HelpBox("В Player Settings требуется Android Minimum API Level 23 или выше.", MessageType.Warning);
+                    using (new EditorGUI.DisabledScope(FirebasePackageInstaller.IsBusy || EditorApplication.isCompiling ||
+                               EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
+                    {
+                        if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
+                            FirebasePackageInstaller.InstallFirebaseMenu();
+                    }
+                    if (!string.IsNullOrEmpty(FirebasePackageInstaller.Status))
+                        EditorGUILayout.HelpBox(FirebasePackageInstaller.Status, MessageType.None);
                 });
         }
         
