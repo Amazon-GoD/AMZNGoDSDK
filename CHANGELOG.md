@@ -5,6 +5,18 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-09-07
+
+### Changed
+
+- Move the advertising banner into the optional CrossPromoBanner sample. The
+  SDKPrefab initializes the Cross-Promo manager without creating a banner.
+
+### Fixed
+
+- Remove the legacy Cross-Promo banner template that shared a GUID with
+  existing project banners; give the remaining module templates unique GUIDs.
+
 ## [1.0.1] - 2026-09-07
 
 ### Added

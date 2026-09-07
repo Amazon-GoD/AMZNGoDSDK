@@ -1,6 +1,6 @@
 {
   "name": "com.amzngod.amzngodsdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "displayName": "AMZN GoD SDK",
   "description": "A unified interface for managing all essential SDKs - including Analytics, Advertising, and In-app Purchases - in Amazon Appstore projects",
   "unity": "2022.3",
@@ -19,8 +19,13 @@
   "samples": [
     {
       "displayName": "SDKPrefab",
-      "description": "Configuration prefab with sdk modules",
+      "description": "SDK and module initialization. Does not include an advertising banner.",
       "path": "AmznGoDSDK~/SDKPrefab"
+    },
+    {
+      "displayName": "CrossPromoBanner",
+      "description": "Optional advertising banner. Add under a Canvas in a scene with the SDK and Cross-Promo enabled.",
+      "path": "AmznGoDSDK~/CrossPromoBanner"
     }
   ],
   "author": {

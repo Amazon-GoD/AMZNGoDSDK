@@ -88,7 +88,7 @@ namespace AMZNGoDSDK.Runtime
 #endif
 #if AMZN_CROSSPROMO_ENABLED
             EnsureCrossPromoModule();
-            EnsureOptionalPrefab("AMZNGoDSDK/CrossPromoBanner", "Banner");
+            // Banner UI is an optional sample placed in a scene by the integrator.
 #endif
 #if AMZN_IAP_ENABLED
             EnsureInAppPurchaseModule();
