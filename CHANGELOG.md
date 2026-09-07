@@ -5,6 +5,33 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-07
+
+### Added
+
+- Install Firebase Unity 12.8.0 (Analytics, Remote Config and Crashlytics)
+  directly from SDK Settings, with backups and rollback on installation errors.
+- Separate replacement buttons for Firebase and AppLovin MAX 8.6.3; replacement
+  is disabled when the required SDK version is already installed.
+- AppLovin mediation module, ad routing and analytics, Android build guards,
+  and installation of allowed Android adapters with required version pins.
+- Per-creative cross-promo display limits and an editor counter reset tool.
+
+### Fixed
+
+- Exclude iOS-only CSJ, Pangle and Tencent GDT packages from Android adapter
+  installation. Install adapters in one UPM operation and roll back only
+  dependencies actually added to the project manifest.
+- Preserve AppLovin packages, versions and settings while its module is disabled;
+  serialize module synchronization with SDK installation and replacement.
+- Preserve disabled Firebase dependency files during SDK replacement, include
+  Remote Config in dependency switching, and exclude external Firebase native
+  plugins from builds when the module is disabled.
+- Keep disabled modules out of builds, including their resources, native
+  plugins, managed assemblies and dependencies; support prefab import while
+  modules are disabled.
+- Correct installer asset GUIDs and release extraction on long Windows paths.
+
 ## [1.0.0] - 2026-08-23
 
 First release distributed through Unity Package Manager.

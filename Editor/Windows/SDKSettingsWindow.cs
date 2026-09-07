@@ -15,7 +15,7 @@ namespace AMZNGoDSDK.Editor
 
         private Vector2 _settingsScrollPosition;
         private Vector2 _dependenciesScrollPosition;
-        private SdkSettingsData _currentSettings;
+        [SerializeField] private SdkSettingsData _currentSettings;
 
         [MenuItem("AMZN GoD/SDK Settings", false, 0)]
         public static void ShowWindow()
@@ -23,9 +23,6 @@ namespace AMZNGoDSDK.Editor
             var window = GetWindow<SDKSettingsWindow>("AMZN GoD SDK Settings");
             window.minSize = new Vector2(400, 600);
             window._currentSettings = SdkSettingsManager.LoadSettings();
-            
-            // Load dependencies info asynchronously
-            LoadDependenciesAsync();
         }
         
         //[MenuItem("AMZN GoD/Settings/Open SDK Settings", false, 0)]
@@ -34,11 +31,12 @@ namespace AMZNGoDSDK.Editor
             ShowWindow();
         }
 
-        // _currentSettings не сериализуется, поэтому после domain reload (рекомпиляция,
-        // вход в Play mode) окно осталось бы с null и падало в OnGUI.
+        // Сериализация сохраняет несохранённые настройки при reload после установки SDK.
+        // Впервые открытое окно получает конфиг с диска.
         private void OnEnable()
         {
             _currentSettings ??= SdkSettingsManager.LoadSettings();
+            LoadDependenciesAsync();
         }
 
         /// <summary>
@@ -58,8 +56,10 @@ namespace AMZNGoDSDK.Editor
         
         private static async void LoadDependenciesAsync()
         {
-            _dependenciesInfo = 
+            _dependenciesInfo =
                 await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
+            foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>())
+                window.Repaint();
         }
 
         private void OnGUI()
@@ -148,9 +148,10 @@ namespace AMZNGoDSDK.Editor
 
             if (_dependenciesInfo.Any(x => x.Value == false))
             {
-                if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
+                using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
                 {
-                    SdkDependencyManager.InstallMissingDependencies();
+                    if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
+                        SdkDependencyManager.InstallMissingDependencies();
                 }
             }
 
@@ -276,13 +277,26 @@ namespace AMZNGoDSDK.Editor
                             ? maxPin + " (закреплена)"
                             : "latest");
 
-                    EditorGUILayout.BeginHorizontal();
-                    if (GUILayout.Button("Install MAX Plugin"))
-                        AppLovinPackageInstaller.InstallMaxPluginMenu();
-
-                    if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
-                        AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
-                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.HelpBox(AppLovinPackageInstaller.InstalledStatus, MessageType.None);
+                    bool hasMax = AppLovinPackageInstaller.HasInstalledPlugin;
+                    bool appLovinSavedEnabled = AppLovinPackageInstaller.IsModuleEnabledInSavedSettings;
+                    if (!appLovinSavedEnabled)
+                        EditorGUILayout.HelpBox("Сохраните настройки с включёнными SDK и AppLovin перед установкой или заменой пакетов.", MessageType.Info);
+                    using (new EditorGUI.DisabledScope(!appLovinSavedEnabled || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
+                               EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
+                    {
+                        using (new EditorGUI.DisabledScope(hasMax))
+                            if (GUILayout.Button("Install MAX Plugin"))
+                                AppLovinPackageInstaller.InstallMaxPluginMenu();
+                        using (new EditorGUI.DisabledScope(!hasMax || AppLovinPackageInstaller.IsRequiredVersionInstalled))
+                            if (GUILayout.Button("Заменить AppLovin на " + maxPin))
+                                AppLovinPackageInstaller.ReplaceMaxPluginMenu();
+                        using (new EditorGUI.DisabledScope(!hasMax))
+                            if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
+                                AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
+                    }
+                    if (!string.IsNullOrEmpty(AppLovinPackageInstaller.Status))
+                        EditorGUILayout.HelpBox(AppLovinPackageInstaller.Status, MessageType.None);
 
                     var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
                     if (pinnedAdapters.Count > 0)
@@ -331,6 +345,29 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Enable Analytics", _currentSettings.Firebase.EnableAnalytics);
                     _currentSettings.Firebase.EnableCrashlytics = EditorGUILayout
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
+
+                    GUILayout.Space(10);
+                    EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.LabelField("Версия Unity SDK", FirebasePackageInstaller.UnityVersion + " (закреплена)");
+                    EditorGUILayout.HelpBox(FirebasePackageInstaller.InstalledStatus, MessageType.None);
+                    EditorGUILayout.HelpBox(
+                        "Analytics 22.4.0; Remote Config 22.1.0; Crashlytics / NDK 19.4.2; Common 21.0.0.\n" +
+                        "Устанавливаются Analytics, Remote Config и Crashlytics. Firebase Unity требует Android minSdk 23.", MessageType.Info);
+                    if ((int)PlayerSettings.Android.minSdkVersion < FirebasePackageInstaller.MinimumAndroidSdk)
+                        EditorGUILayout.HelpBox("В Player Settings требуется Android Minimum API Level 23 или выше.", MessageType.Warning);
+                    bool hasFirebase = FirebasePackageInstaller.HasInstallation;
+                    using (new EditorGUI.DisabledScope(FirebasePackageInstaller.IsBusy || AppLovinPackageInstaller.IsBusy || EditorApplication.isCompiling ||
+                               EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
+                    {
+                        using (new EditorGUI.DisabledScope(hasFirebase))
+                            if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
+                                FirebasePackageInstaller.InstallFirebaseMenu();
+                        using (new EditorGUI.DisabledScope(!hasFirebase || FirebasePackageInstaller.IsRequiredVersionInstalled))
+                            if (GUILayout.Button("Заменить Firebase на " + FirebasePackageInstaller.UnityVersion))
+                                FirebasePackageInstaller.ReplaceFirebaseMenu();
+                    }
+                    if (!string.IsNullOrEmpty(FirebasePackageInstaller.Status))
+                        EditorGUILayout.HelpBox(FirebasePackageInstaller.Status, MessageType.None);
                 });
         }
         

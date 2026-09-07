@@ -12,17 +12,28 @@ namespace AMZNGoDSDK.Editor
     /// </summary>
     public static class ExternalDependencyAssetSynchronizer
     {
-        private const string DisabledSuffix = ".amzngodsdk-disabled";
+        private const string DisabledSuffix = FirebaseUnityPackageUtility.DisabledDependencySuffix;
+        private static bool? _pendingFirebaseState;
 
         private static readonly string[] FirebaseDependencyFiles =
         {
             "Assets/Firebase/Editor/AppDependencies.xml",
             "Assets/Firebase/Editor/AnalyticsDependencies.xml",
+            "Assets/Firebase/Editor/RemoteConfigDependencies.xml",
             "Assets/Firebase/Editor/CrashlyticsDependencies.xml",
         };
 
         public static void SynchronizeFirebase(bool enabled)
         {
+            if (FirebasePackageInstaller.IsBusy)
+            {
+                _pendingFirebaseState = enabled;
+                EditorApplication.update -= ApplyPendingFirebaseState;
+                EditorApplication.update += ApplyPendingFirebaseState;
+                return;
+            }
+            _pendingFirebaseState = null;
+            EditorApplication.update -= ApplyPendingFirebaseState;
             foreach (string activePath in FirebaseDependencyFiles)
             {
                 string disabledPath = activePath + DisabledSuffix;
@@ -41,6 +52,13 @@ namespace AMZNGoDSDK.Editor
                 if (!string.IsNullOrEmpty(error))
                     Debug.LogError($"[AMZN GoD SDK] Не удалось переместить {source}: {error}");
             }
+        }
+
+        private static void ApplyPendingFirebaseState()
+        {
+            if (FirebasePackageInstaller.IsBusy || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            if (_pendingFirebaseState.HasValue) SynchronizeFirebase(_pendingFirebaseState.Value);
+            else EditorApplication.update -= ApplyPendingFirebaseState;
         }
 
         public static IEnumerable<string> ActiveFirebaseDependencyFiles()
