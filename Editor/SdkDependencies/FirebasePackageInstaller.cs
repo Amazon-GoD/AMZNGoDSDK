@@ -28,10 +28,19 @@ namespace AMZNGoDSDK.Editor
         private static readonly string[] Products = { "Analytics", "RemoteConfig", "Crashlytics" };
         private static CancellationTokenSource _cancellation;
         private static string _installedStatus;
+        private static bool _isRequiredVersionInstalled;
         private static double _statusCheckedAt;
 
         public static bool IsBusy => _cancellation != null || SessionState.GetString(PendingKey, "").StartsWith("verify:", StringComparison.Ordinal);
         public static string Status => SessionState.GetString(StateKey, "");
+        public static bool IsRequiredVersionInstalled
+        {
+            get
+            {
+                _ = InstalledStatus;
+                return _isRequiredVersionInstalled;
+            }
+        }
 
         // Конфиги google-services сами по себе не означают наличие SDK. Учитываем
         // неполный импорт, чтобы установка с нуля не перезаписала его незаметно.
@@ -73,22 +82,29 @@ namespace AMZNGoDSDK.Editor
                 if (_installedStatus != null && EditorApplication.timeSinceStartup - _statusCheckedAt < 2)
                     return _installedStatus;
                 _statusCheckedAt = EditorApplication.timeSinceStartup;
+                _isRequiredVersionInstalled = false;
                 try
                 {
-                    _installedStatus = string.Join("; ", Products.Select(product =>
-                    {
-                        string path = "Assets/Firebase/Plugins/Firebase." + product + ".dll";
-                        if (!File.Exists(path) || !File.Exists(path + ".meta"))
-                            return product + ": отсутствует";
-                        var version = Regex.Match(File.ReadAllText(path + ".meta"), @"gvh_version-([\d.]+)");
-                        return product + ": " + (version.Success ? version.Groups[1].Value : "неизвестная версия");
-                    }));
-                    if (PackageInfo.GetAllRegisteredPackages().Any(IsFirebasePackage))
+                    var versions = Products.Concat(new[] { "App" }).ToDictionary(product => product, ReadInstalledVersion);
+                    _installedStatus = string.Join("; ", Products.Select(product => product + ": " +
+                        (versions[product] ?? "отсутствует")));
+                    var packages = PackageInfo.GetAllRegisteredPackages().Where(IsFirebasePackage).ToArray();
+                    _isRequiredVersionInstalled = versions.Values.All(version => version == UnityVersion) &&
+                        packages.All(package => package.version == UnityVersion);
+                    if (packages.Length > 0)
                         _installedStatus += "; найден Firebase через UPM (автозамена недоступна)";
                 }
                 catch (Exception ex) { _installedStatus = "Не удалось определить версию: " + ex.Message; }
                 return _installedStatus;
             }
+        }
+
+        private static string ReadInstalledVersion(string product)
+        {
+            string path = "Assets/Firebase/Plugins/Firebase." + product + ".dll";
+            if (!File.Exists(path) || !File.Exists(path + ".meta")) return null;
+            var version = Regex.Match(File.ReadAllText(path + ".meta"), @"(?m)^- gvh_version-([\d.]+)\s*$");
+            return version.Success ? version.Groups[1].Value : "неизвестная версия";
         }
 
         [MenuItem("AMZN GoD/Firebase/Install Firebase 12.8.0", false, 310)]

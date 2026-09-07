@@ -45,12 +45,14 @@ namespace AMZNGoDSDK.Editor
         private static bool _busy;
         private static string _installedStatus;
         private static bool _hasInstalledPlugin;
+        private static bool _isRequiredVersionInstalled;
         private static double _statusCheckedAt;
 
         public static bool IsBusy => _busy;
         public static string Status => SessionState.GetString(StatusKey, "");
         public static bool HasInstalledPlugin { get { ReadInstalledStatus(); return _hasInstalledPlugin; } }
         public static string InstalledStatus { get { ReadInstalledStatus(); return _installedStatus; } }
+        public static bool IsRequiredVersionInstalled { get { ReadInstalledStatus(); return _isRequiredVersionInstalled; } }
 
         static AppLovinPackageInstaller()
         {
@@ -64,11 +66,16 @@ namespace AMZNGoDSDK.Editor
         {
             if (_installedStatus != null && EditorApplication.timeSinceStartup - _statusCheckedAt < 2) return;
             _statusCheckedAt = EditorApplication.timeSinceStartup;
+            _isRequiredVersionInstalled = false;
             var package = PackageInfo.GetAllRegisteredPackages().FirstOrDefault(item => item.name == MaxPluginPackageId);
             try
             {
                 string legacy = AppLovinLegacyInstallation.Description;
                 _hasInstalledPlugin = package != null || legacy != null;
+                string requiredVersion = PinnedVersions[MaxPluginPackageId];
+                _isRequiredVersionInstalled = _hasInstalledPlugin &&
+                    (package == null || package.version == requiredVersion) &&
+                    (legacy == null || AppLovinLegacyInstallation.InstalledVersion == requiredVersion);
                 _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy }.Where(value => value != null));
                 if (!_hasInstalledPlugin) _installedStatus = "MAX не установлен";
             }

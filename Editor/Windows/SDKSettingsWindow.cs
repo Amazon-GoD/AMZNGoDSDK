@@ -285,7 +285,7 @@ namespace AMZNGoDSDK.Editor
                         using (new EditorGUI.DisabledScope(hasMax))
                             if (GUILayout.Button("Install MAX Plugin"))
                                 AppLovinPackageInstaller.InstallMaxPluginMenu();
-                        using (new EditorGUI.DisabledScope(!hasMax))
+                        using (new EditorGUI.DisabledScope(!hasMax || AppLovinPackageInstaller.IsRequiredVersionInstalled))
                             if (GUILayout.Button("Заменить AppLovin на " + maxPin))
                                 AppLovinPackageInstaller.ReplaceMaxPluginMenu();
                         using (new EditorGUI.DisabledScope(!hasMax))
@@ -359,7 +359,7 @@ namespace AMZNGoDSDK.Editor
                         using (new EditorGUI.DisabledScope(hasFirebase))
                             if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
                                 FirebasePackageInstaller.InstallFirebaseMenu();
-                        using (new EditorGUI.DisabledScope(!hasFirebase))
+                        using (new EditorGUI.DisabledScope(!hasFirebase || FirebasePackageInstaller.IsRequiredVersionInstalled))
                             if (GUILayout.Button("Заменить Firebase на " + FirebasePackageInstaller.UnityVersion))
                                 FirebasePackageInstaller.ReplaceFirebaseMenu();
                     }

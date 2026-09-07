@@ -26,9 +26,18 @@ namespace AMZNGoDSDK.Editor
             get
             {
                 if (!HasCore) return null;
+                string version = InstalledVersion;
+                return "legacy Assets/MaxSdk" + (version != null ? " " + version : " (версия неизвестна)");
+            }
+        }
+
+        internal static string InstalledVersion
+        {
+            get
+            {
                 string script = Root + "/Scripts/MaxSdk.cs";
                 var version = File.Exists(script) ? Regex.Match(File.ReadAllText(script), "_version\\s*=\\s*\"([^\"]+)\"") : Match.Empty;
-                return "legacy Assets/MaxSdk" + (version.Success ? " " + version.Groups[1].Value : " (версия неизвестна)");
+                return version.Success ? version.Groups[1].Value : null;
             }
         }
 
