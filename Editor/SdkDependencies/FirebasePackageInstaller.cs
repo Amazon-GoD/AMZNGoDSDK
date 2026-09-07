@@ -33,6 +33,26 @@ namespace AMZNGoDSDK.Editor
         public static bool IsBusy => _cancellation != null || SessionState.GetString(PendingKey, "").StartsWith("verify:", StringComparison.Ordinal);
         public static string Status => SessionState.GetString(StateKey, "");
 
+        // Конфиги google-services сами по себе не означают наличие SDK. Учитываем
+        // неполный импорт, чтобы установка с нуля не перезаписала его незаметно.
+        public static bool HasInstallation
+        {
+            get
+            {
+                try
+                {
+                    return PackageInfo.GetAllRegisteredPackages().Any(IsFirebasePackage) ||
+                           FirebaseUnityPackageUtility.HasInstalledAssets();
+                }
+                catch (Exception)
+                {
+                    // Ошибка чтения не делает установку пустой. Причина будет показана
+                    // проверкой замены до загрузки и изменения файлов.
+                    return true;
+                }
+            }
+        }
+
         static FirebasePackageInstaller()
         {
             string pending = SessionState.GetString(PendingKey, "");
@@ -74,16 +94,50 @@ namespace AMZNGoDSDK.Editor
         [MenuItem("AMZN GoD/Firebase/Install Firebase 12.8.0", false, 310)]
         public static void InstallFirebaseMenu()
         {
-            if (IsBusy || EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode)
+            ConfirmInstallation(false);
+        }
+
+        [MenuItem("AMZN GoD/Firebase/Replace with Firebase 12.8.0", false, 311)]
+        public static void ReplaceFirebaseMenu()
+        {
+            ConfirmInstallation(true);
+        }
+
+        private static void ConfirmInstallation(bool replaceExisting)
+        {
+            if (IsBusy || AppLovinPackageInstaller.IsBusy || EditorApplication.isCompiling ||
+                EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
-            if (!EditorUtility.DisplayDialog("Firebase " + UnityVersion,
-                    "Будут загружены официальные Firebase Analytics, Remote Config и Crashlytics " + UnityVersion +
-                    ".\n\nУстановленный комплект Firebase будет заменён этой версией. Исходные файлы сохранятся в " +
-                    "Library/AmznGoDSDK/Firebase. Конфигурация google-services сохраняется.\n\n" +
-                    "Firebase Unity требует Android minSdk 23. Настройки проекта не меняются. " +
-                    "После установки Unity импортирует файлы и перекомпилирует скрипты.", "Установить", "Отмена"))
-                return;
-            _ = InstallAsync();
+            try
+            {
+                CheckInstallationMode(replaceExisting);
+                CheckProject();
+                string action = replaceExisting ? "Заменить" : "Установить";
+                string details = replaceExisting
+                    ? "Текущий комплект: " + InstalledStatus + ".\n\n" +
+                      "После загрузки и проверки пакетов старые файлы Firebase будут заменены комплектом " + UnityVersion +
+                      ". Исходные файлы сохранятся в Library/AmznGoDSDK/Firebase; при ошибке записи выполняется откат.\n\n"
+                    : "Будет установлен Firebase Unity SDK " + UnityVersion + ".\n\n";
+                if (EditorUtility.DisplayDialog("Firebase " + UnityVersion,
+                        details + "Состав: Analytics, Remote Config и Crashlytics. " +
+                        "Конфиги google-services и настройки AMZN GoD SDK сохраняются.\n\n" +
+                        "Firebase Unity требует Android minSdk 23. После установки Unity перекомпилирует скрипты.",
+                        action, "Отмена"))
+                    _ = InstallAsync(replaceExisting);
+            }
+            catch (Exception ex)
+            {
+                SetStatus(ex.Message);
+                EditorUtility.DisplayDialog("Firebase", ex.Message, "OK");
+            }
+        }
+
+        private static void CheckInstallationMode(bool replaceExisting)
+        {
+            if (HasInstallation != replaceExisting)
+                throw new IOException(replaceExisting
+                    ? "Firebase не найден. Используйте кнопку установки."
+                    : "Firebase уже присутствует в проекте. Используйте отдельную кнопку замены на " + UnityVersion + ".");
         }
 
         public static void Cancel() => _cancellation?.Cancel();
@@ -103,15 +157,16 @@ namespace AMZNGoDSDK.Editor
                     "После завершения установки повторите загрузку Firebase.");
         }
 
-        private static async Task InstallAsync()
+        private static async Task InstallAsync(bool replaceExisting)
         {
-            if (IsBusy) return;
+            if (IsBusy || AppLovinPackageInstaller.IsBusy) return;
             _cancellation = new CancellationTokenSource();
             CancellationToken cancellation = _cancellation.Token;
             string operation = "Library/AmznGoDSDK/Firebase/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N");
             string work = operation + "/staging";
             try
             {
+                CheckInstallationMode(replaceExisting);
                 CheckProject();
                 // Проверяем текущий комплект до скачивания; повторяем проверку непосредственно перед записью.
                 FirebaseUnityPackageUtility.ExistingFiles(new Dictionary<string, string>());
@@ -150,6 +205,7 @@ namespace AMZNGoDSDK.Editor
                 }
                 FirebaseUnityPackageUtility.ValidatePinned(path => files.TryGetValue(path, out string source) ? source :
                     throw new IOException("В комплекте нет файла " + path));
+                CheckInstallationMode(replaceExisting);
                 CheckProject();
                 var previous = FirebaseUnityPackageUtility.ExistingFiles(files);
                 Progress("Комплект проверен. Установка файлов", 1, cancellation);

@@ -148,9 +148,10 @@ namespace AMZNGoDSDK.Editor
 
             if (_dependenciesInfo.Any(x => x.Value == false))
             {
-                if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
+                using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
                 {
-                    SdkDependencyManager.InstallMissingDependencies();
+                    if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
+                        SdkDependencyManager.InstallMissingDependencies();
                 }
             }
 
@@ -276,13 +277,23 @@ namespace AMZNGoDSDK.Editor
                             ? maxPin + " (закреплена)"
                             : "latest");
 
-                    EditorGUILayout.BeginHorizontal();
-                    if (GUILayout.Button("Install MAX Plugin"))
-                        AppLovinPackageInstaller.InstallMaxPluginMenu();
-
-                    if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
-                        AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
-                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.HelpBox(AppLovinPackageInstaller.InstalledStatus, MessageType.None);
+                    bool hasMax = AppLovinPackageInstaller.HasInstalledPlugin;
+                    using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
+                               EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
+                    {
+                        using (new EditorGUI.DisabledScope(hasMax))
+                            if (GUILayout.Button("Install MAX Plugin"))
+                                AppLovinPackageInstaller.InstallMaxPluginMenu();
+                        using (new EditorGUI.DisabledScope(!hasMax))
+                            if (GUILayout.Button("Заменить AppLovin на " + maxPin))
+                                AppLovinPackageInstaller.ReplaceMaxPluginMenu();
+                        using (new EditorGUI.DisabledScope(!hasMax))
+                            if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
+                                AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
+                    }
+                    if (!string.IsNullOrEmpty(AppLovinPackageInstaller.Status))
+                        EditorGUILayout.HelpBox(AppLovinPackageInstaller.Status, MessageType.None);
 
                     var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
                     if (pinnedAdapters.Count > 0)
@@ -341,11 +352,16 @@ namespace AMZNGoDSDK.Editor
                         "Устанавливаются Analytics, Remote Config и Crashlytics. Firebase Unity требует Android minSdk 23.", MessageType.Info);
                     if ((int)PlayerSettings.Android.minSdkVersion < FirebasePackageInstaller.MinimumAndroidSdk)
                         EditorGUILayout.HelpBox("В Player Settings требуется Android Minimum API Level 23 или выше.", MessageType.Warning);
-                    using (new EditorGUI.DisabledScope(FirebasePackageInstaller.IsBusy || EditorApplication.isCompiling ||
+                    bool hasFirebase = FirebasePackageInstaller.HasInstallation;
+                    using (new EditorGUI.DisabledScope(FirebasePackageInstaller.IsBusy || AppLovinPackageInstaller.IsBusy || EditorApplication.isCompiling ||
                                EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
                     {
-                        if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
-                            FirebasePackageInstaller.InstallFirebaseMenu();
+                        using (new EditorGUI.DisabledScope(hasFirebase))
+                            if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
+                                FirebasePackageInstaller.InstallFirebaseMenu();
+                        using (new EditorGUI.DisabledScope(!hasFirebase))
+                            if (GUILayout.Button("Заменить Firebase на " + FirebasePackageInstaller.UnityVersion))
+                                FirebasePackageInstaller.ReplaceFirebaseMenu();
                     }
                     if (!string.IsNullOrEmpty(FirebasePackageInstaller.Status))
                         EditorGUILayout.HelpBox(FirebasePackageInstaller.Status, MessageType.None);

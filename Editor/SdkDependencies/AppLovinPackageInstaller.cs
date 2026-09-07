@@ -6,7 +6,9 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PackageManager;
+using UnityEditor.PackageManager.Requests;
 using UnityEngine;
+using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -24,6 +26,7 @@ namespace AMZNGoDSDK.Editor
     /// два десятка адаптеров, тянущих нативные зависимости; такое делается по явной команде.
     /// </para>
     /// </summary>
+    [InitializeOnLoad]
     public static class AppLovinPackageInstaller
     {
         public const string RegistryName = "AppLovin MAX";
@@ -35,6 +38,60 @@ namespace AMZNGoDSDK.Editor
 
         private const string ManifestPath = "Packages/manifest.json";
         private const string BackupDirectory = "Library/AmznGoDSDK";
+        private const string StatusKey = "AMZNGoDSDK.AppLovinInstaller.Status";
+        private const string PendingKey = "AMZNGoDSDK.AppLovinInstaller.Pending";
+        private static bool _busy;
+        private static string _installedStatus;
+        private static bool _hasInstalledPlugin;
+        private static double _statusCheckedAt;
+
+        public static bool IsBusy => _busy;
+        public static string Status => SessionState.GetString(StatusKey, "");
+        public static bool HasInstalledPlugin { get { ReadInstalledStatus(); return _hasInstalledPlugin; } }
+        public static string InstalledStatus { get { ReadInstalledStatus(); return _installedStatus; } }
+
+        static AppLovinPackageInstaller()
+        {
+            string pending = SessionState.GetString(PendingKey, "");
+            if (pending.Length == 0) return;
+            SessionState.EraseString(PendingKey);
+            SetStatus("Установка AppLovin была прервана. Проверьте состояние пакетов. Резервная копия: " + pending);
+        }
+
+        private static void ReadInstalledStatus()
+        {
+            if (_installedStatus != null && EditorApplication.timeSinceStartup - _statusCheckedAt < 2) return;
+            _statusCheckedAt = EditorApplication.timeSinceStartup;
+            var package = PackageInfo.GetAllRegisteredPackages().FirstOrDefault(item => item.name == MaxPluginPackageId);
+            try
+            {
+                string legacy = AppLovinLegacyInstallation.Description;
+                _hasInstalledPlugin = package != null || legacy != null;
+                _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy }.Where(value => value != null));
+                if (!_hasInstalledPlugin) _installedStatus = "MAX не установлен";
+            }
+            catch (Exception ex)
+            {
+                _hasInstalledPlugin = package != null;
+                _installedStatus = "Не удалось проверить legacy MAX: " + ex.Message;
+            }
+        }
+
+        private static void SetStatus(string message)
+        {
+            SessionState.SetString(StatusKey, message);
+            foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>()) window.Repaint();
+        }
+
+        private static bool CanStart()
+        {
+            if (_busy || FirebasePackageInstaller.IsBusy)
+            {
+                SetStatus("Дождитесь завершения текущей установки SDK.");
+                return false;
+            }
+            return !EditorApplication.isCompiling && !EditorApplication.isUpdating && !EditorApplication.isPlayingOrWillChangePlaymode;
+        }
 
         /// <summary>
         /// Сетки, у которых в реестре AppLovin есть адаптер. Снимок реестра на 2026-09-01
@@ -178,6 +235,12 @@ namespace AMZNGoDSDK.Editor
         [MenuItem("AMZN GoD/AppLovin/Install MAX Plugin", false, 300)]
         public static void InstallMaxPluginMenu()
         {
+            if (!CanStart()) return;
+            if (HasInstalledPlugin)
+            {
+                SetStatus("MAX уже установлен. Для смены версии нажмите Replace MAX Plugin.");
+                return;
+            }
             if (!EditorUtility.DisplayDialog(
                     "AppLovin MAX",
                     $"Будет прописан scoped registry {RegistryUrl} в {ManifestPath} " +
@@ -187,12 +250,36 @@ namespace AMZNGoDSDK.Editor
                     "Установить", "Отмена"))
                 return;
 
-            InstallMaxPluginAsync().ConfigureAwait(false);
+            _ = InstallMaxPluginAsync();
+        }
+
+        [MenuItem("AMZN GoD/AppLovin/Replace MAX Plugin", false, 302)]
+        public static void ReplaceMaxPluginMenu()
+        {
+            if (!CanStart()) return;
+            _installedStatus = null;
+            if (!HasInstalledPlugin)
+            {
+                SetStatus("MAX не установлен. Используйте Install MAX Plugin.");
+                return;
+            }
+            if (!EditorUtility.DisplayDialog("Заменить AppLovin MAX",
+                    InstalledStatus + " → " + PackageSpec(MaxPluginPackageId) + ".\n\n" +
+                    "Состав сетей и версии адаптеров сохранятся; установленные Facebook, Line и Ogury Presage вернутся к закреплённым версиям.\n\n" +
+                    "Legacy-файлы SDK будут заменены пакетом UPM. Resources, настройки и SDK keys сохраняются. " +
+                    "Резервная копия: Library/AmznGoDSDK/AppLovin.", "Заменить", "Отмена")) return;
+            _ = RunOperationAsync(true, false);
         }
 
         [MenuItem("AMZN GoD/AppLovin/Install Allowed Adapters", false, 301)]
         public static void InstallAllowedAdaptersMenu()
         {
+            if (!CanStart()) return;
+            if (!HasInstalledPlugin)
+            {
+                SetStatus("Сначала установите MAX кнопкой Install MAX Plugin.");
+                return;
+            }
             var adapters = AllowedAdapterPackageIds();
             var blocked = BlockedNetworkNames();
             var pinned = PinnedSpecsIn(adapters);
@@ -209,46 +296,169 @@ namespace AMZNGoDSDK.Editor
                     "Установить", "Отмена"))
                 return;
 
-            InstallAllowedAdaptersAsync().ConfigureAwait(false);
+            _ = InstallAllowedAdaptersAsync();
         }
 
-        public static async Task InstallMaxPluginAsync()
+        public static Task InstallMaxPluginAsync()
         {
-            if (!EnsureScopedRegistry())
-                return;
-
-            await InstallPackageAsync(MaxPluginPackageId);
+            return RunOperationAsync(false, false);
         }
 
-        public static async Task InstallAllowedAdaptersAsync()
+        public static Task InstallAllowedAdaptersAsync()
         {
-            if (!EnsureScopedRegistry())
-                return;
+            return RunOperationAsync(false, true);
+        }
 
-            var adapters = AllowedAdapterPackageIds();
-            var blocked = BlockedNetworkNames();
-
-            if (blocked.Count > 0)
-                Debug.Log($"[AppLovinInstaller] Пропущены по стоп-листу: {string.Join(", ", blocked)}");
-
+        private static async Task RunOperationAsync(bool replace, bool adaptersOnly)
+        {
+            if (!CanStart()) return;
+            _busy = true;
+            bool locked = false;
+            bool backedUp = false;
+            bool upmTouched = false;
+            var attemptedIds = new HashSet<string>();
+            AppLovinLegacyInstallation legacy = null;
+            PackageInfo[] installed = null;
             try
             {
-                for (int i = 0; i < adapters.Count; i++)
+                _installedStatus = null;
+                if (!replace && !adaptersOnly && HasInstalledPlugin)
+                    throw new IOException("MAX уже установлен. Для смены версии нажмите Replace MAX Plugin.");
+                if ((replace || adaptersOnly) && !HasInstalledPlugin)
+                    throw new IOException("Сначала установите MAX кнопкой Install MAX Plugin.");
+                installed = PackageInfo.GetAllRegisteredPackages();
+                var installedCore = installed.FirstOrDefault(package => package.name == MaxPluginPackageId);
+                if (replace && installedCore != null && installedCore.source == PackageSource.Embedded)
+                    throw new IOException("MAX установлен как embedded package. Сначала перенесите его из Packages в обычный UPM пакет.");
+                var adapters = installed.Where(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal)).ToArray();
+                foreach (var adapter in adapters)
                 {
-                    EditorUtility.DisplayProgressBar(
-                        "AppLovin MAX",
-                        $"Установка {adapters[i]} ({i + 1}/{adapters.Count})",
-                        (float)i / adapters.Count);
-
-                    await InstallPackageAsync(adapters[i]);
+                    var forbidden = ForbiddenAdNetworks.MatchByGroup(adapter.name);
+                    if (forbidden != null)
+                        throw new IOException("Установлен запрещённый адаптер " + forbidden.DisplayName + ". Удалите его явно перед установкой.");
+                    if (replace && PinnedVersions.ContainsKey(adapter.name) && adapter.source != PackageSource.Registry)
+                        throw new IOException("Закреплённый адаптер имеет нестандартный источник: " + adapter.packageId + ". Переведите его в registry UPM перед заменой.");
                 }
+                if (adaptersOnly && AppLovinLegacyInstallation.HasCore)
+                    throw new IOException("Сначала переведите legacy MAX в UPM кнопкой Replace MAX Plugin.");
+                legacy = AppLovinLegacyInstallation.Inspect(replace, adapters.Select(package => package.name));
+                string backup = BackupDirectory + "/AppLovin/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N");
+                EditorApplication.LockReloadAssemblies();
+                locked = true;
+                legacy.Backup(backup);
+                backedUp = true;
+                SessionState.SetString(PendingKey, backup);
+                SetStatus(replace ? "Замена AppLovin MAX…" : "Установка AppLovin MAX…");
+                AssetDatabase.DisallowAutoRefresh();
+                try
+                {
+                    if (!EnsureScopedRegistry()) throw new IOException("Не удалось настроить scoped registry AppLovin.");
+                    if (replace) legacy.RemoveLegacy();
+                }
+                finally { AssetDatabase.AllowAutoRefresh(); }
+
+                var expected = new Dictionary<string, string>();
+                expected[MaxPluginPackageId] = adaptersOnly ? installedCore.version : PinnedVersions[MaxPluginPackageId];
+                if (adaptersOnly)
+                {
+                    var allowed = AllowedAdapterPackageIds();
+                    for (int i = 0; i < allowed.Count; i++)
+                    {
+                        EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка " + allowed[i], (float)i / allowed.Count);
+                        attemptedIds.Add(allowed[i]);
+                        upmTouched = true;
+                        await InstallPackageAsync(allowed[i]);
+                        if (PinnedVersions.TryGetValue(allowed[i], out string pin)) expected[allowed[i]] = pin;
+                    }
+                }
+                else if (!replace)
+                {
+                    attemptedIds.Add(MaxPluginPackageId);
+                    upmTouched = true;
+                    await InstallPackageAsync(MaxPluginPackageId);
+                }
+                else
+                {
+                    var specifications = new List<string> { PackageSpec(MaxPluginPackageId) };
+                    foreach (var adapter in adapters)
+                    {
+                        string version = PinnedVersions.TryGetValue(adapter.name, out string pin) ? pin : adapter.version;
+                        expected[adapter.name] = version;
+                        if (adapter.source == PackageSource.Registry)
+                            specifications.Add(adapter.name + "@" + version);
+                    }
+                    foreach (string adapter in legacy.AdapterPins)
+                    {
+                        expected[adapter] = PinnedVersions[adapter];
+                        if (!specifications.Contains(PackageSpec(adapter))) specifications.Add(PackageSpec(adapter));
+                    }
+                    EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка " + PackageSpec(MaxPluginPackageId), 0.5f);
+                    attemptedIds.UnionWith(expected.Keys);
+                    upmTouched = true;
+                    await WaitForRequest(Client.AddAndRemove(specifications.ToArray(), Array.Empty<string>()));
+                }
+                var check = Client.List(true, true);
+                await WaitForRequest(check);
+                foreach (var package in expected)
+                    if (!check.Result.Any(item => item.name == package.Key && item.version == package.Value))
+                        throw new IOException("UPM не подтвердил версию " + package.Key + "@" + package.Value);
+                if (replace && check.Result.Any(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) && !expected.ContainsKey(package.name)))
+                    throw new IOException("UPM изменил состав адаптеров. Замена отменена.");
+                SessionState.EraseString(PendingKey);
+                SetStatus("AppLovin: " + (adaptersOnly ? "адаптеры установлены" : PackageSpec(MaxPluginPackageId) + " установлен") + ". Резервная копия: " + backup);
+                Debug.Log("[AppLovinInstaller] " + Status);
+            }
+            catch (Exception failure)
+            {
+                string recovery = "Файлы проекта не изменены.";
+                if (backedUp)
+                {
+                    try
+                    {
+                        AssetDatabase.DisallowAutoRefresh();
+                        try { legacy.Restore(); }
+                        finally { AssetDatabase.AllowAutoRefresh(); }
+                        if (upmTouched)
+                        {
+                            var previousPackages = installed.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).ToArray();
+                            var restoreSpecs = previousPackages.Where(package => package.source != PackageSource.Embedded)
+                                .Select(package => package.source == PackageSource.Registry ? package.packageId :
+                                    package.packageId.Substring(package.name.Length + 1)).ToArray();
+                            var removeIds = attemptedIds.Where(id => !installed.Any(package => package.name == id)).ToArray();
+                            // AddAndRemove требует хотя бы одно действие: в legacy-only проекте удаляем добавленный core.
+                            if (restoreSpecs.Length != 0 || removeIds.Length != 0)
+                                await WaitForRequest(Client.AddAndRemove(restoreSpecs, removeIds));
+                            var check = Client.List(true, true);
+                            await WaitForRequest(check);
+                            if (!new HashSet<string>(previousPackages.Select(package => package.packageId)).SetEquals(
+                                    check.Result.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).Select(package => package.packageId)))
+                                throw new IOException("UPM не восстановил исходный состав и версии AppLovin.");
+                            // Возвращаем и исходную форму manifest: recovery не превращает transitive adapters в direct.
+                            legacy.RestorePackageFiles();
+                        }
+                        recovery = "Исходные файлы и версии AppLovin восстановлены.";
+                    }
+                    catch (Exception restoreFailure)
+                    {
+                        recovery = "Автоматический откат неполон: " + restoreFailure.Message + ". Резервная копия: " + legacy.BackupPath;
+                        Debug.LogError("[AppLovinInstaller] " + restoreFailure);
+                    }
+                }
+                SessionState.EraseString(PendingKey);
+                SetStatus("Ошибка AppLovin: " + failure.Message + " " + recovery);
+                Debug.LogError("[AppLovinInstaller] " + Status);
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
+                _installedStatus = null;
+                try { if (backedUp) AssetDatabase.Refresh(); }
+                finally
+                {
+                    _busy = false;
+                    if (locked) EditorApplication.UnlockReloadAssemblies();
+                }
             }
-
-            Debug.Log($"[AppLovinInstaller] Готово: обработано адаптеров {adapters.Count}.");
         }
 
         #endregion
@@ -307,7 +517,6 @@ namespace AMZNGoDSDK.Editor
             }
 
             Debug.Log($"[AppLovinInstaller] Scoped registry «{RegistryName}» ({RegistryUrl}) добавлен в {ManifestPath}.");
-            Client.Resolve();
             return true;
         }
 
@@ -406,8 +615,7 @@ namespace AMZNGoDSDK.Editor
             var forbidden = ForbiddenAdNetworks.MatchByGroup(packageId);
             if (forbidden != null)
             {
-                Debug.LogError($"[AppLovinInstaller] Отказ: «{forbidden.DisplayName}» в стоп-листе ({packageId}).");
-                return;
+                throw new IOException($"Отказ: «{forbidden.DisplayName}» в стоп-листе ({packageId}).");
             }
 
             // UPM понимает форму name@version; без неё Client.Add тянет latest.
@@ -419,17 +627,16 @@ namespace AMZNGoDSDK.Editor
             Debug.Log($"[AppLovinInstaller] Установка {requestSpec}...");
             var request = Client.Add(requestSpec);
 
-            while (!request.IsCompleted)
-                await Task.Delay(100);
+            await WaitForRequest(request);
+            if (PinnedVersions.TryGetValue(packageId, out string version) && request.Result.version != version)
+                throw new IOException("UPM не установил требуемую версию " + requestSpec);
+        }
 
-            if (request.Status == StatusCode.Success)
-            {
-                Debug.Log($"[AppLovinInstaller] {request.Result.packageId} установлен.");
-                return;
-            }
-
-            string error = request.Error != null ? request.Error.message : "неизвестная ошибка";
-            Debug.LogError($"[AppLovinInstaller] Не удалось установить {packageId}: {error}");
+        private static async Task WaitForRequest(Request request)
+        {
+            while (!request.IsCompleted) await Task.Delay(100);
+            if (request.Status != StatusCode.Success)
+                throw new IOException(request.Error?.message ?? "Неизвестная ошибка Unity Package Manager.");
         }
 
         #endregion

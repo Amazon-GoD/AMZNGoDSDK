@@ -29,6 +29,22 @@ namespace AMZNGoDSDK.Editor
                 path.StartsWith(root + "/", StringComparison.Ordinal));
         }
 
+        internal static bool HasInstalledAssets()
+        {
+            return Roots.SelectMany(Files).Concat(Files(GeneratedRoot)).Any(path =>
+            {
+                if (IsConfiguration(path)) return false;
+                string name = Path.GetFileName(path);
+                return name.StartsWith("Firebase", StringComparison.OrdinalIgnoreCase) &&
+                           (Regex.IsMatch(name, @"\.(dll|so|bundle|a|aar|srcaar)(\.meta)?$", RegexOptions.IgnoreCase) ||
+                            name.IndexOf("_manifest.txt", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                       name.StartsWith("libFirebase", StringComparison.OrdinalIgnoreCase) ||
+                       name.EndsWith("Dependencies.xml", StringComparison.OrdinalIgnoreCase) ||
+                       path.IndexOf("/m2repository/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       path.StartsWith(CrashlyticsLibrary + "/", StringComparison.Ordinal);
+            });
+        }
+
         internal static string CheckedPath(string path)
         {
             if (string.IsNullOrEmpty(path) || path.Contains('\\') || path.Split('/').Any(part =>
