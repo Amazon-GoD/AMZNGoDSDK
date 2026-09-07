@@ -175,14 +175,32 @@ namespace AMZNGoDSDK.Editor
                 return null;
             }
 
-            string json;
+            PromosConfigurationInfo config = null;
             try
             {
-                EditorUtility.DisplayProgressBar("Cross-Promo Caps", $"Загрузка {url}", 0.5f);
-                using (var client = new WebClient())
+                using (var client = new ConfigWebClient())
                 {
                     client.Encoding = Encoding.UTF8;
-                    json = client.DownloadString(url);
+                    client.Headers[HttpRequestHeader.CacheControl] = "no-cache";
+                    bool allowMaster = true;
+
+                    while (true)
+                    {
+                        EditorUtility.DisplayProgressBar("Cross-Promo Caps", $"Загрузка {url}", allowMaster ? 0.25f : 0.75f);
+                        string json = client.DownloadString(url);
+                        if (!CrossPromoConfigResolver.TryParse(json, Application.identifier, allowMaster,
+                                out config, out var resolvedUrl, out var error))
+                        {
+                            EditorUtility.DisplayDialog("Cross-Promo Caps", $"Конфиг не разобрался: {error}", "OK");
+                            return null;
+                        }
+
+                        if (resolvedUrl == null)
+                            break;
+
+                        url = resolvedUrl;
+                        allowMaster = false;
+                    }
                 }
             }
             catch (Exception ex)
@@ -196,17 +214,6 @@ namespace AMZNGoDSDK.Editor
                 EditorUtility.ClearProgressBar();
             }
 
-            PromosConfigurationInfo config;
-            try
-            {
-                config = JsonUtility.FromJson<PromosConfigurationInfo>(json);
-            }
-            catch (Exception ex)
-            {
-                EditorUtility.DisplayDialog("Cross-Promo Caps", $"Конфиг не разобрался: {ex.Message}", "OK");
-                return null;
-            }
-
             if (config?.Videos == null || config.Videos.Count == 0)
             {
                 EditorUtility.DisplayDialog("Cross-Promo Caps", "В конфиге нет ни одного креатива.", "OK");
@@ -214,6 +221,18 @@ namespace AMZNGoDSDK.Editor
             }
 
             return config;
+        }
+
+        private sealed class ConfigWebClient : WebClient
+        {
+            protected override WebRequest GetWebRequest(Uri address)
+            {
+                var request = base.GetWebRequest(address);
+                request.Timeout = 15000;
+                if (request is HttpWebRequest httpRequest)
+                    httpRequest.ReadWriteTimeout = 15000;
+                return request;
+            }
         }
     }
 }

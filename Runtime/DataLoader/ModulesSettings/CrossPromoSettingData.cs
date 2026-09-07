@@ -11,6 +11,7 @@ namespace AMZNGoDSDK.Runtime
     [Serializable]
     public class CrossPromoSettingData : ModuleSettingData
     {
+        [UnityEngine.Tooltip("URL of a master JSON (Packages: PackageName → ConfigUrl) or a direct creative JSON. Resolved at game startup.")]
         public string ConfigUrl;
 
         [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName.")]
