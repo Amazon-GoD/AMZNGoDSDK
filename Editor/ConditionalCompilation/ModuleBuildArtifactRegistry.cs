@@ -82,11 +82,17 @@ namespace AMZNGoDSDK.Editor
                     Name = "Firebase",
                     Define = ModuleDefineManager.FIREBASE_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/Firebase",
-                    ExternalAssetPrefixes = new[] { "Assets/Firebase/", "Packages/com.google.firebase." },
+                    ExternalAssetPrefixes = new[]
+                    {
+                        "Assets/Firebase/", "Packages/com.google.firebase.",
+                        "Assets/Plugins/iOS/Firebase/", "Assets/Plugins/tvOS/Firebase/",
+                        "Assets/Plugins/Android/FirebaseCrashlytics.androidlib",
+                        "Assets/GeneratedLocalRepo/Firebase/"
+                    },
                     ManagedAssemblies = new[]
                     {
                         "AMZNGoDSDK.Module.Firebase", "Firebase.App", "Firebase.Analytics",
-                        "Firebase.Crashlytics", "Firebase.Platform"
+                        "Firebase.Crashlytics", "Firebase.RemoteConfig", "Firebase.Platform"
                     },
                     AndroidTextFingerprints = new[]
                     {
