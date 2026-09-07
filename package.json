@@ -19,8 +19,13 @@
   "samples": [
     {
       "displayName": "SDKPrefab",
-      "description": "Configuration prefab with sdk modules",
+      "description": "SDK and module initialization. Does not include an advertising banner.",
       "path": "AmznGoDSDK/SDKPrefab"
+    },
+    {
+      "displayName": "CrossPromoBanner",
+      "description": "Optional advertising banner. Add under a Canvas in a scene with the SDK and Cross-Promo enabled.",
+      "path": "AmznGoDSDK/CrossPromoBanner"
     }
   ],
   "author": {

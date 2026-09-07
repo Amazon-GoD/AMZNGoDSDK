@@ -58,6 +58,7 @@ namespace AMZNGoDSDK.Editor.Deploy
         public const string ExpectedPackageName = "com.amzngod.amzngodsdk";
         public const string ExpectedUnityVersion = "2022.3";
         public const string HiddenSamplePathFragment = "AmznGoDSDK~/SDKPrefab";
+        public const string HiddenBannerSamplePathFragment = "AmznGoDSDK~/CrossPromoBanner";
 
         [Serializable]
         private class PackageManifest
@@ -65,6 +66,13 @@ namespace AMZNGoDSDK.Editor.Deploy
             public string name;
             public string version;
             public string unity;
+            public PackageSample[] samples;
+        }
+
+        [Serializable]
+        private class PackageSample
+        {
+            public string path;
         }
 
         /// <summary>
@@ -163,8 +171,18 @@ namespace AMZNGoDSDK.Editor.Deploy
                     problems.Add($"package.json unity is '{manifest.unity}', expected '{ExpectedUnityVersion}'");
             }
 
-            if (!text.Contains(HiddenSamplePathFragment))
-                problems.Add($"package.json samples path is not transformed to '{HiddenSamplePathFragment}'");
+            CheckSample(treeRoot, manifest, HiddenSamplePathFragment, "AmznGoDSDK.prefab", problems);
+            CheckSample(treeRoot, manifest, HiddenBannerSamplePathFragment, "CrossPromoBanner.prefab", problems);
+        }
+
+        private static void CheckSample(string treeRoot, PackageManifest manifest, string path,
+            string prefabName, List<string> problems)
+        {
+            if (manifest?.samples == null || !Array.Exists(manifest.samples, sample => sample?.path == path))
+                problems.Add($"package.json is missing the hidden sample path '{path}'");
+
+            if (!File.Exists(Path.Combine(treeRoot, path, prefabName)))
+                problems.Add($"sample prefab is missing: {path}/{prefabName}");
         }
 
         private static void CheckRequiredAsmdefs(string treeRoot, List<string> problems)

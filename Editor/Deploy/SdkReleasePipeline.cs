@@ -33,6 +33,8 @@ namespace AMZNGoDSDK.Editor.Deploy
         public const string SampleHiddenFolder = "AmznGoDSDK~";
         public const string SampleVisiblePath = "AmznGoDSDK/SDKPrefab";
         public const string SampleHiddenPath = "AmznGoDSDK~/SDKPrefab";
+        public const string BannerSampleVisiblePath = "AmznGoDSDK/CrossPromoBanner";
+        public const string BannerSampleHiddenPath = "AmznGoDSDK~/CrossPromoBanner";
 
         public sealed class Request
         {
@@ -311,6 +313,7 @@ namespace AMZNGoDSDK.Editor.Deploy
             text = versionField.Replace(text, "${1}" + version + "${2}", 1);
 
             text = text.Replace("\"" + SampleVisiblePath + "\"", "\"" + SampleHiddenPath + "\"");
+            text = text.Replace("\"" + BannerSampleVisiblePath + "\"", "\"" + BannerSampleHiddenPath + "\"");
 
             File.WriteAllText(packageJsonPath, text, new UTF8Encoding(false));
         }

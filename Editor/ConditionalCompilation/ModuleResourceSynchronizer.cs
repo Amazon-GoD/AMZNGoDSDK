@@ -41,14 +41,6 @@ namespace AMZNGoDSDK.Editor
             },
             new ResourceSpec
             {
-                Name = "Cross-Promo",
-                Define = ModuleDefineManager.CROSSPROMO_DEFINE,
-                SourceRelativePath =
-                    "Runtime/Modules/Cross-Promo/ModuleAssets/CrossPromoBanner.prefab.template",
-                GeneratedPath = GeneratedCrossPromoResourcePath,
-            },
-            new ResourceSpec
-            {
                 Name = "InGameDebugConsole",
                 Define = ModuleDefineManager.DEBUGCONSOLE_DEFINE,
                 SourceRelativePath =
@@ -67,6 +59,10 @@ namespace AMZNGoDSDK.Editor
 
         public static void Synchronize(SdkSettingsData settings)
         {
+            // Retire the automatically generated banner from older SDK versions.
+            // The optional sample and banners created by the project are left alone.
+            DeleteGenerated(GeneratedCrossPromoResourcePath);
+
             var enabledMap = settings == null
                 ? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
                 : ModuleManifestRegistry.GetModuleEnabledMap(settings);
