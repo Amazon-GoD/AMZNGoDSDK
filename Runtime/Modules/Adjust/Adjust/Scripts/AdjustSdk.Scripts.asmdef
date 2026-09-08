@@ -1,0 +1,9 @@
+{
+    "name": "AdjustSdk.Scripts",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "defineConstraints": [
+        "AMZN_ADJUST_ENABLED"
+    ]
+}

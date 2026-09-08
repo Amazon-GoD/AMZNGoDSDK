@@ -11,7 +11,9 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "AMZN_DEBUGCONSOLE_ENABLED"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

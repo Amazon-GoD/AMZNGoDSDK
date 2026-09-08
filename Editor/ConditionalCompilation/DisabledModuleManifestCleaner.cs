@@ -6,27 +6,16 @@ using System.Text;
 using System.Xml;
 using UnityEditor;
 using UnityEditor.Android;
+using UnityEditor.Build;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Editor
 {
     /// <summary>
-    /// Автоочистка манифеста от компонентов выключенных модулей.
-    ///
-    /// Проблема: переименование папки модуля в "~" убирает только то, что лежит
-    /// ВНУТРИ папки модуля. Записи в глобальном Assets/Plugins/Android/AndroidManifest.xml
-    /// (или остатки чужих манифестов) так не вычищаются и протекают в сборку —
-    /// например, нативные service/receiver выключенного модуля могут попасть
-    /// в билд другого модуля.
-    ///
-    /// Решение: на этапе генерации Gradle-проекта (ДО merge-таски манифеста) пройтись
-    /// по манифестам, которые формирует Unity (unityLibrary + launcher), и вырезать
-    /// компоненты/permissions всех модулей, выключенных в настройках SDK.
-    ///
-    /// Безопасность: мы правим только Unity-вклад (src/main). Если какую-то запись
-    /// реально объявляет ВКЛЮЧЁННАЯ зависимость в своём AAR — gradle-merge вернёт её
-    /// обратно после этого шага. permissions общей инфраструктуры защищены
-    /// белым списком (<see cref="ModuleManifestRegistry.SharedPermissions"/>).
+    /// Removes SDK-owned components of disabled modules from current input
+    /// manifests. Vendor components such as com.applovin.* can be required by
+    /// Appodeal or other plugins and must not be removed by an SDK module toggle.
+    /// Shared permissions are also preserved.
     /// </summary>
     public class DisabledModuleManifestCleaner : IPostGenerateGradleAndroidProject
     {
@@ -67,8 +56,8 @@ namespace AMZNGoDSDK.Editor
             }
             catch (Exception e)
             {
-                // Никогда не роняем сборку из-за очистки — только предупреждаем.
-                Debug.LogWarning($"{LogTag} Cleanup skipped due to error: {e.Message}");
+                // A failed cleanup of SDK-owned components must not be ignored.
+                throw new BuildFailedException($"{LogTag} cleanup failed: {e.Message}");
             }
         }
 

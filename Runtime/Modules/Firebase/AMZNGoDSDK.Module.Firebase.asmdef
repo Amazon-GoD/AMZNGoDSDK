@@ -1,0 +1,18 @@
+{
+    "name": "AMZNGoDSDK.Module.Firebase",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_FIREBASE_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

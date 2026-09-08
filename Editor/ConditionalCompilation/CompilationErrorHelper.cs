@@ -58,32 +58,8 @@ namespace AMZNGoDSDK.Editor
 
             GUILayout.Space(20);
 
-            // Auto Wrap Section
-            EditorGUILayout.LabelField("Automatic Wrapping", EditorStyles.boldLabel);
-            
-            EditorGUILayout.HelpBox(
-                "Автоматически обернуть все файлы модулей в условную компиляцию",
-                MessageType.None);
-
-            if (GUILayout.Button("Wrap Module Files in Conditional Compilation", GUILayout.Height(30)))
-            {
-                ModuleFilesWrapper.WrapAllModuleFiles();
-            }
-
-            GUILayout.Space(20);
-
             // Diagnostic Section
             EditorGUILayout.LabelField("Diagnostics", EditorStyles.boldLabel);
-
-            if (GUILayout.Button("Check Wrapping Status", GUILayout.Height(25)))
-            {
-                ModuleFilesWrapper.CheckWrappingStatus();
-                EditorUtility.DisplayDialog("Check Console", 
-                    "Wrapping status logged to Console.\n\nCheck Unity Console window.", 
-                    "OK");
-            }
-
-            GUILayout.Space(5);
 
             if (GUILayout.Button("Validate SDK Configuration", GUILayout.Height(25)))
             {
@@ -113,33 +89,6 @@ namespace AMZNGoDSDK.Editor
             DrawError(
                 "Io.AppMetrica not found",
                 "Disable AppMetrica module in Settings");
-
-            GUILayout.Space(20);
-
-            // Documentation Section
-            EditorGUILayout.LabelField("Documentation", EditorStyles.boldLabel);
-
-            if (GUILayout.Button("Open Troubleshooting Guide"))
-            {
-                var path = "Assets/AMZNGoDSDK/TROUBLESHOOTING.md";
-                UnityEditorInternal.InternalEditorUtility.OpenFileAtLineExternal(path, 1);
-            }
-
-            GUILayout.Space(5);
-
-            if (GUILayout.Button("Open Module Wrapping Guide"))
-            {
-                var path = "Assets/AMZNGoDSDK/MODULE_WRAPPING_DONE.md";
-                UnityEditorInternal.InternalEditorUtility.OpenFileAtLineExternal(path, 1);
-            }
-
-            GUILayout.Space(5);
-
-            if (GUILayout.Button("Open Conditional Compilation Guide"))
-            {
-                var path = "Assets/AMZNGoDSDK/CONDITIONAL_COMPILATION_GUIDE.md";
-                UnityEditorInternal.InternalEditorUtility.OpenFileAtLineExternal(path, 1);
-            }
 
             GUILayout.Space(10);
         }

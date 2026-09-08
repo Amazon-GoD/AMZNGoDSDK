@@ -38,7 +38,34 @@ namespace AMZNGoDSDK.Bootstrap
     [InitializeOnLoad]
     public static class SdkAsmdefReferenceGuard
     {
-        public const string RuntimeAsmdefPath = "Assets/AMZNGoDSDK/Runtime/AMZNGoDSDK.Runtime.asmdef";
+        private const string RuntimeAsmdefRelativePath = "Runtime/Modules/AppLovin/AMZNGoDSDK.Module.AppLovin.asmdef";
+
+        public static string RuntimeAsmdefPath
+        {
+            get
+            {
+                string discovered = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(
+                    "AMZNGoDSDK.Module.AppLovin");
+                if (!string.IsNullOrEmpty(discovered))
+                    return discovered;
+
+                string[] roots =
+                {
+                    "Assets/AMZNGoDSDK/",
+                    "Packages/com.amzngod.amzngodsdk/",
+                };
+
+                foreach (var root in roots)
+                {
+                    string assetPath = root + RuntimeAsmdefRelativePath;
+                    string physicalPath = FileUtil.GetPhysicalPath(assetPath);
+                    if (!string.IsNullOrEmpty(physicalPath) && File.Exists(physicalPath))
+                        return assetPath;
+                }
+
+                return roots[0] + RuntimeAsmdefRelativePath;
+            }
+        }
 
         /// <summary>
         /// Имя сборки плагина MAX. Одинаково для обоих способов установки — UPM-пакет
@@ -299,7 +326,7 @@ namespace AMZNGoDSDK.Bootstrap
 
             try
             {
-                File.WriteAllText(asmdefPath, newText);
+                File.WriteAllText(FileUtil.GetPhysicalPath(asmdefPath), newText);
             }
             catch (Exception e)
             {
@@ -327,7 +354,8 @@ namespace AMZNGoDSDK.Bootstrap
             entries = new List<string>();
             block = null;
 
-            if (!File.Exists(asmdefPath))
+            string physicalPath = FileUtil.GetPhysicalPath(asmdefPath);
+            if (string.IsNullOrEmpty(physicalPath) || !File.Exists(physicalPath))
             {
                 Debug.LogWarning($"[AMZN GoD SDK] Assembly definition not found: {asmdefPath}");
                 return false;
@@ -335,7 +363,7 @@ namespace AMZNGoDSDK.Bootstrap
 
             try
             {
-                text = File.ReadAllText(asmdefPath);
+                text = File.ReadAllText(physicalPath);
             }
             catch (Exception e)
             {
@@ -462,7 +490,9 @@ namespace AMZNGoDSDK.Bootstrap
 
             foreach (var asset in assets)
             {
-                if (!string.IsNullOrEmpty(asset) && asset.StartsWith("Assets/AMZNGoDSDK/", StringComparison.Ordinal))
+                if (!string.IsNullOrEmpty(asset)
+                    && (asset.StartsWith("Assets/AMZNGoDSDK/", StringComparison.Ordinal)
+                        || asset.StartsWith("Packages/com.amzngod.amzngodsdk/", StringComparison.Ordinal)))
                     return true;
             }
 

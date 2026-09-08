@@ -18,6 +18,8 @@ namespace AMZNGoDSDK.Editor
         internal readonly HashSet<string> AdapterPins = new HashSet<string>();
         internal string BackupPath { get; private set; }
 
+        internal static AppLovinLegacyInstallation CaptureModuleState() => new AppLovinLegacyInstallation();
+
         internal static bool HasCore => Files().Any(path => !Preserve(path) && IsCorePath(path) &&
             (IsSdkFile(path) || Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|asmdef)$", RegexOptions.IgnoreCase)));
 
@@ -158,6 +160,12 @@ namespace AMZNGoDSDK.Editor
             BackupPath = destination;
             _backup.Add("Packages/manifest.json");
             _backup.Add("Packages/packages-lock.json");
+            _backup.Add(AppLovinPackageInstaller.DisabledStatePath);
+            foreach (string settings in new[] { AppLovinPackageInstaller.AppLovinSettingsPath, AppLovinPackageInstaller.DisabledAppLovinSettingsPath })
+            {
+                _backup.Add(settings);
+                _backup.Add(settings + ".meta");
+            }
             foreach (string path in _backup.Concat(_delete).Distinct())
             {
                 FirebaseUnityPackageUtility.CheckedPath(path);

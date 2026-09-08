@@ -16,7 +16,7 @@ namespace AMZNGoDSDK.Runtime
     /// Отправка аналитики по показам медиации AppLovin — зеркало <see cref="CrossPromoAnalytics"/>
     /// для второго источника рекламы.
     ///
-    /// <para>Зачем: роутер <see cref="AmznGoDSDKCore.ShowVideoPromo"/> отдаёт показ в медиацию,
+    /// <para>Зачем: роутер фасада SDK отдаёт показ в медиацию,
     /// как только кросс-промо выбрало капы. Без этих событий воронка в отчётах обрывается ровно
     /// на переключении: показы идут, а в аналитике их нет, и «показа не было» не отличить от
     /// «показ ушёл в медиацию».</para>
@@ -120,18 +120,20 @@ namespace AMZNGoDSDK.Runtime
 
             // Собственный бэкенд: mediation_click. Отдельный тип события, потому что cp_click
             // требует paid_app_id, которого у показа медиации нет.
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null || adInfo == null)
+#if AMZN_ANALYTICS_ENABLED
+            var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
+            if (analytics == null || adInfo == null)
                 return;
 
             try
             {
-                core.TrackAnalyticsMediationClick(adInfo.NetworkName, adInfo.AdUnitIdentifier, placement);
+                analytics.TrackMediationClick(adInfo.NetworkName, adInfo.AdUnitIdentifier, placement);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[AppLovinAnalytics] backend mediation_click failed: {ex.Message}");
             }
+#endif
         }
 
         public static void ReportHidden(string placement, MaxSdkBase.AdInfo adInfo)
@@ -179,12 +181,13 @@ namespace AMZNGoDSDK.Runtime
             // Собственный бэкенд (/v1/events, событие mediation_impression). Шлём именно здесь,
             // а не по OnAdDisplayedEvent: MAX отдаёт OnAdRevenuePaidEvent ровно один раз на показ,
             // и только в нём есть выручка — иначе понадобился бы второй запрос ради суммы.
-            var core = AmznGoDSDKCore.Instance;
-            if (core != null)
+#if AMZN_ANALYTICS_ENABLED
+            var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
+            if (analytics != null)
             {
                 try
                 {
-                    core.TrackAnalyticsMediationImpression(
+                    analytics.TrackMediationImpression(
                         adInfo.NetworkName,
                         adInfo.AdUnitIdentifier,
                         placement,
@@ -196,6 +199,7 @@ namespace AMZNGoDSDK.Runtime
                     Debug.LogWarning($"[AppLovinAnalytics] backend mediation_impression failed: {ex.Message}");
                 }
             }
+#endif
 
             // Плюс плоское событие в AppMetrica — там сумма показа нужна рядом с остальной воронкой.
             Report("mediation_ad_revenue", BuildArgs(placement, adInfo), alsoAdjust: false);
@@ -296,30 +300,34 @@ namespace AMZNGoDSDK.Runtime
 
         private static void Report(string eventName, Dictionary<string, string> args, bool alsoAdjust)
         {
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
-                return;
-
+#if AMZN_APPMETRICA_ENABLED
             try
             {
-                core.ReportEventAppMetrica(eventName, args);
+                var appMetrica = SdkModuleRegistry.Get<AppMetricaModule>();
+                if (appMetrica != null && appMetrica.Enabled && appMetrica.Initialized)
+                    appMetrica.ReportEvent(eventName, args);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[AppLovinAnalytics] AppMetrica report failed for '{eventName}': {ex.Message}");
             }
+#endif
 
             if (!alsoAdjust)
                 return;
 
+#if AMZN_ADJUST_ENABLED
             try
             {
-                core.ReportEventAdjust(eventName, args);
+                var adjust = SdkModuleRegistry.Get<AdjustModule>();
+                if (adjust != null && adjust.Enabled)
+                    adjust.ReportEvent(eventName, args);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[AppLovinAnalytics] Adjust report failed for '{eventName}': {ex.Message}");
             }
+#endif
         }
 
         #endregion

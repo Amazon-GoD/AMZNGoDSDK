@@ -1,0 +1,19 @@
+{
+    "name": "AMZNGoDSDK.Module.InternetConnection",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_INTERNETCONNECTION_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

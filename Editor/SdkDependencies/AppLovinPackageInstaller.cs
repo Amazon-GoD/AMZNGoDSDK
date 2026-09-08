@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PackageManager;
@@ -40,22 +41,51 @@ namespace AMZNGoDSDK.Editor
 
         private const string ManifestPath = "Packages/manifest.json";
         private const string BackupDirectory = "Library/AmznGoDSDK";
+        internal const string DisabledStatePath = "ProjectSettings/AMZNGoDSDK/AppLovinPackages.disabled.json";
+        internal const string AppLovinSettingsPath = "Assets/MaxSdk/Resources/AppLovinSettings.asset";
+        internal const string DisabledAppLovinSettingsPath =
+            "Assets/MaxSdk/Editor/AMZNGoDSDKDisabled/AppLovinSettings.asset";
+
+        [Serializable]
+        private sealed class DisabledPackageState
+        {
+            public List<DisabledPackageEntry> Packages = new List<DisabledPackageEntry>();
+        }
+
+        [Serializable]
+        private sealed class DisabledPackageEntry
+        {
+            public string Id;
+            public string Version;
+        }
+
         private const string StatusKey = "AMZNGoDSDK.AppLovinInstaller.Status";
         private const string PendingKey = "AMZNGoDSDK.AppLovinInstaller.Pending";
         private static bool _busy;
+        private static bool _synchronizing;
+        private static bool? _pendingModuleState;
         private static string _installedStatus;
         private static bool _hasInstalledPlugin;
         private static bool _isRequiredVersionInstalled;
         private static double _statusCheckedAt;
 
-        public static bool IsBusy => _busy;
+        public static bool IsBusy => _busy || _synchronizing || _pendingModuleState.HasValue;
         public static string Status => SessionState.GetString(StatusKey, "");
         public static bool HasInstalledPlugin { get { ReadInstalledStatus(); return _hasInstalledPlugin; } }
         public static string InstalledStatus { get { ReadInstalledStatus(); return _installedStatus; } }
         public static bool IsRequiredVersionInstalled { get { ReadInstalledStatus(); return _isRequiredVersionInstalled; } }
+        public static bool IsModuleEnabledInSavedSettings
+        {
+            get
+            {
+                var settings = SdkSettingsManager.LoadRuntimeSettings();
+                return settings != null && settings.Enabled && settings.AppLovin != null && settings.AppLovin.Enabled;
+            }
+        }
 
         static AppLovinPackageInstaller()
         {
+            EditorApplication.update += DrainModuleSynchronization;
             string pending = SessionState.GetString(PendingKey, "");
             if (pending.Length == 0) return;
             SessionState.EraseString(PendingKey);
@@ -71,18 +101,21 @@ namespace AMZNGoDSDK.Editor
             try
             {
                 string legacy = AppLovinLegacyInstallation.Description;
-                _hasInstalledPlugin = package != null || legacy != null;
+                var stashed = LoadDisabledState().Packages.FirstOrDefault(entry => entry.Id == MaxPluginPackageId);
+                _hasInstalledPlugin = package != null || legacy != null || stashed != null;
                 string requiredVersion = PinnedVersions[MaxPluginPackageId];
                 _isRequiredVersionInstalled = _hasInstalledPlugin &&
                     (package == null || package.version == requiredVersion) &&
-                    (legacy == null || AppLovinLegacyInstallation.InstalledVersion == requiredVersion);
-                _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy }.Where(value => value != null));
+                    (legacy == null || AppLovinLegacyInstallation.InstalledVersion == requiredVersion) &&
+                    (stashed == null || stashed.Version == requiredVersion);
+                _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy,
+                    stashed == null ? null : "UPM " + stashed.Version + " (модуль отключён)" }.Where(value => value != null));
                 if (!_hasInstalledPlugin) _installedStatus = "MAX не установлен";
             }
             catch (Exception ex)
             {
                 _hasInstalledPlugin = package != null;
-                _installedStatus = "Не удалось проверить legacy MAX: " + ex.Message;
+                _installedStatus = "Не удалось проверить MAX: " + ex.Message;
             }
         }
 
@@ -94,9 +127,20 @@ namespace AMZNGoDSDK.Editor
 
         private static bool CanStart()
         {
-            if (_busy || FirebasePackageInstaller.IsBusy)
+            if (IsBusy || FirebasePackageInstaller.IsBusy)
             {
-                SetStatus("Дождитесь завершения текущей установки SDK.");
+                SetStatus("Дождитесь завершения установки SDK или применения настроек модулей.");
+                return false;
+            }
+            if (!IsModuleEnabledInSavedSettings)
+            {
+                SetStatus("Включите SDK и модуль AppLovin и сохраните настройки перед установкой.");
+                return false;
+            }
+            if (LoadDisabledState().Packages.Count > 0 || File.Exists(DisabledAppLovinSettingsPath))
+            {
+                SynchronizeWithModule(true);
+                SetStatus("Дождитесь восстановления сохранённых пакетов и настроек AppLovin.");
                 return false;
             }
             return !EditorApplication.isCompiling && !EditorApplication.isUpdating && !EditorApplication.isPlayingOrWillChangePlaymode;
@@ -185,6 +229,29 @@ namespace AMZNGoDSDK.Editor
         }
 
         #region Public API
+
+        /// <summary>
+        /// Делает состояние внешнего MAX симметричным тогглу модуля. При выключении
+        /// точные версии пакетов сохраняются в ProjectSettings и удаляются из UPM
+        /// manifest; Resources-настройка переносится под Editor. При включении всё
+        /// восстанавливается без потери конфигурации.
+        /// </summary>
+        public static void SynchronizeWithModule(bool enabled)
+        {
+            // Последнее сохранённое состояние имеет приоритет. UPM нельзя запускать
+            // одновременно с установкой SDK или предыдущим применением тоггла.
+            _pendingModuleState = enabled;
+        }
+
+        private static void DrainModuleSynchronization()
+        {
+            if (!_pendingModuleState.HasValue || _busy || _synchronizing || FirebasePackageInstaller.IsBusy ||
+                EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+            bool enabled = _pendingModuleState.Value;
+            _pendingModuleState = null;
+            _ = SynchronizeModuleAsync(enabled);
+        }
 
         /// <summary>
         /// Id адаптеров, которые разрешено ставить: всё из реестра за вычетом запрещённых
@@ -480,8 +547,195 @@ namespace AMZNGoDSDK.Editor
                 {
                     _busy = false;
                     if (locked) EditorApplication.UnlockReloadAssemblies();
+                    EditorApplication.delayCall += ModuleDefineManager.UpdateDefineSymbolsFromSettings;
                 }
             }
+        }
+
+        #endregion
+
+        #region Disable / restore
+
+        private static async Task SynchronizeModuleAsync(bool enabled)
+        {
+            AppLovinLegacyInstallation snapshot = null;
+            bool locked = false;
+            bool backedUp = false;
+            bool upmTouched = false;
+            bool completed = false;
+            PackageInfo[] installed = null;
+            try
+            {
+                var dependencies = File.Exists(ManifestPath)
+                    ? ReadManifestDependencies(File.ReadAllText(ManifestPath)) : new Dictionary<string, string>();
+                var state = LoadDisabledState();
+                bool hasPackageChanges = enabled ? state.Packages.Count > 0 :
+                    dependencies.Keys.Any(id => id.StartsWith("com.applovin.", StringComparison.Ordinal));
+                bool hasSettingsChanges = File.Exists(enabled ? DisabledAppLovinSettingsPath : AppLovinSettingsPath);
+                if (!hasPackageChanges && !hasSettingsChanges) return;
+
+                _synchronizing = true;
+                installed = PackageInfo.GetAllRegisteredPackages();
+                snapshot = AppLovinLegacyInstallation.CaptureModuleState();
+                string backup = BackupDirectory + "/AppLovin/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N");
+                EditorApplication.LockReloadAssemblies();
+                locked = true;
+                snapshot.Backup(backup);
+                backedUp = true;
+                SessionState.SetString(PendingKey, backup);
+                SetStatus(enabled ? "Восстановление AppLovin после включения модуля…" : "Отключение AppLovin…");
+                SynchronizeSettingsAsset(enabled);
+                upmTouched = hasPackageChanges;
+                if (enabled) await RestoreDisabledPackages();
+                else await StashAndRemovePackages();
+                completed = true;
+                SetStatus(enabled ? "Настройки модуля AppLovin применены." : "AppLovin отключён; пакеты и настройки сохранены для восстановления.");
+            }
+            catch (Exception ex)
+            {
+                string recovery = "";
+                if (backedUp)
+                {
+                    try
+                    {
+                        try
+                        {
+                            if (upmTouched)
+                            {
+                                var previous = installed.Where(package => package.name.StartsWith("com.applovin.", StringComparison.Ordinal)).ToArray();
+                                var restore = previous.Where(package => package.source != PackageSource.Embedded)
+                                    .Select(package => package.source == PackageSource.Registry ? package.packageId :
+                                        package.packageId.Substring(package.name.Length + 1)).ToArray();
+                                var remove = RollbackRemovalIds(File.ReadAllText(ManifestPath), installed.Select(package => package.name));
+                                if (restore.Length > 0 || remove.Length > 0)
+                                    await WaitForRequest(Client.AddAndRemove(restore, remove));
+                            }
+                        }
+                        finally { snapshot.Restore(); }
+                        recovery = " Предыдущее состояние AppLovin восстановлено.";
+                    }
+                    catch (Exception restoreFailure)
+                    {
+                        recovery = " Откат неполон: " + restoreFailure.Message + ". Резервная копия: " + snapshot.BackupPath;
+                    }
+                }
+                SetStatus("Не удалось применить настройки AppLovin: " + ex.Message + recovery);
+                Debug.LogError("[AppLovinInstaller] " + Status);
+            }
+            finally
+            {
+                if (backedUp) SessionState.EraseString(PendingKey);
+                _installedStatus = null;
+                try { if (backedUp) AssetDatabase.Refresh(); }
+                finally
+                {
+                    _synchronizing = false;
+                    if (locked) EditorApplication.UnlockReloadAssemblies();
+                    if (completed) EditorApplication.delayCall += ModuleDefineManager.UpdateDefineSymbolsFromSettings;
+                }
+            }
+        }
+
+        private static async Task StashAndRemovePackages()
+        {
+            if (!File.Exists(ManifestPath))
+                return;
+
+            var packages = ReadManifestDependencies(File.ReadAllText(ManifestPath))
+                .Where(entry => entry.Key.StartsWith("com.applovin.", StringComparison.Ordinal)).ToArray();
+            if (packages.Length == 0)
+                return;
+
+            var state = LoadDisabledState();
+            foreach (var package in packages)
+            {
+                string id = package.Key;
+                string version = package.Value;
+                var existing = state.Packages.FirstOrDefault(entry =>
+                    string.Equals(entry.Id, id, StringComparison.Ordinal));
+                if (existing == null)
+                    state.Packages.Add(new DisabledPackageEntry { Id = id, Version = version });
+                else
+                    existing.Version = version;
+            }
+
+            SaveDisabledState(state);
+            await WaitForRequest(Client.AddAndRemove(Array.Empty<string>(), packages.Select(package => package.Key).ToArray()));
+            Debug.Log($"[AppLovinInstaller] AppLovin выключен: из manifest удалено пакетов {packages.Length}.");
+        }
+
+        private static async Task RestoreDisabledPackages()
+        {
+            var state = LoadDisabledState();
+            if (state.Packages.Count == 0)
+                return;
+            if (!File.Exists(ManifestPath))
+                throw new IOException("Не найден Packages/manifest.json для восстановления AppLovin.");
+
+            var dependencies = ReadManifestDependencies(File.ReadAllText(ManifestPath));
+            var missing = state.Packages
+                .Where(entry => !dependencies.ContainsKey(entry.Id))
+                .ToList();
+            if (missing.Count > 0)
+            {
+                var specifications = missing.Select(entry =>
+                    Regex.IsMatch(entry.Version, @"^(file:|https?://|git[+:]|ssh://)")
+                        ? entry.Version : entry.Id + "@" + entry.Version).ToArray();
+                await WaitForRequest(Client.AddAndRemove(specifications, Array.Empty<string>()));
+            }
+            DeleteDisabledState();
+            Debug.Log($"[AppLovinInstaller] AppLovin включён: восстановлено пакетов {missing.Count}.");
+        }
+
+        private static DisabledPackageState LoadDisabledState()
+        {
+            if (!File.Exists(DisabledStatePath))
+                return new DisabledPackageState();
+
+            var state = JsonUtility.FromJson<DisabledPackageState>(File.ReadAllText(DisabledStatePath));
+            if (state?.Packages == null || state.Packages.Any(entry => entry == null || string.IsNullOrEmpty(entry.Id) ||
+                    !entry.Id.StartsWith("com.applovin.", StringComparison.Ordinal) || string.IsNullOrEmpty(entry.Version)) ||
+                state.Packages.Select(entry => entry.Id).Distinct(StringComparer.Ordinal).Count() != state.Packages.Count)
+                throw new IOException("Некорректная сохранённая конфигурация AppLovin: " + DisabledStatePath);
+            return state;
+        }
+
+        private static void SaveDisabledState(DisabledPackageState state)
+        {
+            string directory = Path.GetDirectoryName(DisabledStatePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(DisabledStatePath, JsonUtility.ToJson(state, true));
+        }
+
+        private static void DeleteDisabledState()
+        {
+            if (File.Exists(DisabledStatePath))
+                File.Delete(DisabledStatePath);
+        }
+
+        private static void SynchronizeSettingsAsset(bool enabled)
+        {
+            string source = enabled ? DisabledAppLovinSettingsPath : AppLovinSettingsPath;
+            string destination = enabled ? AppLovinSettingsPath : DisabledAppLovinSettingsPath;
+            // Когда MAX уже удалён, тип ScriptableObject недоступен и
+            // LoadMainAssetAtPath возвращает null даже для существующего файла.
+            if (!File.Exists(source))
+                return;
+            if (File.Exists(destination))
+                throw new IOException($"целевой asset уже существует: {destination}");
+
+            string directory = Path.GetDirectoryName(destination)?.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                AssetDatabase.Refresh();
+            }
+
+            string error = AssetDatabase.MoveAsset(source, destination);
+            if (!string.IsNullOrEmpty(error))
+                throw new IOException(error);
+            Debug.Log($"[AppLovinInstaller] {source} -> {destination}");
         }
 
         #endregion
@@ -638,17 +892,22 @@ namespace AMZNGoDSDK.Editor
             public Dictionary<string, string> Dependencies;
         }
 
-        internal static string[] RollbackRemovalIds(string manifest, IEnumerable<string> previousPackageNames)
+        private static Dictionary<string, string> ReadManifestDependencies(string manifest)
         {
             var serializer = new DataContractJsonSerializer(typeof(ManifestDependencies),
                 new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(manifest)))
             {
                 var parsed = (ManifestDependencies)serializer.ReadObject(stream);
-                if (parsed?.Dependencies == null) throw new IOException("Не удалось прочитать зависимости manifest для отката.");
-                var previous = new HashSet<string>(previousPackageNames, StringComparer.Ordinal);
-                return parsed.Dependencies.Keys.Where(id => id.StartsWith("com.applovin.", StringComparison.Ordinal) && !previous.Contains(id)).ToArray();
+                if (parsed?.Dependencies == null) throw new IOException("Не удалось прочитать зависимости manifest.");
+                return parsed.Dependencies;
             }
+        }
+
+        internal static string[] RollbackRemovalIds(string manifest, IEnumerable<string> previousPackageNames)
+        {
+            var previous = new HashSet<string>(previousPackageNames, StringComparer.Ordinal);
+            return ReadManifestDependencies(manifest).Keys.Where(id => id.StartsWith("com.applovin.", StringComparison.Ordinal) && !previous.Contains(id)).ToArray();
         }
 
         private static async Task InstallPackageAsync(string packageId)

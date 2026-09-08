@@ -102,10 +102,6 @@ namespace AMZNGoDSDK.Runtime
         private static void ReportDisplayFailedInternal(
             string eventName, string placement, string reason, string errorCode, BannerData data)
         {
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
-                return;
-
             var args = new Dictionary<string, string>
             {
                 ["placement"] = placement ?? string.Empty,
@@ -122,7 +118,7 @@ namespace AMZNGoDSDK.Runtime
             if (!string.IsNullOrWhiteSpace(errorCode))
                 args["error_code"] = errorCode;
 
-            SafeReportAppMetrica(core, eventName, args);
+            SafeReportAppMetrica(eventName, args);
         }
 
         private static void ReportAppMetrica(string eventName, BannerData data, string placement)
@@ -130,11 +126,7 @@ namespace AMZNGoDSDK.Runtime
             if (data == null)
                 return;
 
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
-                return;
-
-            SafeReportAppMetrica(core, eventName, BuildArgs(data, placement));
+            SafeReportAppMetrica(eventName, BuildArgs(data, placement));
         }
 
         private static void ReportAppMetricaAndAdjust(string eventName, BannerData data, string placement)
@@ -142,13 +134,9 @@ namespace AMZNGoDSDK.Runtime
             if (data == null)
                 return;
 
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
-                return;
-
             var args = BuildArgs(data, placement);
-            SafeReportAppMetrica(core, eventName, args);
-            SafeReportAdjust(core, eventName, args);
+            SafeReportAppMetrica(eventName, args);
+            SafeReportAdjust(eventName, args);
         }
 
         private static Dictionary<string, string> BuildArgs(BannerData data, string placement)
@@ -173,40 +161,52 @@ namespace AMZNGoDSDK.Runtime
 
         private static void ReportSimpleAppMetrica(string eventName, string placement)
         {
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
-                return;
-
             var args = new Dictionary<string, string>
             {
                 ["placement"] = placement ?? string.Empty
             };
 
-            SafeReportAppMetrica(core, eventName, args);
+            SafeReportAppMetrica(eventName, args);
         }
 
-        private static void SafeReportAppMetrica(AmznGoDSDKCore core, string eventName, Dictionary<string, string> args)
+        // Раньше репорты шли через фасад AmznGoDSDKCore; после разрезания на per-module
+        // сборки фасад модулям недоступен (цикл сборок) — целевой модуль берётся из
+        // SdkModuleRegistry, а гарды (Enabled/Initialized) повторяют прежние гарды фасада.
+
+        private static void SafeReportAppMetrica(string eventName, Dictionary<string, string> args)
         {
+#if AMZN_APPMETRICA_ENABLED
             try
             {
-                core.ReportEventAppMetrica(eventName, args);
+                var appMetrica = SdkModuleRegistry.Get<AppMetricaModule>();
+                if (appMetrica == null || !appMetrica.Enabled || !appMetrica.Initialized)
+                    return;
+
+                appMetrica.ReportEvent(eventName, args);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[CrossPromoAnalytics] AppMetrica report failed for '{eventName}': {ex.Message}");
             }
+#endif
         }
 
-        private static void SafeReportAdjust(AmznGoDSDKCore core, string eventName, Dictionary<string, string> args)
+        private static void SafeReportAdjust(string eventName, Dictionary<string, string> args)
         {
+#if AMZN_ADJUST_ENABLED
             try
             {
-                core.ReportEventAdjust(eventName, args);
+                var adjust = SdkModuleRegistry.Get<AdjustModule>();
+                if (adjust == null || !adjust.Enabled)
+                    return;
+
+                adjust.ReportEvent(eventName, args);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[CrossPromoAnalytics] Adjust report failed for '{eventName}': {ex.Message}");
             }
+#endif
         }
     }
 }

@@ -19,27 +19,67 @@
 | In-App Purchase | `AMZN_IAP_ENABLED` |
 | Firebase | `AMZN_FIREBASE_ENABLED` |
 | Internet Connection | `AMZN_INTERNETCONNECTION_ENABLED` |
+| In-Game Debug Console | `AMZN_DEBUGCONSOLE_ENABLED` |
 | Analytics | `AMZN_ANALYTICS_ENABLED` |
+| AppLovin MAX | `AMZN_APPLOVIN_ENABLED` |
 
 ### 2. Условная компиляция кода
 
-Код модулей обернут в директивы условной компиляции:
+Каждый модуль собирается в собственную assembly (asmdef) с
+`defineConstraints: ["AMZN_<MODULE>_ENABLED"]` — при выключенном define сборка
+модуля не компилируется целиком. `#if AMZN_*` остаются только в общем коде
+(фасад `AmznGoDSDKCore`, межмодульные вызовы):
 
 ```csharp
 #if AMZN_ADJUST_ENABLED
-    // Код модуля Adjust
+    // Код, зависящий от модуля Adjust
     _adjustModule.Initialize();
 #endif
 ```
 
-Если модуль отключен, этот код не компилируется и не попадает в билд.
+Folder-rename механика (переименование папок модулей в `~`) выведена из
+эксплуатации в Фазе 3 UPM-перехода: в immutable-пакете перемещение папок
+невозможно. Папки модулей всегда видимы; тогглы работают только через defines.
 
 ### 3. Управление зависимостями
 
-При сборке проекта система:
-- Временно отключает Dependencies.xml файлы для неактивных модулей
-- Это предотвращает загрузку Android/iOS зависимостей
-- После сборки файлы восстанавливаются автоматически
+- Нативные плагины (.jar/.aar/.so/.java/.mm) выключенных модулей исключаются из
+  билда делегатами `PluginImporter.SetIncludeInBuildDelegate`
+  (`NativePluginRegistry` + `NativePluginBuildFilter`).
+- EDM4U-зависимости: шаблоны `*DependenciesTemplate.xml` внутри SDK мержатся
+  генератором (`EdmDependencyGenerator`) в единый
+  `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml` — только для
+  включённых модулей. Перегенерация происходит при каждом применении тогглов и
+  перед билдом (`EdmDependencyBuildPreprocessor`).
+- Внешние Firebase/MAX PluginImporter'ы также входят в фильтр выключенного
+  модуля. Для MAX его UPM-пакеты и адаптеры удаляются из `Packages/manifest.json`
+  с сохранением точных версий в `ProjectSettings`; при обратном включении они
+  восстанавливаются.
+- Firebase `*Dependencies.xml` при выключении обратимо получают нейтральное
+  расширение, поэтому EDM4U не добавляет ни Android Maven artifacts, ни iOS Pods.
+- `Resources` выключенного модуля запрещены: prefab InternetConnection создаётся
+  в generated Resources только при включённом модуле, а `AppLovinSettings.asset`
+  при выключении переносится под `Editor`.
+- Перед сборкой `DisabledModuleBuildGuard` проверяет player assemblies и
+  always-included Resources. Android guard обходит только текущие входные файлы:
+  каталоги `build`, `.gradle`, `.cxx`, `.externalNativeBuild`, `.kotlin`, `.idea`,
+  `.git`, `out` и символические ссылки исключены из обхода и очистки.
+- В экспортированном Gradle-проекте удаляются только оставшиеся Java-классы
+  AMZN GoD из явного реестра, с проверкой полного package и имени класса.
+  Ссылки Gradle на файлы выключенного модуля внутри SDK останавливают сборку с
+  указанием пути; строки и блоки Gradle не переписываются по совпадению имени.
+- Android-библиотеки AppLovin, Firebase, Adjust, ExoPlayer и другие общие
+  зависимости не считаются собственностью AMZN GoD по имени файла или Maven
+  coordinate. Например, AppLovin, подключённый Appodeal, разрешён при выключенном
+  модуле AppLovin нашего SDK. Очистка манифестов также сохраняет vendor-компоненты
+  и удаляет только записи с явным признаком `SdkOwned`.
+- Удаление и подключение общих Android-зависимостей выполняет EDM/Gradle по
+  совокупности потребителей проекта. После изменения модулей при отключённом
+  автоматическом Resolve разработчик запускает Resolve самостоятельно.
+  SDK не запускает Resolve и не проверяет его завершение.
+- `DisabledModuleSceneStripper` вырезает из временной копии build-сцен компоненты
+  и prefab-инстансы выключенных модулей. Это не даёт ссылкам legacy
+  `AmznGoDSDK.prefab` протащить UI/спрайты Cross-Promo или debug console.
 
 ## Использование
 
@@ -49,6 +89,8 @@
 2. Снимите галочку с модуля, который хотите отключить
 3. Нажмите **Save Settings**
 4. Unity автоматически перекомпилирует скрипты
+5. Для AppLovin дождитесь завершения UPM Resolve; прежние версии пакетов будут
+   восстановлены автоматически при следующем включении
 
 ### Проверка статуса модулей
 
@@ -68,13 +110,22 @@
 - `IsModuleEnabled(string moduleDefine)` - проверяет, включен ли модуль
 - `GetActiveModuleDefines()` - получает список активных defines
 
-### DependencyPreprocessor
+### NativePluginRegistry / NativePluginBuildFilter
 
-Build preprocessor, который управляет файлами зависимостей.
+Реестр «define модуля → папки нативных плагинов» и build-фильтр, который
+вешает `SetIncludeInBuildDelegate` на PluginImporter'ы выключенных модулей.
 
-**Что делает:**
-- `OnPreprocessBuild` - отключает Dependencies.xml для неактивных модулей
-- `OnPostprocessBuild` - восстанавливает файлы после сборки
+### EdmDependencyGenerator / EdmDependencyBuildPreprocessor
+
+Генерация сводного EDM4U Dependencies.xml из шаблонов включённых модулей
+(в Assets потребителя, вне папки SDK — совместимо с immutable UPM-пакетом).
+
+### DisabledModuleBuildGuard / DisabledModuleAndroidArtifactGuard
+
+Проверяют исключение кода и Resources выключенного модуля SDK. Android-проверка
+работает с текущими входами сборки и явно принадлежащими SDK исходниками;
+общая нативная библиотека стороннего потребителя не является нарушением.
+Проверка готового APK/AAB — отдельный этап и здесь не выполняется.
 
 ### ModuleStatusWindow
 
@@ -99,9 +150,9 @@ Unity Editor окно для просмотра статуса модулей и
 
 ### Файлы зависимостей
 
-Управляемые Dependencies.xml:
-- `Assets/AMZNGoDSDK/Runtime/Modules/Adjust/Adjust/Native/Editor/Dependencies.xml`
-- `Assets/AMZNGoDSDK/Editor/Modules/Appmetrica/Editor/AppMetricaDependencies.xml`
+Шаблоны EDM-зависимостей (`*DependenciesTemplate.xml`) лежат внутри модулей и
+перечислены в `EdmDependencyGenerator.Templates`; итоговый XML генерируется
+в `Assets/AMZNGoDSDKGenerated/Editor/AmznGoDSdkDependencies.xml`.
 
 ### Автоматическое обновление
 
@@ -193,7 +244,9 @@ ModuleDefineManager.CROSSPROMO_DEFINE            // "AMZN_CROSSPROMO_ENABLED"
 ModuleDefineManager.IAP_DEFINE                   // "AMZN_IAP_ENABLED"
 ModuleDefineManager.FIREBASE_DEFINE              // "AMZN_FIREBASE_ENABLED"
 ModuleDefineManager.INTERNETCONNECTION_DEFINE    // "AMZN_INTERNETCONNECTION_ENABLED"
+ModuleDefineManager.DEBUGCONSOLE_DEFINE          // "AMZN_DEBUGCONSOLE_ENABLED"
 ModuleDefineManager.ANALYTICS_DEFINE             // "AMZN_ANALYTICS_ENABLED"
+ModuleDefineManager.APPLOVIN_DEFINE              // "AMZN_APPLOVIN_ENABLED"
 ```
 
 ## Лучшие практики

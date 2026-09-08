@@ -82,6 +82,18 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void UpdateDefineSymbols(SdkSettingsData settings)
         {
+            bool appLovinRequested = settings != null
+                                     && settings.Enabled
+                                     && settings.AppLovin != null
+                                     && settings.AppLovin.Enabled;
+            bool firebaseRequested = settings != null
+                                     && settings.Enabled
+                                     && settings.Firebase != null
+                                     && settings.Firebase.Enabled;
+            AppLovinPackageInstaller.SynchronizeWithModule(appLovinRequested);
+            ExternalDependencyAssetSynchronizer.SynchronizeFirebase(firebaseRequested);
+            ModuleResourceSynchronizer.Synchronize(settings);
+
             // Обновляем для всех платформ
             var buildTargetGroups = new[]
             {
@@ -95,9 +107,11 @@ namespace AMZNGoDSDK.Editor
                 UpdateDefineSymbolsForTarget(targetGroup, settings);
             }
 
-            // Ссылка asmdef на внешний плагин MAX живёт вместе с define'ом модуля: одного
-            // AMZN_APPLOVIN_ENABLED обёртке мало (asmdef не видит чужую сборку без reference),
-            // а держать ссылку постоянно нельзя — в проекте без MAX она роняет компиляцию.
+            // Тогглы применены — сразу обновляем build-фильтр нативных плагинов,
+            // не дожидаясь domain reload (после reload он перерегистрируется сам),
+            // и перегенерируем сводный EDM Dependencies.xml включённых модулей.
+            NativePluginBuildFilter.Refresh();
+            EdmDependencyGenerator.Regenerate();
             SdkAsmdefReferenceGuard.SetAppLovinReference(IsAppLovinActive(settings));
 
             Debug.Log("[AMZN GoD SDK] Module define symbols updated successfully");
@@ -147,22 +161,6 @@ namespace AMZNGoDSDK.Editor
             SetDefines(targetGroup, newDefines);
         }
 
-        /// <summary>
-        /// Повторяет условие, по которому <see cref="TryAddModuleDefine"/> выставляет
-        /// APPLOVIN_DEFINE: модуль включён в настройках, SDK включён целиком и плагин MAX
-        /// реально присутствует в проекте. Ссылка asmdef должна появляться и исчезать
-        /// синхронно с define'ом, иначе получится либо CS0246 на MaxSdkBase (define есть,
-        /// ссылки нет), либо неразрезолвленная ссылка (плагина нет, ссылка есть).
-        /// </summary>
-        private static bool IsAppLovinActive(SdkSettingsData settings)
-        {
-            return settings != null
-                   && settings.Enabled
-                   && settings.AppLovin != null
-                   && settings.AppLovin.Enabled
-                   && DependencyDetector.AreDependenciesPresent(APPLOVIN_DEFINE);
-        }
-
         private static void TryAddModuleDefine(List<string> definesList, string define, bool enabledInSettings)
         {
             if (!enabledInSettings)
@@ -175,6 +173,15 @@ namespace AMZNGoDSDK.Editor
             }
 
             definesList.Add(define);
+        }
+
+        private static bool IsAppLovinActive(SdkSettingsData settings)
+        {
+            return settings != null
+                   && settings.Enabled
+                   && settings.AppLovin != null
+                   && settings.AppLovin.Enabled
+                   && DependencyDetector.AreDependenciesPresent(APPLOVIN_DEFINE);
         }
 
         /// <summary>
@@ -203,6 +210,10 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void RemoveAllSdkDefines()
         {
+            AppLovinPackageInstaller.SynchronizeWithModule(false);
+            ExternalDependencyAssetSynchronizer.SynchronizeFirebase(false);
+            ModuleResourceSynchronizer.Synchronize(null);
+
             var buildTargetGroups = new[]
             {
                 BuildTargetGroup.Android,
@@ -219,7 +230,10 @@ namespace AMZNGoDSDK.Editor
                 SetDefines(targetGroup, newDefines);
             }
 
-            // Все модули выключены — внешних ссылок в asmdef быть не должно.
+            // Все модули выключены — нативные плагины в билд не попадают,
+            // сгенерированный EDM XML удаляется.
+            NativePluginBuildFilter.Refresh();
+            EdmDependencyGenerator.Regenerate();
             SdkAsmdefReferenceGuard.SetAppLovinReference(false);
         }
     }

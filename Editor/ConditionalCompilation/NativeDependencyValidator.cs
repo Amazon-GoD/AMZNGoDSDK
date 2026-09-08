@@ -18,18 +18,38 @@ namespace AMZNGoDSDK.Editor
         private static readonly string ProjectPluginsAndroid = "Assets/Plugins/Android";
 
         /// <summary>
-        /// Маппинг имён модулей к их корневым папкам (должен совпадать с ModuleFolderManager).
+        /// Маппинг имён модулей к их корневым папкам ОТНОСИТЕЛЬНО корня SDK.
+        /// Резолв — через оба возможных корня (Assets / UPM-пакет), см.
+        /// <see cref="NativePluginRegistry.SdkRootPrefixes"/>. С Фазы 3 UPM-перехода
+        /// папки модулей всегда видимы (folder-rename механики больше нет).
         /// </summary>
         private static readonly Dictionary<string, string> ModuleRoots = new Dictionary<string, string>
         {
-            { "Cross-Promo",        "Assets/AMZNGoDSDK/Runtime/Modules/Cross-Promo" },
-            { "Adjust",             "Assets/AMZNGoDSDK/Runtime/Modules/Adjust" },
-            { "AppMetrica",         "Assets/AMZNGoDSDK/Runtime/Modules/AppMetrica" },
-            { "Firebase",           "Assets/AMZNGoDSDK/Runtime/Modules/Firebase" },
-            { "InAppPurchase",      "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase" },
-            { "InternetConnection", "Assets/AMZNGoDSDK/Runtime/Modules/InternetConnection" },
-            { "InGameDebugConsole", "Assets/AMZNGoDSDK/Runtime/Modules/InGameDebugConsole" },
+            { "Cross-Promo",        "Runtime/Modules/Cross-Promo" },
+            { "Adjust",             "Runtime/Modules/Adjust" },
+            { "AppMetrica",         "Runtime/Modules/AppMetrica" },
+            { "Firebase",           "Runtime/Modules/Firebase" },
+            { "InAppPurchase",      "Runtime/Modules/InAppPurchase" },
+            { "InternetConnection", "Runtime/Modules/InternetConnection" },
+            { "InGameDebugConsole", "Runtime/Modules/InGameDebugConsole" },
         };
+
+        /// <summary>
+        /// Возвращает существующую физическую папку модуля (Assets- или Packages-корень)
+        /// либо null, если модуль в проекте отсутствует.
+        /// </summary>
+        private static string ResolveModuleRoot(string relativeRoot)
+        {
+            foreach (var prefix in NativePluginRegistry.SdkRootPrefixes)
+            {
+                string candidate = prefix + relativeRoot;
+                string physical = UnityEditor.FileUtil.GetPhysicalPath(candidate);
+                if (!string.IsNullOrEmpty(physical) && Directory.Exists(physical))
+                    return physical;
+            }
+
+            return null;
+        }
 
         public struct DuplicateEntry
         {
@@ -63,10 +83,7 @@ namespace AMZNGoDSDK.Editor
                 if (!ModuleRoots.TryGetValue(kvp.Key, out string root))
                     continue;
 
-                string activePath = Directory.Exists(root) ? root : null;
-                string disabledPath = Directory.Exists(root + "~") ? root + "~" : null;
-                string scanPath = activePath ?? disabledPath;
-
+                string scanPath = ResolveModuleRoot(root);
                 if (scanPath == null) continue;
 
                 var files = CollectNativeFiles(scanPath);

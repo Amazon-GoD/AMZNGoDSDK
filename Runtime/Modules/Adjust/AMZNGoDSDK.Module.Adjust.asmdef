@@ -1,0 +1,19 @@
+{
+    "name": "AMZNGoDSDK.Module.Adjust",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AdjustSdk.Scripts"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "AMZN_ADJUST_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

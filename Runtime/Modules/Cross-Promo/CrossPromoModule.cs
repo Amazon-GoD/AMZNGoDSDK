@@ -160,6 +160,11 @@ namespace AMZNGoDSDK.Runtime
 
         public void Construct(CrossPromoSettingData settings)
         {
+            if (_configurationManager == null)
+                _configurationManager = GetComponent<CrossPromoConfigurationManager>();
+            if (_configurationManager == null)
+                _configurationManager = gameObject.AddComponent<CrossPromoConfigurationManager>();
+
             Debug.Log($"[CrossPromoModule] Construct() called. Enabled={settings.Enabled}, ConfigUrl='{settings.ConfigUrl}', VideoBackend={settings.VideoBackend}");
             Enabled = settings.Enabled;
             _configUrl = settings.ConfigUrl;
@@ -497,14 +502,18 @@ namespace AMZNGoDSDK.Runtime
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"} → delegating to Analytics");
-            AmznGoDSDKCore.Instance?.TrackAnalyticsImpression(resolved);
+#if AMZN_ANALYTICS_ENABLED
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved);
+#endif
         }
 
         public void TrackClick(string paidAppId)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"} → delegating to Analytics");
-            AmznGoDSDKCore.Instance?.TrackAnalyticsClick(resolved);
+#if AMZN_ANALYTICS_ENABLED
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved);
+#endif
         }
 
         /// <summary>
@@ -516,10 +525,14 @@ namespace AMZNGoDSDK.Runtime
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"} → delegating to Analytics (awaited)");
-            var core = AmznGoDSDKCore.Instance;
-            if (core == null)
+#if AMZN_ANALYTICS_ENABLED
+            var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
+            if (analytics == null)
                 yield break;
-            yield return core.TrackAnalyticsClickRoutine(resolved);
+            yield return analytics.TrackClickRoutine(resolved);
+#else
+            yield break;
+#endif
         }
 
         #region Interstitial

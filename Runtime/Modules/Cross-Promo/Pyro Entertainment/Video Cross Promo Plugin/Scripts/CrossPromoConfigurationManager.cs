@@ -251,8 +251,9 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public bool IsShowLimitReached()
             {
-                var core = AmznGoDSDKCore.Instance;
-                if (core == null || !core.IsMediationEnabled)
+#if AMZN_APPLOVIN_ENABLED
+                var mediation = SdkModuleRegistry.Get<AppLovinModule>();
+                if (mediation == null || !mediation.Enabled)
                     return false;
 
                 int limit = EffectiveShowLimit;
@@ -263,6 +264,9 @@ namespace AMZNGoDSDK.Runtime
                     return false;
 
                 return PlayerPrefs.GetInt(Title, 0) >= limit;
+#else
+                return false;
+#endif
             }
 
             public PromoConfiguration Copy()

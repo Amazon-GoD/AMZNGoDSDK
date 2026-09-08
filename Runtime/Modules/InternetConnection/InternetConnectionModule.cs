@@ -12,6 +12,9 @@ namespace AMZNGoDSDK.Runtime
         private const float MinCheckInterval = 1f;
 
         /// <summary>Path (inside the module's own Resources folder) of the built-in offline banner prefab.</summary>
+        // Editor/ModuleResourceSynchronizer копирует prefab в Resources только пока
+        // модуль включён. Исходник намеренно хранится вне Resources, иначе Unity
+        // безусловно добавляет его в каждый Player даже при выключенном asmdef.
         private const string BannerResourcePath = "AMZNGoDSDK/OfflineBanner";
 
         private InternetConnectionSettingData _settings = new();

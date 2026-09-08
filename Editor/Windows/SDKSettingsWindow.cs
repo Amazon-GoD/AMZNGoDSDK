@@ -286,7 +286,10 @@ namespace AMZNGoDSDK.Editor
 
                     EditorGUILayout.HelpBox(AppLovinPackageInstaller.InstalledStatus, MessageType.None);
                     bool hasMax = AppLovinPackageInstaller.HasInstalledPlugin;
-                    using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
+                    bool appLovinSavedEnabled = AppLovinPackageInstaller.IsModuleEnabledInSavedSettings;
+                    if (!appLovinSavedEnabled)
+                        EditorGUILayout.HelpBox("Сохраните настройки с включёнными SDK и AppLovin перед установкой или заменой пакетов.", MessageType.Info);
+                    using (new EditorGUI.DisabledScope(!appLovinSavedEnabled || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
                                EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
                     {
                         using (new EditorGUI.DisabledScope(hasMax))

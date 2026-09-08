@@ -13,7 +13,9 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "AMZN_CROSSPROMO_ENABLED"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }
