@@ -6,6 +6,7 @@
         "AMZNGoDSDK.Module.Analytics",
         "AMZNGoDSDK.Module.AppMetrica",
         "AMZNGoDSDK.Module.Adjust",
+        "AMZNGoDSDK.Module.AppLovin",
         "UnityEngine.UI"
     ],
     "includePlatforms": [],

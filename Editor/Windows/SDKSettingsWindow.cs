@@ -217,7 +217,14 @@ namespace AMZNGoDSDK.Editor
                 () =>
                 {
                     _currentSettings.CrossPromo.ConfigUrl = EditorGUILayout
-                        .TextField("Config URL", _currentSettings.CrossPromo.ConfigUrl);
+                        .TextField(new GUIContent("Config URL",
+                            "URL мастер JSON со списком Packages (PackageName → ConfigUrl) или прямого JSON с креативами."),
+                            _currentSettings.CrossPromo.ConfigUrl);
+                    EditorGUILayout.HelpBox(
+                        "Для всех игр можно указать один мастер JSON. SDK найдёт в Packages свой PackageName " +
+                        "и загрузит креативы по его ConfigUrl. Изменения подхватываются при следующем запуске игры. " +
+                        "Прямая ссылка на JSON с креативами также поддерживается.",
+                        MessageType.Info);
 
                     // Video-бэкенд всегда ExoPlayer — выбор из настроек убран (UnityVideoPlayer
                     // больше не предлагается). Значение форсится при сохранении настроек.

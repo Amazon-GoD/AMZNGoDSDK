@@ -14,8 +14,9 @@ namespace AMZNGoDSDK.Editor
         public string RelativeModuleFolder;
         public string[] ExternalAssetPrefixes = Array.Empty<string>();
         public string[] ManagedAssemblies = Array.Empty<string>();
-        public string[] AndroidTextFingerprints = Array.Empty<string>();
-        public string[] AndroidFileFingerprints = Array.Empty<string>();
+        // Only Java classes authored by AMZN GoD. A vendor name or Maven coordinate
+        // does not establish ownership: another plugin can need the same library.
+        public string[] AndroidOwnedJavaTypes = Array.Empty<string>();
     }
 
     public static class ModuleBuildArtifactRegistry
@@ -29,11 +30,6 @@ namespace AMZNGoDSDK.Editor
                     Define = ModuleDefineManager.ADJUST_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/Adjust",
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.Adjust", "AdjustSdk.Scripts" },
-                    AndroidTextFingerprints = new[]
-                    {
-                        "com.adjust.sdk", "adjust-android", "com.android.installreferrer:installreferrer:"
-                    },
-                    AndroidFileFingerprints = new[] { "adjust" },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -41,8 +37,6 @@ namespace AMZNGoDSDK.Editor
                     Define = ModuleDefineManager.APPMETRICA_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/AppMetrica",
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.AppMetrica" },
-                    AndroidTextFingerprints = new[] { "io.appmetrica", "appmetrica" },
-                    AndroidFileFingerprints = new[] { "appmetrica" },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -54,12 +48,11 @@ namespace AMZNGoDSDK.Editor
                         "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/CrossPromoBanner.prefab"
                     },
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.CrossPromo", "UniWebView-CSharp" },
-                    AndroidTextFingerprints = new[]
+                    AndroidOwnedJavaTypes = new[]
                     {
-                        "com.google.android.exoplayer:exoplayer:", "UniWebView", "CrossPromoExo",
-                        "/Runtime/Modules/Cross-Promo/"
+                        "com.amzngod.exoplayer.CrossPromoExoCache",
+                        "com.amzngod.exoplayer.CrossPromoExoOverlay"
                     },
-                    AndroidFileFingerprints = new[] { "uniwebview", "exoplayer", "crosspromo" },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -67,15 +60,6 @@ namespace AMZNGoDSDK.Editor
                     Define = ModuleDefineManager.IAP_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/InAppPurchase",
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.InAppPurchase" },
-                    AndroidTextFingerprints = new[]
-                    {
-                        "com.amazon.device.iap", "com.amazon.device.drm", "com.amazon.inapp.purchasing",
-                        "AmazonIapV2", "amazon-appstore-sdk"
-                    },
-                    AndroidFileFingerprints = new[]
-                    {
-                        "amazoniap", "amazon-appstore-sdk", "amazoncptplugins", "gson-2.2.4"
-                    },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -94,11 +78,6 @@ namespace AMZNGoDSDK.Editor
                         "AMZNGoDSDK.Module.Firebase", "Firebase.App", "Firebase.Analytics",
                         "Firebase.Crashlytics", "Firebase.RemoteConfig", "Firebase.Platform"
                     },
-                    AndroidTextFingerprints = new[]
-                    {
-                        "com.google.firebase:", "com.google.firebase.", "FirebaseCpp", "/Assets/Firebase/"
-                    },
-                    AndroidFileFingerprints = new[] { "firebase" },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -121,8 +100,6 @@ namespace AMZNGoDSDK.Editor
                         "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/IngameDebugConsole.prefab"
                     },
                     ManagedAssemblies = new[] { "IngameDebugConsole.Runtime" },
-                    AndroidTextFingerprints = new[] { "IngameDebugConsole" },
-                    AndroidFileFingerprints = new[] { "ingamedebugconsole" },
                 },
                 new ModuleBuildArtifactSpec
                 {
@@ -141,8 +118,6 @@ namespace AMZNGoDSDK.Editor
                         "Assets/MaxSdk/", "Packages/com.applovin."
                     },
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.AppLovin", "MaxSdk.Scripts" },
-                    AndroidTextFingerprints = new[] { "com.applovin", "/Packages/com.applovin.", "MaxSdk" },
-                    AndroidFileFingerprints = new[] { "applovin", "maxsdk" },
                 },
             };
 
@@ -160,15 +135,29 @@ namespace AMZNGoDSDK.Editor
             if (string.IsNullOrEmpty(assetPath))
                 return false;
 
-            foreach (var root in NativePluginRegistry.SdkRootPrefixes)
-            {
-                if (assetPath.StartsWith(root + spec.RelativeModuleFolder + "/", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            if (OwnsSdkAssetPath(spec, assetPath))
+                return true;
 
             foreach (var prefix in spec.ExternalAssetPrefixes)
             {
                 if (assetPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        // Use this narrower check once files have been exported to Gradle. The
+        // external Unity integration folders above do not own vendor libraries
+        // resolved by Appodeal or other consumers in the same Android project.
+        public static bool OwnsSdkAssetPath(ModuleBuildArtifactSpec spec, string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath))
+                return false;
+
+            foreach (var root in NativePluginRegistry.SdkRootPrefixes)
+            {
+                if (assetPath.StartsWith(root + spec.RelativeModuleFolder + "/", StringComparison.OrdinalIgnoreCase))
                     return true;
             }
 

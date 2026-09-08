@@ -5,6 +5,28 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.0.3] - 2026-09-08
+
+### Added
+
+- Select per-game Cross-Promo creative configs through a shared master JSON,
+  while retaining support for direct creative config URLs.
+- Support fixed creative positions in Cross-Promo video rotation.
+
+### Fixed
+
+- Ignore old Gradle build outputs and caches when checking disabled SDK modules.
+- Preserve shared Android libraries and vendor manifest components, including
+  AppLovin required by Appodeal; limit cleanup to explicitly SDK-owned code.
+  Dependency resolution remains under the consuming project's control.
+- Ignore Cross-Promo creative caps when the AppLovin module is disabled.
+- Detect locked or read-only Firebase files before downloading or replacing the
+  SDK, and explain when a full Unity Editor restart is required.
+- Roll back only attempted Firebase file changes and skip files already matching
+  the backup, avoiding false incomplete-rollback errors for unchanged native DLLs.
+
 ## [1.0.2] - 2026-09-07
 
 ### Changed

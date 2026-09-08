@@ -1,0 +1,12 @@
+{
+  "Packages": [
+    {
+      "PackageName": "com.example.gameone",
+      "ConfigUrl": "https://cdn.example.com/cross-promo/gameone.json"
+    },
+    {
+      "PackageName": "com.example.gametwo",
+      "ConfigUrl": "https://cdn.example.com/cross-promo/gametwo.json"
+    }
+  ]
+}

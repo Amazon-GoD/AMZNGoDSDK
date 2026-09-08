@@ -29,10 +29,16 @@ namespace AMZNGoDSDK.Runtime
             public List<PromoConfiguration> Videos = new();
             [System.NonSerialized]
             private List<PromoConfiguration> _masterVideos = null;
+            [NonSerialized]
+            private CrossPromoPositionRotation _positionRotation;
+
+            internal CrossPromoPositionRotation PositionRotation =>
+                _positionRotation ??= new CrossPromoPositionRotation(Videos);
 
             public PromosConfigurationInfo Copy()
             {
                 var confInfo = new PromosConfigurationInfo();
+                confInfo._positionRotation = PositionRotation.CopyLayout();
                 confInfo.Weight = Weight;
                 confInfo.Videos.AddRange(Videos);
                 confInfo._masterVideos = _masterVideos?.Select(v => v.Copy()).ToList();
@@ -41,6 +47,8 @@ namespace AMZNGoDSDK.Runtime
 
             public void CheckVideosShowLimit()
             {
+                // Снимок позиций должен предшествовать любому удалению из исходного JSON.
+                bool ordered = PositionRotation.IsOrdered;
                 if (Videos == null || Videos.Count == 0)
                     return;
 
@@ -50,10 +58,13 @@ namespace AMZNGoDSDK.Runtime
                 {
                     Debug.Log($"[CrossPromoLimit] drop '{vid.Title}' — показов {PlayerPrefs.GetInt(vid.Title, 0)}/{vid.EffectiveShowLimit}");
 
-                    foreach (var other in Videos)
+                    if (!ordered)
                     {
-                        if (other == vid) continue;
-                        other.Weight += vid.Weight / Mathf.Max(1, Videos.Count - 1);
+                        foreach (var other in Videos)
+                        {
+                            if (other == vid) continue;
+                            other.Weight += vid.Weight / Mathf.Max(1, Videos.Count - 1);
+                        }
                     }
 
                     Videos.Remove(vid);
@@ -63,7 +74,7 @@ namespace AMZNGoDSDK.Runtime
                     RemoveFromMaster(vid.Title);
                 }
 
-                if (Videos.Count > 0)
+                if (!ordered && Videos.Count > 0)
                 {
                     Videos.First().Weight += 1 - Videos.Sum(video => video.Weight);
                 }
@@ -100,6 +111,8 @@ namespace AMZNGoDSDK.Runtime
 
             public void ApplyCooldownFilter(string lastShownTitle)
             {
+                // Позиции обходят общий кулдаун; свободные места фильтрует сама ротация.
+                if (PositionRotation.IsOrdered) return;
                 // Master-список инициализируется ОДИН РАЗ из полного Videos (после CheckVideosShowLimit)
                 if (_masterVideos == null)
                 {
@@ -154,6 +167,7 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public void RemoveInstalledOrSelfPromo(string ownPackageId)
             {
+                _ = PositionRotation;
                 string MatchReason(PromoConfiguration v)
                 {
                     if (v?.AppPackageName == null) return null;
@@ -208,6 +222,11 @@ namespace AMZNGoDSDK.Runtime
             public List<string> AppPackageName = new();
             public int MaxShowCount;
 
+            [Tooltip("Порядковый номер показа в круге (с 1). 0 или отрицательное значение — выбор по весу на свободных местах.")]
+            public int position;
+            [NonSerialized]
+            internal int RotationId = -1;
+
             [Tooltip("Сколько показов этого креатива разрешено ЗА ВСЁ ВРЕМЯ (не за сессию). " +
                      "0 — без лимита. Имя поля в нижнем регистре: JsonUtility сопоставляет " +
                      "поля по точному совпадению, а в конфиге бэкенда оно приходит как \"cap\".")]
@@ -223,6 +242,7 @@ namespace AMZNGoDSDK.Runtime
 
             /// <summary>
             /// Креатив выбрал свой лимит показов и больше показываться не должен.
+            /// При отключённом или исключённом модуле AppLovin лимиты не применяются.
             /// <para>
             /// Счётчик показов ведётся в PlayerPrefs по СЫРОМУ Title (см. IncrementShowCount
             /// в оверлеях), поэтому креатив без Title не накапливает показы вообще — такой
@@ -231,6 +251,11 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public bool IsShowLimitReached()
             {
+#if AMZN_APPLOVIN_ENABLED
+                var mediation = SdkModuleRegistry.Get<AppLovinModule>();
+                if (mediation == null || !mediation.Enabled)
+                    return false;
+
                 int limit = EffectiveShowLimit;
                 if (limit <= 0)
                     return false;
@@ -239,6 +264,9 @@ namespace AMZNGoDSDK.Runtime
                     return false;
 
                 return PlayerPrefs.GetInt(Title, 0) >= limit;
+#else
+                return false;
+#endif
             }
 
             public PromoConfiguration Copy()
@@ -263,7 +291,9 @@ namespace AMZNGoDSDK.Runtime
                     Weight = Weight,
                     AppPackageName = AppPackageName != null ? new List<string>(AppPackageName) : new List<string>(),
                     MaxShowCount = MaxShowCount,
-                    cap = cap
+                    cap = cap,
+                    position = position,
+                    RotationId = RotationId
                 };
             }
         }
@@ -271,15 +301,15 @@ namespace AMZNGoDSDK.Runtime
         public async Task<PromosConfigurationInfo> FetchRemoteConfigAsync(string configUrl)
         {
             Debug.Log($"[CrossPromoConfig] FetchRemoteConfigAsync called. URL='{configUrl}'");
-            var configuration = new PromosConfigurationInfo();
             if (string.IsNullOrWhiteSpace(configUrl))
             {
                 Debug.LogWarning("[CrossPromoConfig] FetchRemoteConfigAsync: URL is EMPTY — returning empty config");
-                return configuration;
+                return new PromosConfigurationInfo();
             }
 
             const int maxRetries = 5;
             const float retryDelay = 1f;
+            string packageName = Application.identifier;
             int attempt = 0;
 
             while (attempt < maxRetries)
@@ -288,36 +318,28 @@ namespace AMZNGoDSDK.Runtime
                 Debug.Log($"[CrossPromoConfig] Fetch attempt {attempt}/{maxRetries} for {configUrl}");
                 try
                 {
-                    using var request = UnityWebRequest.Get(configUrl);
-                    var operation = request.SendWebRequest();
-                    while (!operation.isDone)
+                    // Каждый вызов и каждая повторная попытка начинают с исходного URL:
+                    // выбранный маршрут не сохраняется между загрузками или запусками игры.
+                    string json = await DownloadConfigJsonAsync(configUrl);
+                    if (!CrossPromoConfigResolver.TryParse(json, packageName, true,
+                            out var configuration, out var resolvedUrl, out var error))
+                        throw new FormatException(error);
+
+                    if (resolvedUrl != null)
                     {
-                        await Task.Yield();
+                        Debug.Log($"[CrossPromoConfig] Master route: package='{packageName}', URL='{resolvedUrl}'");
+                        json = await DownloadConfigJsonAsync(resolvedUrl);
+                        if (!CrossPromoConfigResolver.TryParse(json, packageName, false,
+                                out configuration, out _, out error))
+                            throw new FormatException(error);
                     }
 
-                    Debug.Log($"[CrossPromoConfig] Attempt {attempt}: result={request.result}, responseCode={request.responseCode}, error='{request.error}', downloadedBytes={request.downloadedBytes}");
-
-                    if (request.result == UnityWebRequest.Result.ConnectionError ||
-                        request.result == UnityWebRequest.Result.ProtocolError)
-                    {
-                        Debug.LogWarning($"[CrossPromoConfig] Attempt {attempt} failed: {request.error} (code={request.responseCode})");
-
-                        if (attempt >= maxRetries)
-                        {
-                            Debug.LogError($"[CrossPromoConfig] All {maxRetries} attempts failed. Last error: {request.error}");
-                            return configuration;
-                        }
-
-                        await Task.Delay((int)(retryDelay * 1000));
-                        continue;
-                    }
-
-                    Debug.Log($"[CrossPromoConfig] Attempt {attempt} succeeded. Parsing response...");
-                    configuration = ParseConfig(request.downloadHandler.text);
+                    Debug.Log($"[CrossPromoConfig] Parsed: Weight={configuration.Weight}, Videos.Count={configuration.Videos.Count}");
+                    _ = configuration.PositionRotation;
                     NormalizeWeights(configuration);
                     int filterBefore = configuration.Videos?.Count ?? 0;
-                    Debug.Log($"[CrossPromoFilter] fetch: running filter, ownPackage='{Application.identifier}', videos={filterBefore}");
-                    configuration.RemoveInstalledOrSelfPromo(Application.identifier);
+                    Debug.Log($"[CrossPromoFilter] fetch: running filter, ownPackage='{packageName}', videos={filterBefore}");
+                    configuration.RemoveInstalledOrSelfPromo(packageName);
                     int filterAfter = configuration.Videos?.Count ?? 0;
                     Debug.Log($"[CrossPromoFilter] fetch: done, videos {filterBefore} → {filterAfter}");
                     NormalizeWeights(configuration);
@@ -330,7 +352,7 @@ namespace AMZNGoDSDK.Runtime
                     if (attempt >= maxRetries)
                     {
                         Debug.LogError($"[CrossPromoConfig] All {maxRetries} attempts failed. Last exception: {ex}");
-                        return configuration;
+                        return new PromosConfigurationInfo();
                     }
 
                     await Task.Delay((int)(retryDelay * 1000));
@@ -338,33 +360,26 @@ namespace AMZNGoDSDK.Runtime
             }
 
             Debug.LogError("[CrossPromoConfig] FetchRemoteConfigAsync exited loop without result");
-            return configuration;
+            return new PromosConfigurationInfo();
         }
 
-        private static PromosConfigurationInfo ParseConfig(string json)
+        private static async Task<string> DownloadConfigJsonAsync(string url)
         {
-            Debug.Log($"[CrossPromoConfig] ParseConfig called. json is {(string.IsNullOrWhiteSpace(json) ? "EMPTY/NULL" : $"length={json.Length}")}");
+            using var request = UnityWebRequest.Get(url);
+            request.timeout = 15;
+            request.SetRequestHeader("Cache-Control", "no-cache");
+            var operation = request.SendWebRequest();
 
-            if (string.IsNullOrWhiteSpace(json))
+            while (!operation.isDone)
             {
-                Debug.LogWarning("[CrossPromoConfig] ParseConfig: JSON is empty, returning empty config");
-                return new PromosConfigurationInfo();
+                await Task.Yield();
             }
 
-            PromosConfigurationInfo configuration;
-            try
-            {
-                configuration = JsonUtility.FromJson<PromosConfigurationInfo>(json) ?? new PromosConfigurationInfo();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[CrossPromoConfig] ParseConfig: malformed JSON — {ex.Message}");
-                return new PromosConfigurationInfo();
-            }
+            Debug.Log($"[CrossPromoConfig] Download '{url}': result={request.result}, responseCode={request.responseCode}, error='{request.error}', downloadedBytes={request.downloadedBytes}");
+            if (request.result != UnityWebRequest.Result.Success)
+                throw new InvalidOperationException($"Could not download '{url}': {request.error} (code={request.responseCode})");
 
-            configuration.Videos = configuration.Videos ?? new List<PromoConfiguration>();
-            Debug.Log($"[CrossPromoConfig] Parsed: Weight={configuration.Weight}, Videos.Count={configuration.Videos.Count}");
-            return configuration;
+            return request.downloadHandler.text;
         }
 
         private static void NormalizeWeights(PromosConfigurationInfo configuration)
@@ -373,6 +388,10 @@ namespace AMZNGoDSDK.Runtime
             {
                 return;
             }
+
+            // В позиционной схеме вес закреплённого креатива не меняет пропорции
+            // заполнителей. Выбор сам использует сумму весов только доступного пула.
+            if (configuration.PositionRotation.IsOrdered) return;
 
             var totalWeight = configuration.Videos.Sum(video => video.Weight);
             var delta = 1f - totalWeight;

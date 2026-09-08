@@ -136,7 +136,8 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            foreach (var video in config.Videos)
+            // Загрузка спрайтов уступает управление; за это время лимиты могут изменить пул.
+            foreach (var video in new List<PromoConfiguration>(config.Videos))
                 yield return StartCoroutine(DownloadBannerSprite(video));
 
             StopRotation();

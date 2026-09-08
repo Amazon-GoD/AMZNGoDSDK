@@ -103,31 +103,26 @@ namespace AMZNGoDSDK.Editor
 
 #if UNITY_ANDROID
     /// <summary>
-    /// Последний Android-рубеж. Убирает из временного Gradle-проекта строки и
-    /// нативные файлы выключенных модулей, затем повторно сканирует результат.
+    /// Checks current Gradle inputs for SDK-owned code of disabled modules.
+    /// Shared Android libraries are resolved by EDM/Gradle for all consumers.
     /// </summary>
     public sealed class DisabledModuleAndroidArtifactGuard : IPostGenerateGradleAndroidProject
     {
-        // После manifest cleaner (10000) и всех EDM/модульных процессоров.
         public int callbackOrder => 11000;
 
-        private static readonly HashSet<string> LineFilteredExtensions =
+        private static readonly HashSet<string> OutputDirectories =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                ".gradle", ".properties", ".pro"
+                "build", ".gradle", ".cxx", ".externalNativeBuild", ".kotlin",
+                ".idea", ".git", "out"
             };
 
-        private static readonly HashSet<string> AuditedTextExtensions =
-            new HashSet<string>(LineFilteredExtensions, StringComparer.OrdinalIgnoreCase)
-            {
-                ".xml"
-            };
+        private static readonly System.Text.RegularExpressions.Regex JavaPackage =
+            new System.Text.RegularExpressions.Regex(
+                @"\A\s*package\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;");
 
-        private static readonly HashSet<string> NativeExtensions =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ".aar", ".jar", ".so", ".java", ".kt"
-            };
+        private static readonly System.Text.RegularExpressions.Regex QuotedValue =
+            new System.Text.RegularExpressions.Regex("[\"']([^\"'\\r\\n]+)[\"']");
 
         public void OnPostGenerateGradleAndroidProject(string path)
         {
@@ -138,142 +133,171 @@ namespace AMZNGoDSDK.Editor
             if (disabled.Count == 0)
                 return;
 
-            string root = Directory.GetParent(path)?.FullName ?? path;
-            int removedLines = 0;
+            string root = Directory.GetParent(Path.GetFullPath(path))?.FullName ?? path;
             int removedFiles = 0;
+            var leaks = new List<string>();
 
-            // Unity может скопировать legacy *.androidlib как обычный каталог,
-            // минуя решение PluginImporter. Удаляем только дочерние каталоги
-            // с модульным fingerprint; Gradle root в сравнении не участвует.
-            foreach (string directory in Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
-                         .OrderByDescending(value => value.Length))
+            // A single pruned traversal is shared by cleanup and validation.
+            // Never recurse into previous build outputs or directory links.
+            foreach (string file in EnumerateInputFiles(root))
             {
-                if (!Directory.Exists(directory) || !MatchesFile(directory, disabled, out _))
-                    continue;
-                Directory.Delete(directory, true);
-                removedFiles++;
-            }
+                string relative = file.Substring(root.Length).TrimStart(
+                    Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-            foreach (string file in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
-            {
-                string extension = Path.GetExtension(file);
-                if (LineFilteredExtensions.Contains(extension))
-                    removedLines += RemoveOwnedLines(file, disabled);
-                else if (NativeExtensions.Contains(extension) && MatchesFile(file, disabled, out _))
+                // Unity occasionally leaves copied Java sources in an incremental
+                // export. Both the package declaration and the exact SDK class
+                // name must match before we remove one. AAR/JAR/SO names cannot
+                // establish ownership and are deliberately left to the resolver.
+                if (IsOwnedJavaSource(file, disabled))
                 {
                     File.Delete(file);
                     removedFiles++;
+                    continue;
+                }
+
+                if (file.EndsWith(".gradle", StringComparison.OrdinalIgnoreCase) ||
+                    file.EndsWith(".gradle.kts", StringComparison.OrdinalIgnoreCase))
+                {
+                    AuditGradleReferences(file, relative, disabled, leaks);
                 }
             }
 
-            var leaks = Scan(root, disabled);
             if (leaks.Count > 0)
             {
                 throw new BuildFailedException(
-                    "Сборка остановлена: после очистки Gradle-проекта найдены артефакты выключенных модулей:\n  • " +
-                    string.Join("\n  • ", leaks.Take(25)));
+                    "Сборка остановлена: исходники Gradle-проекта ссылаются на файлы выключенных модулей SDK:\n  • " +
+                    string.Join("\n  • ", leaks.Take(25)) +
+                    "\nПересоздай Gradle-проект после переключения модулей и убери устаревшие ссылки " +
+                    "на файлы SDK из Android Gradle templates. Общие библиотеки сторонних SDK не удаляются.");
             }
 
-            if (removedLines > 0 || removedFiles > 0)
+            if (removedFiles > 0)
+                Debug.Log($"[AMZN GoD SDK] Removed {removedFiles} Java source(s) owned by disabled SDK modules.");
+        }
+
+        private static IEnumerable<string> EnumerateInputFiles(string root)
+        {
+            var pending = new Stack<string>();
+            pending.Push(root);
+            while (pending.Count > 0)
             {
-                Debug.Log($"[AMZN GoD SDK] Disabled-module Android cleanup: " +
-                          $"removed {removedLines} Gradle line(s), {removedFiles} native file(s).");
+                string directory = pending.Pop();
+                foreach (string file in Directory.GetFiles(directory))
+                {
+                    if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) == 0)
+                        yield return file;
+                }
+
+                foreach (string child in Directory.GetDirectories(directory))
+                {
+                    if (OutputDirectories.Contains(Path.GetFileName(child)) ||
+                        (File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    pending.Push(child);
+                }
             }
         }
 
-        private static int RemoveOwnedLines(string path, IReadOnlyList<ModuleBuildArtifactSpec> disabled)
+        private static bool IsOwnedJavaSource(
+            string path, IReadOnlyList<ModuleBuildArtifactSpec> disabled)
         {
-            string[] lines;
-            try
-            {
-                lines = File.ReadAllLines(path);
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
+            if (!string.Equals(Path.GetExtension(path), ".java", StringComparison.OrdinalIgnoreCase))
+                return false;
 
-            var kept = new List<string>(lines.Length);
-            int removed = 0;
-            foreach (string line in lines)
+            string className = Path.GetFileNameWithoutExtension(path);
+            var candidates = disabled.SelectMany(module => module.AndroidOwnedJavaTypes)
+                .Where(type => type.EndsWith("." + className, StringComparison.Ordinal)).ToArray();
+            if (candidates.Length == 0)
+                return false;
+
+            // Strip comments so an example package declaration does not establish
+            // ownership of a third-party file with the same short class name.
+            string source = StripComments(File.ReadAllText(path));
+            var package = JavaPackage.Match(source);
+            return package.Success &&
+                   candidates.Contains(package.Groups[1].Value + "." + className);
+        }
+
+        private static void AuditGradleReferences(
+            string path, string relative, IReadOnlyList<ModuleBuildArtifactSpec> disabled,
+            ICollection<string> leaks)
+        {
+            string[] lines = StripComments(File.ReadAllText(path)).Split('\n');
+            for (int index = 0; index < lines.Length; index++)
             {
-                if (MatchesText(line, disabled, out _))
-                    removed++;
+                foreach (System.Text.RegularExpressions.Match match in QuotedValue.Matches(lines[index]))
+                {
+                    string value = match.Groups[1].Value.Replace('\\', '/');
+                    foreach (var module in disabled)
+                    {
+                        if (!ReferencesSdkAsset(module, value))
+                            continue;
+                        leaks.Add($"{module.Name}: {relative}:{index + 1} ({value})");
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static bool ReferencesSdkAsset(ModuleBuildArtifactSpec module, string value)
+        {
+            foreach (string sdkRoot in NativePluginRegistry.SdkRootPrefixes)
+            {
+                int start = value.IndexOf(sdkRoot, StringComparison.OrdinalIgnoreCase);
+                if (start >= 0 && (start == 0 || value[start - 1] == '/') &&
+                    ModuleBuildArtifactRegistry.OwnsSdkAssetPath(module, value.Substring(start)))
+                    return true;
+            }
+            return false;
+        }
+
+        // Preserve strings (including repository URLs) and line numbers while
+        // removing line/block comments from Java and Gradle input.
+        private static string StripComments(string value)
+        {
+            var result = new StringBuilder(value.Length);
+            bool lineComment = false;
+            bool blockComment = false;
+            char quote = '\0';
+            for (int i = 0; i < value.Length; i++)
+            {
+                char current = value[i];
+                char next = i + 1 < value.Length ? value[i + 1] : '\0';
+                if (lineComment)
+                {
+                    if (current == '\n') lineComment = false;
+                    result.Append(current == '\n' || current == '\r' ? current : ' ');
+                }
+                else if (blockComment)
+                {
+                    if (current == '*' && next == '/')
+                    {
+                        result.Append("  ");
+                        i++;
+                        blockComment = false;
+                    }
+                    else result.Append(current == '\n' || current == '\r' ? current : ' ');
+                }
+                else if (quote != '\0')
+                {
+                    result.Append(current);
+                    if (current == '\\' && i + 1 < value.Length) result.Append(value[++i]);
+                    else if (current == quote) quote = '\0';
+                }
+                else if (current == '/' && (next == '/' || next == '*'))
+                {
+                    lineComment = next == '/';
+                    blockComment = next == '*';
+                    result.Append("  ");
+                    i++;
+                }
                 else
-                    kept.Add(line);
-            }
-
-            if (removed > 0)
-                File.WriteAllLines(path, kept, new UTF8Encoding(false));
-            return removed;
-        }
-
-        private static List<string> Scan(string root, IReadOnlyList<ModuleBuildArtifactSpec> disabled)
-        {
-            var leaks = new List<string>();
-            foreach (string file in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
-            {
-                string relative = file.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string extension = Path.GetExtension(file);
-
-                if (NativeExtensions.Contains(extension) && MatchesFile(file, disabled, out string fileModule))
-                    leaks.Add($"{fileModule}: native file {relative}");
-
-                if (!AuditedTextExtensions.Contains(extension))
-                    continue;
-
-                int lineNumber = 0;
-                foreach (string line in File.ReadLines(file))
                 {
-                    lineNumber++;
-                    if (MatchesText(line, disabled, out string textModule))
-                        leaks.Add($"{textModule}: {relative}:{lineNumber}");
+                    result.Append(current);
+                    if (current == '"' || current == '\'') quote = current;
                 }
             }
-            return leaks;
-        }
-
-        private static bool MatchesText(
-            string value,
-            IEnumerable<ModuleBuildArtifactSpec> disabled,
-            out string moduleName)
-        {
-            foreach (var module in disabled)
-            {
-                if (module.AndroidTextFingerprints.Any(fingerprint =>
-                        value.IndexOf(fingerprint, StringComparison.OrdinalIgnoreCase) >= 0))
-                {
-                    moduleName = module.Name;
-                    return true;
-                }
-            }
-            moduleName = null;
-            return false;
-        }
-
-        private static bool MatchesFile(
-            string path,
-            IEnumerable<ModuleBuildArtifactSpec> disabled,
-            out string moduleName)
-        {
-            string normalized = path.Replace('\\', '/');
-            int ownedPathStart = normalized.IndexOf("/src/", StringComparison.OrdinalIgnoreCase);
-            if (ownedPathStart < 0)
-                ownedPathStart = normalized.IndexOf("/libs/", StringComparison.OrdinalIgnoreCase);
-            normalized = ownedPathStart >= 0
-                ? normalized.Substring(ownedPathStart)
-                : Path.GetFileName(normalized);
-            foreach (var module in disabled)
-            {
-                if (module.AndroidFileFingerprints.Any(fingerprint =>
-                        normalized.IndexOf(fingerprint, StringComparison.OrdinalIgnoreCase) >= 0))
-                {
-                    moduleName = module.Name;
-                    return true;
-                }
-            }
-            moduleName = null;
-            return false;
+            return result.ToString();
         }
     }
 #endif

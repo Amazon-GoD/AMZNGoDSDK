@@ -128,6 +128,8 @@ namespace AMZNGoDSDK.Editor
             {
                 CheckInstallationMode(replaceExisting);
                 CheckProject();
+                FirebaseUnityPackageUtility.CheckWritable(
+                    FirebaseUnityPackageUtility.ExistingFiles(new Dictionary<string, string>()));
                 string action = replaceExisting ? "Заменить" : "Установить";
                 string details = replaceExisting
                     ? "Текущий комплект: " + InstalledStatus + ".\n\n" +
@@ -185,7 +187,8 @@ namespace AMZNGoDSDK.Editor
                 CheckInstallationMode(replaceExisting);
                 CheckProject();
                 // Проверяем текущий комплект до скачивания; повторяем проверку непосредственно перед записью.
-                FirebaseUnityPackageUtility.ExistingFiles(new Dictionary<string, string>());
+                FirebaseUnityPackageUtility.CheckWritable(
+                    FirebaseUnityPackageUtility.ExistingFiles(new Dictionary<string, string>()));
                 Directory.CreateDirectory(FirebaseUnityPackageUtility.CheckedPath(work));
                 SessionState.SetString(PendingKey, "Загрузка была прервана; файлы проекта не изменялись.");
                 var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -254,6 +257,13 @@ namespace AMZNGoDSDK.Editor
             {
                 SessionState.EraseString(PendingKey);
                 SetStatus("Загрузка отменена. Файлы Firebase не изменены.");
+            }
+            catch (FirebaseUnityPackageUtility.FilesUnavailableException ex)
+            {
+                SessionState.EraseString(PendingKey);
+                SetStatus(ex.Message);
+                Debug.LogWarning("[FirebaseInstaller] " + ex.Message);
+                EditorUtility.DisplayDialog("Firebase: файлы заняты", ex.Message, "OK");
             }
             catch (Exception ex)
             {

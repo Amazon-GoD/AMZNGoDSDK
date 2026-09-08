@@ -5,13 +5,8 @@ using System.Linq;
 namespace AMZNGoDSDK.Editor
 {
     /// <summary>
-    /// "Отпечаток" модуля в Android-манифесте: нативные компоненты и permissions,
-    /// которые модуль привносит — напрямую (свой AAR/манифест) или через
-    /// глобальный Assets/Plugins/Android/AndroidManifest.xml.
-    ///
-    /// Используется автоочисткой (<see cref="DisabledModuleManifestCleaner"/>),
-    /// чтобы вырезать эти записи из сборки, когда модуль выключен — даже если они
-    /// "застряли" в глобальном файле, который не убирается переименованием папки.
+    /// Component family associated with a module. Association with a vendor is
+    /// not ownership: cleanup requires the explicit <see cref="SdkOwned"/> flag.
     /// </summary>
     public class ModuleManifestFootprint
     {
@@ -19,10 +14,14 @@ namespace AMZNGoDSDK.Editor
         public string ModuleName;
 
         /// <summary>
-        /// Префиксы android:name. Любой service/receiver/provider/activity,
-        /// чьё имя начинается с одного из префиксов, считается принадлежащим модулю.
-        /// Главный инструмент: пакетный префикс ловит ВСЕ компоненты модуля,
-        /// в т.ч. те, что объявлены внутри AAR.
+        /// True only for components authored by AMZN GoD. Vendor namespaces do
+        /// not establish ownership of nodes in the consumer's merged manifest.
+        /// </summary>
+        public bool SdkOwned;
+
+        /// <summary>
+        /// android:name prefixes identifying this component family. These may
+        /// only authorize removal when the entire footprint is SDK-owned.
         /// </summary>
         public string[] ComponentNamePrefixes = Array.Empty<string>();
 
@@ -38,8 +37,7 @@ namespace AMZNGoDSDK.Editor
     }
 
     /// <summary>
-    /// Централизованный реестр манифест-отпечатков модулей SDK.
-    /// Добавляй сюда новый модуль — и автоочистка начнёт его поддерживать "везде".
+    /// Registry of component families and explicit SDK ownership for cleanup.
     /// </summary>
     public static class ModuleManifestRegistry
     {
@@ -61,17 +59,15 @@ namespace AMZNGoDSDK.Editor
         };
 
         /// <summary>
-        /// Отпечатки всех модулей, у которых есть нативный след в манифесте.
-        /// Модули без нативных компонентов (чистый C#) сюда добавлять не нужно.
+        /// Known component families. Only explicitly SDK-owned footprints may
+        /// be removed; vendor components can be required by other plugins.
         /// </summary>
         public static readonly List<ModuleManifestFootprint> Footprints = new List<ModuleManifestFootprint>
         {
-            // Добавляй новые модули по образцу: ModuleName + ComponentNamePrefixes/Permissions.
+            // Opt in to SdkOwned only for AMZN GoD components, never for a vendor namespace.
             new ModuleManifestFootprint
             {
-                // ResponseReceiver'ы Amazon Appstore SDK лежат в глобальном
-                // Assets/Plugins/Android/AndroidManifest.xml (переименование папки модуля
-                // в "~" их не убирает), поэтому с выключенным IAP их режет автоочистка.
+                // Shared vendor components remain in the consumer's manifest.
                 ModuleName = "InAppPurchase",
                 ComponentNamePrefixes = new[]
                 {
@@ -100,10 +96,10 @@ namespace AMZNGoDSDK.Editor
             new ModuleManifestFootprint
             {
                 ModuleName = "Cross-Promo",
+                SdkOwned = true,
                 ComponentNamePrefixes = new[]
                 {
                     "com.amzngod.exoplayer.",
-                    "com.onevcat.uniwebview.",
                 },
             },
         };
@@ -130,12 +126,13 @@ namespace AMZNGoDSDK.Editor
             };
         }
 
-        /// <summary>Отпечатки модулей, которые ВЫКЛЮЧЕНЫ в настройках.</summary>
+        /// <summary>SDK-owned footprints of modules disabled in settings.</summary>
         public static List<ModuleManifestFootprint> GetDisabledFootprints(SdkSettingsData settings)
         {
             var enabledMap = GetModuleEnabledMap(settings);
 
             return Footprints
+                .Where(f => f.SdkOwned)
                 .Where(f => !enabledMap.TryGetValue(f.ModuleName, out bool enabled) || !enabled)
                 .ToList();
         }

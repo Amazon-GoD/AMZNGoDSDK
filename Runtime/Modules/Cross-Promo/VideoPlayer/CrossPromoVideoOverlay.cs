@@ -169,7 +169,7 @@ namespace AMZNGoDSDK.Runtime
         /// Shows the overlay with the given promo configuration.
         /// If the video was preloaded, playback starts instantly.
         /// </summary>
-        public void Show(PromoConfiguration config, string placement = null, Action onClose = null, Action onCTA = null)
+        public void Show(PromoConfiguration config, string placement = null, Action onClose = null, Action onCTA = null, Action onShown = null)
         {
             _placement = placement;
 
@@ -247,6 +247,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
             IncrementShowCount(config);
+            onShown?.Invoke();
             ReportImpression(config);
 
             var adjustImpression = CrossPromoAdjustTracking.BuildImpressionUrl(config);

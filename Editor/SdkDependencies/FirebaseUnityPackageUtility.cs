@@ -318,6 +318,40 @@ namespace AMZNGoDSDK.Editor
             return owned;
         }
 
+        internal sealed class FilesUnavailableException : IOException
+        {
+            internal FilesUnavailableException(string path, Exception inner)
+                : base("Файл Firebase недоступен для замены: " + path + ".\n\n" +
+                       "Файлы проекта не изменены. Полностью закройте Unity Editor и другие программы, " +
+                       "которые используют этот файл, затем откройте проект и повторите замену до запуска Play Mode. " +
+                       "Загруженная нативная DLL освобождается только после закрытия Editor. " +
+                       "Также проверьте права записи и атрибут «Только чтение».", inner) { }
+        }
+
+        // Probe every destination before changing any of them. Reload locks do not
+        // unload native Firebase DLLs already mapped into the Editor process.
+        internal static void CheckWritable(IEnumerable<string> paths)
+        {
+            foreach (string path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (IsConfiguration(path)) continue;
+                string fullPath = CheckedPath(path);
+                if (Directory.Exists(fullPath))
+                    throw new IOException("Файл конфликтует с папкой: " + path);
+                if (!File.Exists(fullPath)) continue;
+                try
+                {
+                    if ((File.GetAttributes(fullPath) & FileAttributes.ReadOnly) != 0)
+                        throw new UnauthorizedAccessException("Файл имеет атрибут «Только чтение».");
+                    using (new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    throw new FilesUnavailableException(path, ex);
+                }
+            }
+        }
+
         internal static void Commit(Dictionary<string, string> files, HashSet<string> previous, string backup)
         {
             var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -340,8 +374,10 @@ namespace AMZNGoDSDK.Editor
             }
             string[] affected = previous.Concat(files.Keys).Distinct(StringComparer.OrdinalIgnoreCase)
                 .Where(path => !IsConfiguration(path)).ToArray();
+            CheckWritable(affected);
             var existed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var createdDirectories = new List<string>();
+            var attempted = new List<string>();
             foreach (string path in affected)
             {
                 CheckedPath(path);
@@ -369,10 +405,15 @@ namespace AMZNGoDSDK.Editor
                             if (!createdDirectories.Contains(parent))
                                 createdDirectories.Add(parent);
                         Directory.CreateDirectory(directory);
+                        // Record before copying: an IO failure can leave a partial file.
+                        attempted.Add(path);
                         File.Copy(source, path, true);
                     }
                     else if (File.Exists(path))
+                    {
+                        attempted.Add(path);
                         File.Delete(path);
+                    }
                 }
                 foreach (var file in files)
                     if (!SameFile(file.Value, file.Key))
@@ -384,14 +425,22 @@ namespace AMZNGoDSDK.Editor
             catch (Exception failure)
             {
                 var errors = new List<Exception> { failure };
-                foreach (string path in affected)
+                foreach (string path in attempted.AsEnumerable().Reverse())
                 {
                     try
                     {
                         if (existed.Contains(path))
                         {
-                            Directory.CreateDirectory(Path.GetDirectoryName(path));
-                            File.Copy(backup + "/" + path, path, true);
+                            string saved = backup + "/" + path;
+                            // A denied delete/copy may leave the original untouched.
+                            // Do not overwrite that same locked DLL during rollback.
+                            if (!File.Exists(path) || !SameFile(saved, path))
+                            {
+                                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                                File.Copy(saved, path, true);
+                                if (!SameFile(saved, path))
+                                    throw new IOException("Не удалось восстановить файл: " + path);
+                            }
                         }
                         else if (File.Exists(path))
                             File.Delete(path);
@@ -399,8 +448,14 @@ namespace AMZNGoDSDK.Editor
                     catch (Exception restoreFailure) { errors.Add(restoreFailure); }
                 }
                 foreach (string directory in createdDirectories.OrderByDescending(path => path.Length))
-                    if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
-                        Directory.Delete(directory);
+                {
+                    try
+                    {
+                        if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+                            Directory.Delete(directory);
+                    }
+                    catch (Exception restoreFailure) { errors.Add(restoreFailure); }
+                }
                 throw new IOException("Установка не завершена. " + (errors.Count == 1 ? "Исходные файлы восстановлены. " :
                     "Автоматический откат неполон. ") + "Резервная копия: " + backup, new AggregateException(errors));
             }
