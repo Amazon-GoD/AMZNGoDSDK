@@ -27,6 +27,21 @@ namespace AMZNGoDSDK.Editor
     {
         private const string MenuRoot = "AMZN GoD/Debug/Cross-Promo Caps/";
 
+        private static bool AreCapsEnforced()
+        {
+            if (Application.isPlaying)
+            {
+                var core = AmznGoDSDKCore.Instance;
+                return core != null && core.IsMediationEnabled;
+            }
+
+#if AMZN_APPLOVIN_ENABLED
+            return SdkSettingsManager.LoadSettings()?.AppLovin?.Enabled == true;
+#else
+            return false;
+#endif
+        }
+
         [MenuItem(MenuRoot + "Show Status", false, 210)]
         public static void ShowStatus()
         {
@@ -35,7 +50,13 @@ namespace AMZNGoDSDK.Editor
                 return;
 
             var report = new StringBuilder();
+            bool capsEnforced = AreCapsEnforced();
             report.AppendLine($"[CrossPromoCapDebug] Креативов в конфиге: {config.Videos.Count}");
+            report.AppendLine(capsEnforced
+                ? "  Лимиты включены (AppLovin включён)."
+                : "  Лимиты игнорируются (модуль AppLovin отключён или отсутствует). Счётчики сохраняются.");
+            if (!Application.isPlaying)
+                report.AppendLine("  Прогноз по настройкам; фактическое состояние модуля проверяется в Play Mode.");
             report.AppendLine("  Title | cap | MaxShowCount | лимит | показов | исчерпан");
 
             int exhausted = 0;
@@ -45,7 +66,7 @@ namespace AMZNGoDSDK.Editor
             {
                 int limit = video.EffectiveShowLimit;
                 int shown = string.IsNullOrWhiteSpace(video.Title) ? 0 : PlayerPrefs.GetInt(video.Title, 0);
-                bool reached = video.IsShowLimitReached();
+                bool reached = capsEnforced && limit > 0 && !string.IsNullOrWhiteSpace(video.Title) && shown >= limit;
 
                 if (limit <= 0) unlimited++;
                 if (reached) exhausted++;
@@ -56,10 +77,10 @@ namespace AMZNGoDSDK.Editor
 
             report.AppendLine();
             report.AppendLine($"  Исчерпано: {exhausted}/{config.Videos.Count}");
-            report.AppendLine($"  HasAvailableVideos(): {config.HasAvailableVideos()} " +
-                              "(false → показы уходят в медиацию AppLovin)");
+            report.AppendLine($"  Доступны по лимитам: {exhausted < config.Videos.Count} " +
+                              "(проверка загруженного конфига без учёта готовности видео)");
 
-            if (unlimited > 0)
+            if (capsEnforced && unlimited > 0)
             {
                 report.AppendLine();
                 report.AppendLine($"  ВНИМАНИЕ: у {unlimited} креативов нет лимита (cap = 0). " +
@@ -100,7 +121,10 @@ namespace AMZNGoDSDK.Editor
             }
 
             string message = $"Счётчики показов будут выставлены в лимит у {withLimit} креативов — " +
-                             "кросс-промо начнёт считать их исчерпанными и уведёт показы в медиацию AppLovin.\n\n";
+                             "при включённом AppLovin кросс-промо начнёт считать их исчерпанными.\n\n";
+
+            if (!AreCapsEnforced())
+                message += "AppLovin отключён: эти счётчики не ограничат показы кросс-промо.\n\n";
 
             if (withoutLimit > 0)
                 message += $"Без лимита останутся {withoutLimit} креативов — пока они в конфиге, " +

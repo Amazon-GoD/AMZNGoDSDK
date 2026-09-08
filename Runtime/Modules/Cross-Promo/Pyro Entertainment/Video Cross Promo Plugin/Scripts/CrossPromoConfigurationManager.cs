@@ -223,6 +223,7 @@ namespace AMZNGoDSDK.Runtime
 
             /// <summary>
             /// Креатив выбрал свой лимит показов и больше показываться не должен.
+            /// При отключённом или исключённом модуле AppLovin лимиты не применяются.
             /// <para>
             /// Счётчик показов ведётся в PlayerPrefs по СЫРОМУ Title (см. IncrementShowCount
             /// в оверлеях), поэтому креатив без Title не накапливает показы вообще — такой
@@ -231,6 +232,10 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public bool IsShowLimitReached()
             {
+                var core = AmznGoDSDKCore.Instance;
+                if (core == null || !core.IsMediationEnabled)
+                    return false;
+
                 int limit = EffectiveShowLimit;
                 if (limit <= 0)
                     return false;

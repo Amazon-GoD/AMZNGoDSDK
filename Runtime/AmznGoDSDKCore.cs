@@ -171,6 +171,7 @@ namespace AMZNGoDSDK.Runtime
         // Порядок источников фиксирован: пока у кросс-промо остаются креативы с незакрытым
         // cap'ом, показывает оно. Как только капы выбраны всеми креативами, HasFill гаснет
         // и показы уходят в медиацию AppLovin.
+        // При отключённом модуле AppLovin cap кросс-промо не применяется.
         //
         // Решение принимается ДО передачи запроса в модуль. Войдя в CrossPromoModule.Show*,
         // отыграть назад уже нельзя: не найдя что показать, модуль сам закрывает запрос через
@@ -256,6 +257,9 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
 #if AMZN_APPLOVIN_ENABLED
+        /// <summary>Whether the mediation module is enabled, regardless of ad readiness.</summary>
+        public bool IsMediationEnabled => _appLovinModule != null && _appLovinModule.Enabled;
+
         /// <summary>
         /// Отдаёт показ в медиацию. false — готового ad'а нет; тогда запрос закрывается без
         /// рекламы, а не ждёт загрузки: держать игрока перед чёрным экраном хуже, чем
@@ -285,6 +289,7 @@ namespace AMZNGoDSDK.Runtime
         public bool IsMediationRewardedReady =>
             _appLovinModule != null && _appLovinModule.Enabled && _appLovinModule.IsRewardedReady;
 #else
+        public bool IsMediationEnabled => false;
         private bool TryShowMediationInterstitial(Action onClose) => false;
         private bool TryShowMediationRewarded(Action onClose, Action onRewarded) => false;
         public bool IsMediationInterstitialReady => false;
@@ -300,8 +305,8 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>
         /// True while cross-promo still has creatives left to serve: the remote config was
-        /// delivered AND at least one creative has not yet burned its per-creative show cap.
-        /// Goes false for good once every creative is capped out — that is the hand-off point
+        /// delivered AND at least one creative is available. Caps apply only while mediation
+        /// is enabled. Goes false once every creative is capped out — that is the hand-off point
         /// to mediation. A config that never arrived does NOT report false here: that is a
         /// transient network problem the background refetch recovers from.
         /// </summary>
