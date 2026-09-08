@@ -1,44 +1,48 @@
 # Dev Crew report
 
-**Date:** 2026-09-07
-**Task:** Добавить мастер JSON Cross-promo для выбора JSON креативов по package name и смены ссылки при следующем запуске игры без пересборки.
+**Date:** 2026-09-08
+**Task:** Порядок видео cross-promo через position в JSON с обратной совместимостью.
 
 ## What was done
-- ✅ Добавлен мастер `Packages[{PackageName, ConfigUrl}]` с точным выбором по `Application.identifier`; прямой формат `Weight`/`Videos` сохранён.
-- ✅ Встроена загрузка мастер → креативы: один уровень, пять попыток всей цепочки, таймаут запроса 15 секунд и `Cache-Control: no-cache`.
-- ✅ Добавлены ошибки маршрутизации и формата; существующие веса, лимиты показов и фильтры сохранены.
-- ✅ Обновлены инструменты Cross-Promo Caps, подсказки настроек, документация и пример мастер-файла.
-- ✅ Завершены ревью, проверки компиляции и одноразовая проверка парсера в Unity.
 
-## Architecture
-`CrossPromoConfigResolver` определяет формат по корневым полям исходного JSON, затем использует `JsonUtility` и возвращает конфиг либо URL нужной игры. Это учитывает поведение Unity 2022.3.60f1, создающей пустые списки для отсутствующих полей.
-Рантайм `CrossPromoConfigurationManager` и редакторский `CrossPromoCapDebug` используют общий resolver; сетевые запросы выполняют собственными средствами. Успешно загруженный конфиг действует до конца сессии; следующий запуск заново читает мастер.
+Добавлено необязательное целое `position` с нумерацией от 1. Указанные места закрепляются; свободные заполняются по исходным весам остальных креативов. Без положительных позиций работает прежняя схема.
 
-## Files created/modified
-- `Runtime/Modules/Cross-Promo/CrossPromoConfigResolver.cs` и `.meta` — общий разбор и проверка маршрутов.
-- `Runtime/Modules/Cross-Promo/Pyro Entertainment/Video Cross Promo Plugin/Scripts/CrossPromoConfigurationManager.cs` — загрузка цепочки в рантайме.
-- `Editor/SdkModulesSettings/CrossPromoCapDebug.cs` — чтение мастера инструментами счётчиков показов.
-- `Editor/SdkModulesSettings/ModulesSettings/CrossPromoSettingData.cs`, `Runtime/DataLoader/ModulesSettings/CrossPromoSettingData.cs` — подсказки поля URL.
-- `Editor/Windows/SDKSettingsWindow.cs` — объяснение настройки мастера и момента обновления.
-- `README.md` — ссылка на инструкцию Cross-promo.
-- `Runtime/Modules/Cross-Promo/README.md` и `.meta` — формат, внедрение, кеширование и диагностика.
-- `Runtime/Modules/Cross-Promo/master.example.json` и `.meta` — пример для размещения на сервере. Пути выше относительно `Assets/AMZNGoDSDK`.
+Обработаны частичные позиции, дубликаты (первый объект JSON владеет слотом), лимиты, фильтры, кулдауны и разреженные позиции вплоть до int.MaxValue. Предзагрузка не расходует слот. Для загрузки баннеров используется снимок списка.
 
-## Review results
-Финальный вердикт: approved, `issues=[]`; открытых critical/high/medium/low: 0/0/0/0.
-Две завершённые итерации: выявленная high-проблема определения формата через списки `JsonUtility` исправлена проверкой корневых полей.
+## Architecture and files
 
-## Tests
-Testing disabled — skipped: Tester и Unity Test Framework отключены в `AGENTS.md` и не запускались.
-Одноразовая компиляция реальных Runtime и Editor с Cross-promo и без него: 4/4 успешно; новых предупреждений нет, прежние CS0414 и CS0168 сохранены.
-Изолированный Unity 2022.3.60f1 batchmode: `ROUTING_SMOKE:29/29 passed, failures=0`, код выхода 0; использованы реальные resolver и manager.
+- `Runtime/Modules/Cross-Promo/CrossPromoPositionRotation.cs` и `.meta`: исходные слоты, стабильный Peek, однократный Commit.
+- `Runtime/Modules/Cross-Promo/Pyro Entertainment/Video Cross Promo Plugin/Scripts/CrossPromoConfigurationManager.cs`: JSON position, копирование идентификаторов/расположения, сохранение весов.
+- `Runtime/Modules/Cross-Promo/CrossPromoModule.cs`: единый выбор для preload и показа.
+- `Runtime/Modules/Cross-Promo/VideoPlayer/CrossPromoExoNativeOverlay.cs` и `CrossPromoVideoOverlay.cs`: callback в существующей точке учёта показа.
+- `Runtime/Modules/Cross-Promo/Pyro Entertainment/Video Cross Promo Plugin/Banner/CrossPromoBanner.cs`: снимок списка при загрузке спрайтов.
+- `Runtime/Modules/Cross-Promo/README.md`: правила, ограничения и пример смешанного JSON.
 
-## Known limitations
-HTTP-загрузка и полный показ на устройстве не проверялись; в проверке парсера внешние `AppChecker` и `VideoCooldownRegistry` заменены заглушками.
-Обновления успешного конфига внутри сессии и вложенные мастера не поддерживаются; существующие повторы после неудачной начальной загрузки сохраняются.
-Старым играм нужен один релиз с новым SDK; актуальность ответа зависит также от настроек кеширования сервера/CDN.
+Пути относительно Assets/AMZNGoDSDK.
 
-## How to use
-Разместите `master.example.json` на сервере, заменив примеры своими `PackageName` и полными HTTP(S) URL креативов.
-Укажите URL мастера в `AMZN GoD → SDK Settings → Cross Promo → Config URL` и один раз выпустите обновлённую игру.
-Для последующих переключений меняйте `ConfigUrl` игры в мастере; настройте проверку актуальности или инвалидацию CDN. Новая ссылка применяется при следующем запуске.
+## Review and verification
+
+Две формальные итерации ревью; final approved, issues=[]. Исправлены замечания по перераспределению весов и изменению списка во время загрузки баннеров.
+
+Tester и Unity Test Framework отключены по AGENTS.md и не запускались. Выполнены одноразовые проверки:
+
+- Полный Runtime с Cross-promo: штатный Roslyn Unity 2022.3.60f1, exit 0. Только прежнее CS0414; базовая компиляция давала то же предупреждение.
+- Изолированный Unity executeMethod: итоговые 35/35 проверок, 0 ошибок, exit 0. Реальные manager/resolver/rotation/cooldown; SDK core/AppChecker заменены заглушками. Хеши проверенных исходников совпадают с итоговыми файлами SDK.
+- Дополнительная проверка тех же исходников в .NET 6 с заглушками Unity API: 35/35, exit 0.
+- git diff --check с cr-at-eol: успешно.
+
+Проверены чтение JSON, отсутствие/нулевые/отрицательные позиции, Copy, полный и смешанный порядок, повторы круга, дубликаты, исчерпание заполнителей, предзагрузка/повторные и устаревшие токены, лимиты и отключённая медиация, фильтр установленного приложения, пропуски/int.MaxValue и сохранение пропорций весов. Один повтор Unity задержался на IL Post Processor; запуск в чистом временном проекте завершился успешно.
+
+Артефакты проверок находятся в Temp~/CrossPromoPositionValidation и в коммит не включаются.
+
+## Limitations and usage
+
+Курсор хранится только в памяти и начинается заново с новым конфигом/сессией. Пустые слоты без доступных заполнителей пропускаются. Закреплённые видео следуют очереди независимо от кулдауна; кулдаун заполнителей применяется внутри их пула.
+
+Явный показ переданного PromoConfiguration обходит очередь. Баннеры сохраняют порядок массива JSON. UnityVideoPlayer расходует слот при запуске показа согласно существующему учёту; ExoPlayer — на первом кадре. Воспроизведение на устройстве и загрузка по HTTP в этой проверке не проверялись.
+
+Для полного порядка назначьте объектам Videos позиции 1, 2, ..., N. Для частичного порядка задайте position только нужным креативам; остальные заполнят свободные места по Weight. Отсутствие, 0 или отрицательный position сохраняют выбор без закрепления. Пример находится в README Cross-promo.
+
+## Git
+
+Изменения подготовлены в tmp/cross-promo-position, созданной от safety. Перенос в safety выполняется обычным merge; push не выполняется. Посторонние изменения модулей и asmdef не входят в эту задачу.

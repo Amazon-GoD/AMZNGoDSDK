@@ -40,6 +40,7 @@ namespace AMZNGoDSDK.Runtime
         private Action _onClose;
         private Action _onCTA;
         private Action _onCompleted;
+        private Action _onShown;
         private bool _isVisible;
         private bool _ctaClicked;
 
@@ -63,7 +64,7 @@ namespace AMZNGoDSDK.Runtime
         /// the video reaches its end (used for rewarded). <paramref name="onClose"/> fires when the
         /// user closes the overlay (or on a non-recoverable error / unsupported platform).
         /// </summary>
-        public void Show(PromoConfiguration config, string placement, Action onClose, Action onCTA, Action onCompleted)
+        public void Show(PromoConfiguration config, string placement, Action onClose, Action onCTA, Action onCompleted, Action onShown = null)
         {
             _started = false;
             _errorReported = false;
@@ -93,6 +94,7 @@ namespace AMZNGoDSDK.Runtime
             _onClose = onClose;
             _onCTA = onCTA;
             _onCompleted = onCompleted;
+            _onShown = onShown;
             _isVisible = true;
             _ctaClicked = false;
 
@@ -153,6 +155,7 @@ namespace AMZNGoDSDK.Runtime
 
             var cb = _onClose;
             _onClose = null;
+            _onShown = null;
 
 #if UNITY_ANDROID && !UNITY_EDITOR
             try { _native?.Call("dismiss"); }
@@ -413,6 +416,9 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoModule.Instance?.TrackImpression(paidAppId);
             // Счётчик показов креатива (MaxShowCount) — только теперь, на реальном показе.
             IncrementShowCount(config);
+            var onShown = _onShown;
+            _onShown = null;
+            onShown?.Invoke();
 
             // Adjust-impression (S2S GET) запускаем на МОДУЛЕ, а не на оверлее: оверлей могут
             // уничтожить (CrossPromoModule делает это при выключении) — и запрос оборвётся на

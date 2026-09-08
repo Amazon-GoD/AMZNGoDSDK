@@ -641,12 +641,24 @@ namespace AMZNGoDSDK.Runtime
             }
 
             Debug.Log($"[CrossPromoModule] Show: forcedConfig='{forcedConfig?.Title}', _preloadedConfig='{_preloadedConfig?.Title}', _lastShownConfig='{_lastShownConfig?.Title}'");
-            // Прелоаженный креатив ищем в актуальном списке по Title, а НЕ сравниваем ссылку:
+            // В старой схеме прелоаженный креатив ищем в актуальном списке по Title:
             // ApplyCooldownFilter каждый показ пересобирает Videos свежими Copy()-объектами,
             // поэтому ссылка, сохранённая при прелоаде, в текущем списке отсутствует ВСЕГДА.
-            // Заодно берём актуальный объект, а не сохранённый снимок.
+            // Заодно берём актуальный объект, а не сохранённый снимок. В позиционной схеме
+            // Peek проверяет токен по исходному индексу JSON и текущей доступности креатива.
             PromoConfiguration config = forcedConfig;
-            if (config == null && _preloadedConfig != null)
+            Action onShown = null;
+            var rotation = _crossPromoConfig.PositionRotation;
+            if (config == null && rotation.IsOrdered)
+            {
+                var selection = rotation.Peek(_crossPromoConfig.Videos,
+                    _lastShownConfig?.Title ?? _lastShownTitleFromPrefs,
+                    pool => SelectWeightedRandom(pool, _lastShownConfig));
+                config = selection?.Video;
+                // Захватываем именно выбранный токен: прелоад и неудавшийся показ не двигают курсор.
+                onShown = () => rotation.Commit(selection);
+            }
+            else if (config == null && _preloadedConfig != null)
                 config = _crossPromoConfig.Videos.Find(v => v.Title == _preloadedConfig.Title);
 
             // Прелоад потреблён — либо отброшен, если креатив успел выпасть из пула (юзер
@@ -655,7 +667,7 @@ namespace AMZNGoDSDK.Runtime
             // следующего креатива не запустилась бы из-за дедупа.
             _preloadedConfig = null;
 
-            if (config == null)
+            if (config == null && !rotation.IsOrdered)
                 config = SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
 
             Debug.Log($"[CrossPromoModule] Show: selected config='{config?.Title}'");
@@ -685,7 +697,8 @@ namespace AMZNGoDSDK.Runtime
                     placement,
                     onClose: () => onClose?.Invoke(),
                     onCTA: onCTAClick,
-                    onCompleted: onRewarded);
+                    onCompleted: onRewarded,
+                    onShown: onShown);
                 yield break;
             }
 
@@ -750,7 +763,7 @@ namespace AMZNGoDSDK.Runtime
             _videoOverlay.Show(config, placement, () =>
             {
                 onClose?.Invoke();
-            }, onCTAClick);
+            }, onCTAClick, onShown);
 
             StartCoroutine(DeferredPreloadNextVideo());
         }
@@ -860,7 +873,12 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             Debug.Log($"[CrossPromoModule] PreloadNextVideo: _lastShownConfig='{_lastShownConfig?.Title}', videos.Count={_crossPromoConfig.Videos.Count}");
-            var next = SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
+            var rotation = _crossPromoConfig.PositionRotation;
+            var next = rotation.IsOrdered
+                ? rotation.Peek(_crossPromoConfig.Videos,
+                    _lastShownConfig?.Title ?? _lastShownTitleFromPrefs,
+                    pool => SelectWeightedRandom(pool, _lastShownConfig))?.Video
+                : SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
             if (next == null || (string.IsNullOrWhiteSpace(next.VideoUrl) && string.IsNullOrWhiteSpace(next.FileName)))
                 return;
 

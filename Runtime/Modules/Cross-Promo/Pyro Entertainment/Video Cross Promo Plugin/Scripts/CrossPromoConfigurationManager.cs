@@ -29,10 +29,16 @@ namespace AMZNGoDSDK.Runtime
             public List<PromoConfiguration> Videos = new();
             [System.NonSerialized]
             private List<PromoConfiguration> _masterVideos = null;
+            [NonSerialized]
+            private CrossPromoPositionRotation _positionRotation;
+
+            internal CrossPromoPositionRotation PositionRotation =>
+                _positionRotation ??= new CrossPromoPositionRotation(Videos);
 
             public PromosConfigurationInfo Copy()
             {
                 var confInfo = new PromosConfigurationInfo();
+                confInfo._positionRotation = PositionRotation.CopyLayout();
                 confInfo.Weight = Weight;
                 confInfo.Videos.AddRange(Videos);
                 confInfo._masterVideos = _masterVideos?.Select(v => v.Copy()).ToList();
@@ -41,6 +47,8 @@ namespace AMZNGoDSDK.Runtime
 
             public void CheckVideosShowLimit()
             {
+                // Снимок позиций должен предшествовать любому удалению из исходного JSON.
+                bool ordered = PositionRotation.IsOrdered;
                 if (Videos == null || Videos.Count == 0)
                     return;
 
@@ -50,10 +58,13 @@ namespace AMZNGoDSDK.Runtime
                 {
                     Debug.Log($"[CrossPromoLimit] drop '{vid.Title}' — показов {PlayerPrefs.GetInt(vid.Title, 0)}/{vid.EffectiveShowLimit}");
 
-                    foreach (var other in Videos)
+                    if (!ordered)
                     {
-                        if (other == vid) continue;
-                        other.Weight += vid.Weight / Mathf.Max(1, Videos.Count - 1);
+                        foreach (var other in Videos)
+                        {
+                            if (other == vid) continue;
+                            other.Weight += vid.Weight / Mathf.Max(1, Videos.Count - 1);
+                        }
                     }
 
                     Videos.Remove(vid);
@@ -63,7 +74,7 @@ namespace AMZNGoDSDK.Runtime
                     RemoveFromMaster(vid.Title);
                 }
 
-                if (Videos.Count > 0)
+                if (!ordered && Videos.Count > 0)
                 {
                     Videos.First().Weight += 1 - Videos.Sum(video => video.Weight);
                 }
@@ -100,6 +111,8 @@ namespace AMZNGoDSDK.Runtime
 
             public void ApplyCooldownFilter(string lastShownTitle)
             {
+                // Позиции обходят общий кулдаун; свободные места фильтрует сама ротация.
+                if (PositionRotation.IsOrdered) return;
                 // Master-список инициализируется ОДИН РАЗ из полного Videos (после CheckVideosShowLimit)
                 if (_masterVideos == null)
                 {
@@ -154,6 +167,7 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public void RemoveInstalledOrSelfPromo(string ownPackageId)
             {
+                _ = PositionRotation;
                 string MatchReason(PromoConfiguration v)
                 {
                     if (v?.AppPackageName == null) return null;
@@ -207,6 +221,11 @@ namespace AMZNGoDSDK.Runtime
             public float Weight;
             public List<string> AppPackageName = new();
             public int MaxShowCount;
+
+            [Tooltip("Порядковый номер показа в круге (с 1). 0 или отрицательное значение — выбор по весу на свободных местах.")]
+            public int position;
+            [NonSerialized]
+            internal int RotationId = -1;
 
             [Tooltip("Сколько показов этого креатива разрешено ЗА ВСЁ ВРЕМЯ (не за сессию). " +
                      "0 — без лимита. Имя поля в нижнем регистре: JsonUtility сопоставляет " +
@@ -268,7 +287,9 @@ namespace AMZNGoDSDK.Runtime
                     Weight = Weight,
                     AppPackageName = AppPackageName != null ? new List<string>(AppPackageName) : new List<string>(),
                     MaxShowCount = MaxShowCount,
-                    cap = cap
+                    cap = cap,
+                    position = position,
+                    RotationId = RotationId
                 };
             }
         }
@@ -310,6 +331,7 @@ namespace AMZNGoDSDK.Runtime
                     }
 
                     Debug.Log($"[CrossPromoConfig] Parsed: Weight={configuration.Weight}, Videos.Count={configuration.Videos.Count}");
+                    _ = configuration.PositionRotation;
                     NormalizeWeights(configuration);
                     int filterBefore = configuration.Videos?.Count ?? 0;
                     Debug.Log($"[CrossPromoFilter] fetch: running filter, ownPackage='{packageName}', videos={filterBefore}");
@@ -362,6 +384,10 @@ namespace AMZNGoDSDK.Runtime
             {
                 return;
             }
+
+            // В позиционной схеме вес закреплённого креатива не меняет пропорции
+            // заполнителей. Выбор сам использует сумму весов только доступного пула.
+            if (configuration.PositionRotation.IsOrdered) return;
 
             var totalWeight = configuration.Videos.Sum(video => video.Weight);
             var delta = 1f - totalWeight;
