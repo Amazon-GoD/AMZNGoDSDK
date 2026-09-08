@@ -9,6 +9,7 @@
         "GUID:ee41a6a4895314bdd9805718caa2c91e",
         "GUID:96646b6455fcf4f72a0caf10d71036c1",
         "AMZNGoD.Bootstrap.Editor",
+        "AMZNGoDSDK.Core",
         "AMZNGoDSDK.Module.CrossPromo"
     ],
     "includePlatforms": [
