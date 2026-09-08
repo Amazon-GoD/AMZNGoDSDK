@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-08
+
+### Fixed
+
+- Restore SDK Editor compilation with Cross-Promo enabled by explicitly
+  referencing the Core assembly used by the Cross-Promo cap debug tools.
+
 ## [1.0.3] - 2026-09-08
 
 ### Added
