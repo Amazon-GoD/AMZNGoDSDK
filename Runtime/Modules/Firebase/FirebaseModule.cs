@@ -6,44 +6,68 @@ using System.Threading.Tasks;
 using Firebase;
 using Firebase.Analytics;
 using Firebase.Crashlytics;
-using Firebase.Extensions;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Runtime
 {
-    public class FirebaseModule : ModuleBase
+    public partial class FirebaseModule : ModuleBase
     {
         private bool _analyticsEnabled;
         private bool _crashlyticsEnabled;
         private bool _isInitialized;
+        private bool _remoteConfigEnabled;
+        private bool _isInitializing;
+        private int _initializationVersion;
 
         public bool IsInitialized => _isInitialized;
         public bool AnalyticsEnabled => _isInitialized && _analyticsEnabled;
         public bool CrashlyticsEnabled => _isInitialized && _crashlyticsEnabled;
+        public bool RemoteConfigEnabled => _isInitialized && _remoteConfigEnabled;
+        public bool IsRemoteConfigConfigured => Enabled && _remoteConfigEnabled;
 
         public event Action OnInitialized;
 
-        public void Construct(bool enable, bool enableAnalytics, bool enableCrashlytics)
+        public void Construct(FirebaseSettingData settings)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+            Construct(settings.Enabled, settings.EnableAnalytics, settings.EnableCrashlytics, settings.EnableRemoteConfig);
+            _remoteConfigFetchTimeoutSeconds = settings.RemoteConfigFetchTimeoutSeconds > 0
+                ? settings.RemoteConfigFetchTimeoutSeconds : FirebaseSettingData.DefaultFetchTimeoutSeconds;
+            _remoteConfigMinimumFetchIntervalSeconds = settings.RemoteConfigMinimumFetchIntervalSeconds > 0
+                ? settings.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds;
+            RegisterConfiguredTests(settings.ABTests);
+        }
+
+        public void Construct(bool enable, bool enableAnalytics, bool enableCrashlytics) =>
+            Construct(enable, enableAnalytics, enableCrashlytics, false);
+
+        public void Construct(bool enable, bool enableAnalytics,
+            bool enableCrashlytics, bool remoteConfigEnabled)
         {
             Enabled = enable;
             _analyticsEnabled = enableAnalytics;
             _crashlyticsEnabled = enableCrashlytics;
+            _remoteConfigEnabled = remoteConfigEnabled;
         }
 
         public override void Initialize()
         {
-            if (!Enabled)
+            if (!Enabled || _isInitializing || _isInitialized)
                 return;
 
-            FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(checkTask =>
-            {
-                if (checkTask.IsFaulted)
-                {
-                    Debug.LogError($"[FirebaseModule] Dependency check failed: {checkTask.Exception?.Message}");
-                    return;
-                }
+            _isInitializing = true;
+            IsRemoteConfigReady = false;
+            _ = InitializeAsync(++_initializationVersion);
+        }
 
-                DependencyStatus dependencyStatus = checkTask.Result;
+        // Started on Unity's main thread; awaits retain its SynchronizationContext.
+        private async Task InitializeAsync(int version)
+        {
+            try
+            {
+                DependencyStatus dependencyStatus = await FirebaseApp.CheckAndFixDependenciesAsync();
+                if (!IsCurrentInitialization(version)) return;
+
                 if (dependencyStatus != DependencyStatus.Available)
                 {
                     Debug.LogError($"[FirebaseModule] Firebase dependencies are not available: {dependencyStatus}");
@@ -53,14 +77,43 @@ namespace AMZNGoDSDK.Runtime
                 if (FirebaseApp.DefaultInstance == null)
                 {
                     Debug.LogWarning("[FirebaseModule] FirebaseApp.DefaultInstance is null after dependency resolution.");
+                    return;
                 }
 
                 FirebaseAnalytics.SetAnalyticsCollectionEnabled(_analyticsEnabled);
                 Crashlytics.IsCrashlyticsCollectionEnabled = _crashlyticsEnabled;
 
+                // Analytics and Crashlytics are usable independently of the network fetch.
                 _isInitialized = true;
-                OnInitialized?.Invoke();
-            });
+                InvokeSafely(OnInitialized);
+                if (IsCurrentInitialization(version) && _remoteConfigEnabled && !IsRemoteConfigReady)
+                    await InitializeRemoteConfigAsync(version);
+            }
+            catch (Exception exception)
+            {
+                if (IsCurrentInitialization(version))
+                    Debug.LogError($"[FirebaseModule] Initialization failed: {exception.Message}. A/B tests will use local defaults.");
+            }
+            finally
+            {
+                if (IsCurrentInitialization(version))
+                {
+                    _isInitializing = false;
+                    CompleteRemoteConfig();
+                }
+            }
+        }
+
+        private bool IsCurrentInitialization(int version) => this != null && version == _initializationVersion;
+
+        private static void InvokeSafely(Action listeners)
+        {
+            if (listeners == null) return;
+            foreach (Action listener in listeners.GetInvocationList())
+            {
+                try { listener(); }
+                catch (Exception exception) { Debug.LogException(exception); }
+            }
         }
 
         private const int MaxFirebaseParams = 25;
@@ -132,8 +185,21 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Cleanup()
         {
+            ++_initializationVersion;
             _isInitialized = false;
+            _isInitializing = false;
+            IsRemoteConfigReady = false;
+            LastRemoteConfigFetchSucceeded = false;
+            _forceRemoteConfigFetchOnStartup = false;
+            _adjustStartupRequested = false;
+            _adjustStartupDecisionApplied = false;
+            _remoteGroups.Clear();
+            ClearAll();
+            OnInitialized = null;
+            OnRemoteConfigReady = null;
         }
+
+        private void OnDestroy() => Cleanup();
     }
 }
 #endif

@@ -7,7 +7,7 @@ namespace AMZNGoDSDK.Editor
     public class CrossPromoSettingData : ModuleSettingData
     {
         [UnityEngine.Tooltip("URL мастер JSON (Packages: PackageName → ConfigUrl) или прямого JSON с креативами. Загружается при запуске игры.")]
-        public string ConfigUrl;
+        public string ConfigUrl = Runtime.CrossPromoSettingData.DefaultConfigUrl;
 
         // Video-бэкенд в настройках больше не выбирается — всегда ExoPlayer.
         // DefaultPromotedAppId убран из настроек (всегда дефолтный/пустой на рантайме).

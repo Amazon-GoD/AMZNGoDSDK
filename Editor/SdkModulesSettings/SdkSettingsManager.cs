@@ -130,7 +130,8 @@ namespace AMZNGoDSDK.Editor
             return new CrossPromoSettingData
             {
                 Enabled = runtimeSettings.Enabled,
-                ConfigUrl = runtimeSettings.ConfigUrl,
+                ConfigUrl = string.IsNullOrWhiteSpace(runtimeSettings.ConfigUrl)
+                    ? Runtime.CrossPromoSettingData.DefaultConfigUrl : runtimeSettings.ConfigUrl,
                 // DefaultPromotedAppId убран из настроек; VideoBackend всегда ExoPlayer.
                 VideoBackend = Runtime.VideoPlayerBackend.ExoPlayer
             };
@@ -206,7 +207,15 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 EnableAnalytics = runtimeSettings.EnableAnalytics,
-                EnableCrashlytics = runtimeSettings.EnableCrashlytics
+                EnableCrashlytics = runtimeSettings.EnableCrashlytics,
+                EnableRemoteConfig = runtimeSettings.EnableRemoteConfig,
+                RemoteConfigFetchTimeoutSeconds = runtimeSettings.RemoteConfigFetchTimeoutSeconds > 0
+                    ? runtimeSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
+                RemoteConfigMinimumFetchIntervalSeconds = runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
+                    ? runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds : Runtime.FirebaseSettingData.DefaultMinimumFetchIntervalSeconds,
+                ABTestConstantsPath = string.IsNullOrWhiteSpace(runtimeSettings.ABTestConstantsPath)
+                    ? Runtime.FirebaseSettingData.DefaultABTestConstantsPath : runtimeSettings.ABTestConstantsPath,
+                ABTests = CloneABTests(runtimeSettings.ABTests)
             };
         }
 
@@ -279,6 +288,12 @@ namespace AMZNGoDSDK.Editor
 
         public static bool SaveSettings(SdkSettingsData settings)
         {
+            if (settings == null) return false;
+            if (!ValidateABTests(settings.Firebase, out var abError))
+            {
+                Debug.LogError($"[SdkSettingsManager] Save rejected: {abError}");
+                return false;
+            }
             // Барьер IAP-15 живёт здесь, а не только в кнопке окна: SaveSettings публичный,
             // и обходной вызов (визард, тулинг модулей) не должен сохранять подписку без
             // срока. Окно валидирует то же самое раньше — ради диалога с текстом.
@@ -302,6 +317,14 @@ namespace AMZNGoDSDK.Editor
 
             string fullPath = Path.Combine(ResourcesPath, ConfigFileName);
 
+            string previousConstantsPath = LoadRuntimeSettings()?.Firebase?.ABTestConstantsPath;
+            if (!FirebaseABTestConstantsGenerator.TrySave(settings.Firebase, previousConstantsPath, out abError))
+            {
+                Debug.LogError($"[SdkSettingsManager] Save rejected: {abError}");
+                EditorUtility.DisplayDialog("Ошибка A/B тестов", abError, "OK");
+                return false;
+            }
+
             if (!Directory.Exists(ResourcesPath))
                 Directory.CreateDirectory(ResourcesPath);
 
@@ -317,6 +340,21 @@ namespace AMZNGoDSDK.Editor
             ModuleDefineManager.UpdateDefineSymbols(settings);
 
             return true;
+        }
+
+        public static bool ValidateABTests(FirebaseSettingData settings, out string message) =>
+            FirebaseABTestConstantsGenerator.Validate(settings, out message);
+
+        private static List<Runtime.ABTestEntry> CloneABTests(List<Runtime.ABTestEntry> tests)
+        {
+            if (tests == null) return new List<Runtime.ABTestEntry>();
+            return tests.Select(test => test == null ? null : new Runtime.ABTestEntry
+            {
+                TestName = test.TestName,
+                TestId = test.TestId,
+                DefaultGroup = test.GetDefaultGroup(),
+                GroupNames = test.GroupNames == null ? new List<string>() : new List<string>(test.GroupNames)
+            }).ToList();
         }
 
         private static Runtime.SdkSettingsData ConvertToRuntimeSettings(SdkSettingsData editorSettings)
@@ -432,11 +470,19 @@ namespace AMZNGoDSDK.Editor
 
         private static Runtime.FirebaseSettingData ConvertFirebaseSettings(FirebaseSettingData editorSettings)
         {
+            editorSettings ??= new FirebaseSettingData();
             return new Runtime.FirebaseSettingData
             {
                 Enabled = editorSettings.Enabled,
                 EnableAnalytics = editorSettings.EnableAnalytics,
-                EnableCrashlytics = editorSettings.EnableCrashlytics
+                EnableCrashlytics = editorSettings.EnableCrashlytics,
+                EnableRemoteConfig = editorSettings.EnableRemoteConfig,
+                RemoteConfigFetchTimeoutSeconds = editorSettings.RemoteConfigFetchTimeoutSeconds > 0
+                    ? editorSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
+                RemoteConfigMinimumFetchIntervalSeconds = editorSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
+                    ? editorSettings.RemoteConfigMinimumFetchIntervalSeconds : Runtime.FirebaseSettingData.DefaultMinimumFetchIntervalSeconds,
+                ABTestConstantsPath = FirebaseABTestConstantsGenerator.OutputPath(editorSettings),
+                ABTests = CloneABTests(editorSettings.ABTests)
             };
         }
 

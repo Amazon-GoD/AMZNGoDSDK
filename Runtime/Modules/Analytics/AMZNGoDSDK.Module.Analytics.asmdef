@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.Adjust",
         "AdjustSdk.Scripts"
     ],
     "includePlatforms": [],
