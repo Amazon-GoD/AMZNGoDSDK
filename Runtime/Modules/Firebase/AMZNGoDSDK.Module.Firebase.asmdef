@@ -2,7 +2,8 @@
     "name": "AMZNGoDSDK.Module.Firebase",
     "rootNamespace": "",
     "references": [
-        "AMZNGoD.Runtime"
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.AppMetrica"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

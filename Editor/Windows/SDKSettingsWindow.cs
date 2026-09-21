@@ -344,7 +344,7 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings.Firebase.Enabled = DrawModuleSection(
                 "Firebase",
-                "Firebase Analytics и Crashlytics: события и отчёты об ошибках.",
+                "Firebase Analytics, Crashlytics и A/B-тесты через Remote Config.",
                 _currentSettings.Firebase.Enabled,
                 () =>
                 {
@@ -352,6 +352,22 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Enable Analytics", _currentSettings.Firebase.EnableAnalytics);
                     _currentSettings.Firebase.EnableCrashlytics = EditorGUILayout
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
+                    _currentSettings.Firebase.EnableRemoteConfig = EditorGUILayout
+                        .Toggle("Enable Remote Config", _currentSettings.Firebase.EnableRemoteConfig);
+                    using (new EditorGUI.DisabledScope(!_currentSettings.Firebase.EnableRemoteConfig))
+                    {
+                        var firebase = _currentSettings.Firebase;
+                        firebase.RemoteConfigFetchTimeoutSeconds = Mathf.Max(1, EditorGUILayout.IntField(
+                            "Fetch timeout (seconds)", firebase.RemoteConfigFetchTimeoutSeconds > 0
+                                ? firebase.RemoteConfigFetchTimeoutSeconds : FirebaseSettingData.DefaultFetchTimeoutSeconds));
+                        firebase.RemoteConfigMinimumFetchIntervalSeconds = Mathf.Max(1, EditorGUILayout.IntField(
+                            "Fetch interval (seconds)", firebase.RemoteConfigMinimumFetchIntervalSeconds > 0
+                                ? firebase.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds));
+                    }
+                    EditorGUILayout.HelpBox(
+                        "A/B-тесты: зарегистрируйте контрольную группу и варианты через RegisterABTest / RegisterABTestFeature, " +
+                        "затем вызовите RunABTest. Ключ Remote Config совпадает с ID теста, значение — с именем группы. " +
+                        "Без Remote Config используются контрольные группы. Для экспериментов Firebase включите Analytics.", MessageType.Info);
 
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);

@@ -206,7 +206,12 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 EnableAnalytics = runtimeSettings.EnableAnalytics,
-                EnableCrashlytics = runtimeSettings.EnableCrashlytics
+                EnableCrashlytics = runtimeSettings.EnableCrashlytics,
+                EnableRemoteConfig = runtimeSettings.EnableRemoteConfig,
+                RemoteConfigFetchTimeoutSeconds = runtimeSettings.RemoteConfigFetchTimeoutSeconds > 0
+                    ? runtimeSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
+                RemoteConfigMinimumFetchIntervalSeconds = runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
+                    ? runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds : Runtime.FirebaseSettingData.DefaultMinimumFetchIntervalSeconds
             };
         }
 
@@ -436,7 +441,12 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 EnableAnalytics = editorSettings.EnableAnalytics,
-                EnableCrashlytics = editorSettings.EnableCrashlytics
+                EnableCrashlytics = editorSettings.EnableCrashlytics,
+                EnableRemoteConfig = editorSettings.EnableRemoteConfig,
+                RemoteConfigFetchTimeoutSeconds = editorSettings.RemoteConfigFetchTimeoutSeconds > 0
+                    ? editorSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
+                RemoteConfigMinimumFetchIntervalSeconds = editorSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
+                    ? editorSettings.RemoteConfigMinimumFetchIntervalSeconds : Runtime.FirebaseSettingData.DefaultMinimumFetchIntervalSeconds
             };
         }
 
