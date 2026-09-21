@@ -14,8 +14,45 @@ namespace AMZNGoDSDK.Runtime
         private readonly Dictionary<string, string> _defaultGroups = new Dictionary<string, string>();
         private readonly Dictionary<string, string> _selectedGroups = new Dictionary<string, string>();
         private readonly Dictionary<string, string> _reportedGroups = new Dictionary<string, string>();
+        private readonly Dictionary<string, HashSet<string>> _configuredGroups = new Dictionary<string, HashSet<string>>();
         private readonly HashSet<string> _pendingTests = new HashSet<string>();
         private readonly HashSet<string> _runningTests = new HashSet<string>();
+
+        private void RegisterConfiguredTests(List<ABTestEntry> tests)
+        {
+            if (tests == null) return;
+            foreach (var test in tests)
+            {
+                // A malformed entry in a hand-edited/old config must not block Firebase startup.
+                try
+                {
+                    if (test == null) throw new ArgumentException("Null test entry.");
+                    ValidateABIdentifier(test.TestId, nameof(test.TestId));
+                    string control = test.GetDefaultGroup();
+                    ValidateABIdentifier(control, nameof(test.DefaultGroup));
+                    if (test.GroupNames == null || !test.GroupNames.Contains(control))
+                        throw new ArgumentException("Default group must belong to GroupNames.");
+                    var groups = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (string group in test.GroupNames)
+                    {
+                        ValidateABIdentifier(group, nameof(test.GroupNames));
+                        if (!groups.Add(group)) throw new ArgumentException("Duplicate group.");
+                    }
+                    if (_defaultGroups.ContainsKey(test.TestId))
+                        throw new ArgumentException("Duplicate test ID.");
+                    RegisterTest(test.TestId, control);
+                    _configuredGroups.Add(test.TestId, groups);
+                }
+                catch (ArgumentException exception)
+                {
+                    Debug.LogWarning($"[FirebaseABTesting] Ignoring invalid configured test '{test?.TestId}': {exception.Message}");
+                }
+            }
+        }
+
+        private bool HasGroup(string testId, string groupName) => groupName != null
+            && ((_configuredGroups.TryGetValue(testId, out var groups) && groups.Contains(groupName))
+                || _featuresTesting.HasFeature(testId, groupName));
 
         /// <summary>Explicit control group, independent of feature registration order.</summary>
         public void RegisterTest(string testId, string defaultGroupName)
@@ -62,8 +99,9 @@ namespace AMZNGoDSDK.Runtime
             int version = _initializationVersion;
             try
             {
-                if (_featuresTesting.TryRunFeature(testId, groupName) && IsCurrentInitialization(version)
-                    && _defaultGroups.ContainsKey(testId))
+                if (!_featuresTesting.TryRunFeature(testId, groupName))
+                    Debug.LogWarning($"[FirebaseABTesting] Register a handler for '{testId}/{groupName}' before Run.");
+                else if (IsCurrentInitialization(version) && _defaultGroups.ContainsKey(testId))
                     SendABTestExposure(testId, groupName);
             }
             catch (Exception exception)
@@ -74,22 +112,22 @@ namespace AMZNGoDSDK.Runtime
             finally { _runningTests.Remove(testId); }
         }
 
-        /// <summary>Returns false until initial config resolution and complete registration.</summary>
+        /// <summary>Configured tests can be queried without handlers; code-only tests need a control handler.</summary>
         public bool TryGetTestGroup(string testId, out string groupName)
         {
             groupName = null;
             if (!Enabled || !IsRemoteConfigReady || string.IsNullOrWhiteSpace(testId)
                 || !_defaultGroups.TryGetValue(testId, out var control)
-                || !_featuresTesting.HasFeature(testId, control)) return false;
+                || !HasGroup(testId, control)) return false;
 
-            if (_selectedGroups.TryGetValue(testId, out var selected) && _featuresTesting.HasFeature(testId, selected))
+            if (_selectedGroups.TryGetValue(testId, out var selected) && HasGroup(testId, selected))
             {
                 groupName = selected;
                 return true;
             }
 
             _remoteGroups.TryGetValue(testId, out var remote);
-            groupName = _featuresTesting.HasFeature(testId, remote) ? remote : control;
+            groupName = HasGroup(testId, remote) ? remote : control;
             if (!string.IsNullOrEmpty(remote) && groupName != remote)
                 Debug.LogWarning($"[FirebaseABTesting] Unknown group '{remote}' for '{testId}'; using '{control}'.");
             _selectedGroups[testId] = groupName;
@@ -102,6 +140,7 @@ namespace AMZNGoDSDK.Runtime
         {
             if (string.IsNullOrWhiteSpace(testId)) return;
             _featuresTesting.RemoveRemoteId(testId);
+            _configuredGroups.Remove(testId);
             _defaultGroups.Remove(testId);
             _selectedGroups.Remove(testId);
             _reportedGroups.Remove(testId);
@@ -111,6 +150,7 @@ namespace AMZNGoDSDK.Runtime
         public void ClearAll()
         {
             _featuresTesting.Clear();
+            _configuredGroups.Clear();
             _defaultGroups.Clear();
             _selectedGroups.Clear();
             _reportedGroups.Clear();

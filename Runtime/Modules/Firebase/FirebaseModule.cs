@@ -23,6 +23,7 @@ namespace AMZNGoDSDK.Runtime
         public bool AnalyticsEnabled => _isInitialized && _analyticsEnabled;
         public bool CrashlyticsEnabled => _isInitialized && _crashlyticsEnabled;
         public bool RemoteConfigEnabled => _isInitialized && _remoteConfigEnabled;
+        public bool IsRemoteConfigConfigured => Enabled && _remoteConfigEnabled;
 
         public event Action OnInitialized;
 
@@ -34,6 +35,7 @@ namespace AMZNGoDSDK.Runtime
                 ? settings.RemoteConfigFetchTimeoutSeconds : FirebaseSettingData.DefaultFetchTimeoutSeconds;
             _remoteConfigMinimumFetchIntervalSeconds = settings.RemoteConfigMinimumFetchIntervalSeconds > 0
                 ? settings.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds;
+            RegisterConfiguredTests(settings.ABTests);
         }
 
         public void Construct(bool enable, bool enableAnalytics, bool enableCrashlytics) =>
@@ -84,7 +86,7 @@ namespace AMZNGoDSDK.Runtime
                 // Analytics and Crashlytics are usable independently of the network fetch.
                 _isInitialized = true;
                 InvokeSafely(OnInitialized);
-                if (IsCurrentInitialization(version) && _remoteConfigEnabled)
+                if (IsCurrentInitialization(version) && _remoteConfigEnabled && !IsRemoteConfigReady)
                     await InitializeRemoteConfigAsync(version);
             }
             catch (Exception exception)
@@ -188,6 +190,9 @@ namespace AMZNGoDSDK.Runtime
             _isInitializing = false;
             IsRemoteConfigReady = false;
             LastRemoteConfigFetchSucceeded = false;
+            _forceRemoteConfigFetchOnStartup = false;
+            _adjustStartupRequested = false;
+            _adjustStartupDecisionApplied = false;
             _remoteGroups.Clear();
             ClearAll();
             OnInitialized = null;

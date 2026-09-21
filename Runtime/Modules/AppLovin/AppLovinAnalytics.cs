@@ -208,6 +208,8 @@ namespace AMZNGoDSDK.Runtime
         private static void ReportAdRevenueToAdjust(string placement, MaxSdkBase.AdInfo adInfo)
         {
 #if AMZN_ADJUST_ENABLED
+            var adjust = SdkModuleRegistry.Get<AdjustModule>();
+            if (adjust == null || !adjust.Enabled || !adjust.IsSdkInitialized) return;
             try
             {
                 var adRevenue = new AdjustAdRevenue(AdjustAdRevenueSource);

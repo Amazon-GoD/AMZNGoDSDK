@@ -11,8 +11,10 @@ namespace AMZNGoDSDK.Runtime
     [Serializable]
     public class CrossPromoSettingData : ModuleSettingData
     {
+        public const string DefaultConfigUrl = "https://amzngod.space/master.json";
+
         [UnityEngine.Tooltip("URL of a master JSON (Packages: PackageName → ConfigUrl) or a direct creative JSON. Resolved at game startup.")]
-        public string ConfigUrl;
+        public string ConfigUrl = DefaultConfigUrl;
 
         [UnityEngine.Tooltip("Fallback promoted app ID for tracking events when a specific promo doesn't provide its own AppPackageName.")]
         public string DefaultPromotedAppId;

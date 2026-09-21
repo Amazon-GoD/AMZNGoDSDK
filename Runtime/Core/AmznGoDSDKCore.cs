@@ -135,6 +135,10 @@ namespace AMZNGoDSDK.Runtime
                 adjustSettings.Enabled,
                 adjustSettings.Key,
                 adjustEnvironment);
+#if AMZN_FIREBASE_ENABLED
+            if (_adjustModule.Enabled && _firebaseModule.IsRemoteConfigConfigured)
+                _adjustModule.DeferInitialization();
+#endif
 #endif
 
 #if AMZN_IAP_ENABLED
@@ -447,7 +451,7 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_ADJUST_ENABLED
         public void ReportEventAdjust(string token, Dictionary<string, string> args)
         {
-            if(!_adjustModule.Enabled)
+            if (_adjustModule == null || !_adjustModule.Enabled)
                 return;
 
             _adjustModule.ReportEvent(token, args);
@@ -727,6 +731,11 @@ namespace AMZNGoDSDK.Runtime
             }
 #endif
 
+#if AMZN_FIREBASE_ENABLED && AMZN_ADJUST_ENABLED
+            if (_adjustModule != null && _adjustModule.Enabled && _firebaseModule != null && _firebaseModule.IsRemoteConfigConfigured)
+                yield return _firebaseModule.ResolveAdjustStartup(_adjustModule.ApplyStartupDecision);
+#endif
+
             InitializeModules(modules);
             yield break;
         }
@@ -811,10 +820,8 @@ namespace AMZNGoDSDK.Runtime
 
         private static int GetModulePriority(ModuleBase module)
         {
-            // Lower = earlier. Adjust первым: Analytics резолвит device_id через
-            // Adjust.GetAmazonAdId, и запрос к неподнятому SDK возвращает null. Adjust.InitSdk
-            // синхронный и дешёвый, так что first_open от этого не задерживается — Analytics
-            // идёт сразу следом. Firebase третьим — Crashlytics ловит init crashes остальных.
+            // Adjust precedes Analytics attribution requests. With Remote Config enabled,
+            // Firebase has already resolved the startup gate in InitializeWhenReady.
             switch (module.GetType().Name)
             {
                 case "AdjustModule": return 0;

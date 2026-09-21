@@ -10,6 +10,22 @@ namespace AMZNGoDSDK.Runtime
     {
         private string _adjustKey;
         private AdjustSdk.AdjustEnvironment _environment;
+        private bool _startupDecisionReady = true;
+
+        /// <summary>InitSdk has been invoked successfully; events can be forwarded to the native SDK.</summary>
+        public bool IsSdkInitialized { get; private set; }
+
+        public void DeferInitialization()
+        {
+            if (!IsSdkInitialized) _startupDecisionReady = false;
+        }
+
+        public void ApplyStartupDecision(bool allow)
+        {
+            if (_startupDecisionReady || IsSdkInitialized) return;
+            Enabled = Enabled && allow;
+            _startupDecisionReady = true;
+        }
 
         public void Construct(bool enable, string adjustKey, AdjustSdk.AdjustEnvironment environment)
         {
@@ -20,6 +36,7 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Initialize()
         {
+            if (!Enabled || !_startupDecisionReady || IsSdkInitialized) return;
             if (string.IsNullOrWhiteSpace(_adjustKey))
             {
                 Debug.LogError("[AMZNGoDSDK] Adjust app token is empty — SDK not initialized.");
@@ -28,10 +45,12 @@ namespace AMZNGoDSDK.Runtime
 
             var conf = new AdjustConfig(_adjustKey, _environment);
             Adjust.InitSdk(conf);
+            IsSdkInitialized = true;
         }
 
         public void ReportEvent(string token, Dictionary<string, string> args)
         {
+            if (!Enabled || !IsSdkInitialized) return;
             if (string.IsNullOrWhiteSpace(token))
             {
                 Debug.LogError("[AMZNGoDSDK] Adjust event token is empty.");

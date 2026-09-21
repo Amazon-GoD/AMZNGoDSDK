@@ -99,6 +99,10 @@ namespace AMZNGoDSDK.Editor
                 {
                     EditorUtility.DisplayDialog("Ошибка", message, "OK");
                 }
+                else if (!SdkSettingsManager.ValidateABTests(_currentSettings.Firebase, out var abMessage))
+                {
+                    EditorUtility.DisplayDialog("Ошибка A/B тестов", abMessage, "OK");
+                }
                 else
                 {
                     if (SdkSettingsManager.SaveSettings(_currentSettings))
@@ -365,9 +369,9 @@ namespace AMZNGoDSDK.Editor
                                 ? firebase.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds));
                     }
                     EditorGUILayout.HelpBox(
-                        "A/B-тесты: зарегистрируйте контрольную группу и варианты через RegisterABTest / RegisterABTestFeature, " +
-                        "затем вызовите RunABTest. Ключ Remote Config совпадает с ID теста, значение — с именем группы. " +
+                        "Ключ Remote Config совпадает с ID теста, значение — с именем группы. " +
                         "Без Remote Config используются контрольные группы. Для экспериментов Firebase включите Analytics.", MessageType.Info);
+                    FirebaseABTestsSettingsGUI.Draw(_currentSettings.Firebase);
 
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -13,6 +14,8 @@ namespace AMZNGoDSDK.Editor
         public bool EnableRemoteConfig;
         public int RemoteConfigFetchTimeoutSeconds = DefaultFetchTimeoutSeconds;
         public int RemoteConfigMinimumFetchIntervalSeconds = DefaultMinimumFetchIntervalSeconds;
+        public string ABTestConstantsPath = Runtime.FirebaseSettingData.DefaultABTestConstantsPath;
+        public List<Runtime.ABTestEntry> ABTests = new List<Runtime.ABTestEntry>();
     }
 }
 

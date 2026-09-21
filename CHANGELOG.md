@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-21
+
+### Added
+
+- Firebase Remote Config A/B testing with string groups, local control defaults,
+  group callbacks, runtime group lookup and exposure events.
+- Configure tests, groups and the default group in SDK Settings; generate C#
+  constants when saving and register the configured tests at SDK startup.
+- Built-in `adjust_enable` string flag (`true` / `false`) checked before Adjust
+  initialization. The decision is fixed for the application session, with a
+  bounded startup wait and cached or local defaults when fetching fails.
+
+### Changed
+
+- Show `https://amzngod.space/master.json` as the editable Cross-Promo default
+  when settings are new or empty; preserve existing custom URLs.
+
+### Fixed
+
+- Skip Adjust events, attribution and ad revenue until Adjust is initialized,
+  including when its startup is disabled through Remote Config.
+- Remove the obsolete `MaxSdk.Scripts` assembly reference from the AppLovin module.
+
 ## [1.0.4] - 2026-09-08
 
 ### Fixed

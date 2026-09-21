@@ -433,6 +433,8 @@ namespace AMZNGoDSDK.Runtime
         private IEnumerator ResolveAndSendAttributionInner()
         {
 #if AMZN_ADJUST_ENABLED
+            var adjust = SdkModuleRegistry.Get<AdjustModule>();
+            if (adjust == null || !adjust.Enabled || !adjust.IsSdkInitialized) yield break;
             yield return WaitUntilDeviceIdResolved();
 
             // Как у iap_link: с сентинелом не шлём, токен не пишем — добор на форграунде
