@@ -45,10 +45,19 @@ namespace AMZNGoDSDK.Runtime
                 return confInfo;
             }
 
+            private void EnsureMasterVideos()
+            {
+                // И позиции, и полный пул сохраняем до первой фильтрации по cap/кулдауну.
+                _ = PositionRotation;
+                if (_masterVideos == null && Videos != null && Videos.Count > 0)
+                    _masterVideos = Videos.Select(v => v.Copy()).ToList();
+            }
+
             public void CheckVideosShowLimit()
             {
                 // Снимок позиций должен предшествовать любому удалению из исходного JSON.
                 bool ordered = PositionRotation.IsOrdered;
+                EnsureMasterVideos();
                 if (Videos == null || Videos.Count == 0)
                     return;
 
@@ -67,11 +76,9 @@ namespace AMZNGoDSDK.Runtime
                         }
                     }
 
+                    // В master сохраняем: если MAX не готов, этот креатив доступен для
+                    // фолбэка. Обычный ApplyCooldownFilter сам проверяет cap.
                     Videos.Remove(vid);
-
-                    // Из master — обязательно: ApplyCooldownFilter пересобирает пул именно
-                    // из него, и оставленный там креатив вернулся бы в ротацию сверх лимита.
-                    RemoveFromMaster(vid.Title);
                 }
 
                 if (!ordered && Videos.Count > 0)
@@ -94,7 +101,12 @@ namespace AMZNGoDSDK.Runtime
             /// </summary>
             public bool HasAvailableVideos()
             {
-                // До первого ApplyCooldownFilter master ещё не создан — тогда полный пул
+                return HasAvailableVideos(ignoreShowLimit: false);
+            }
+
+            internal bool HasAvailableVideos(bool ignoreShowLimit)
+            {
+                // До первой фильтрации master ещё не создан — тогда полный пул
                 // это сам Videos (сразу после фетча он не прорежен кулдауном).
                 var source = _masterVideos ?? Videos;
                 if (source == null)
@@ -102,7 +114,7 @@ namespace AMZNGoDSDK.Runtime
 
                 for (int i = 0; i < source.Count; i++)
                 {
-                    if (!source[i].IsShowLimitReached())
+                    if (ignoreShowLimit || !source[i].IsShowLimitReached())
                         return true;
                 }
 
@@ -111,43 +123,46 @@ namespace AMZNGoDSDK.Runtime
 
             public void ApplyCooldownFilter(string lastShownTitle)
             {
-                // Позиции обходят общий кулдаун; свободные места фильтрует сама ротация.
-                if (PositionRotation.IsOrdered) return;
-                // Master-список инициализируется ОДИН РАЗ из полного Videos (после CheckVideosShowLimit)
-                if (_masterVideos == null)
-                {
-                    // Инициализировать не из чего: конфиг ещё не доехал либо пуст.
-                    if (Videos == null || Videos.Count == 0) return;
-                    _masterVideos = Videos.Select(v => v.Copy()).ToList();
-                }
+                ApplyCooldownFilter(lastShownTitle, ignoreShowLimit: false);
+            }
 
-                // ВАЖНО: выход по пустому Videos переехал внутрь инициализации master и больше
-                // не блокирует пересборку пула. Videos — это срез ОДНОГО круга, и вычеркнуть
-                // из него последние креативы мог только что отработавший CheckVideosShowLimit.
-                // Раньше в этом случае метод выходил здесь, пул из master уже не пересобирался
-                // никогда, и кросс-промо уходило в no_fill навсегда — хотя в master оставались
-                // креативы с незакрытым лимитом, просто сидевшие на кулдауне.
-                if (_masterVideos.Count == 0) return;
+            internal void ApplyCooldownFilter(string lastShownTitle, bool ignoreShowLimit)
+            {
+                EnsureMasterVideos();
+                if (_masterVideos == null) return;
+
+                // Даже пустой Videos восстанавливается из полного пула. Cap пропускается
+                // только для текущего фолбэка; это не меняет обычную доступность HasFill.
+                var eligible = _masterVideos
+                    .Where(v => ignoreShowLimit || !v.IsShowLimitReached())
+                    .ToList();
+
+                // Позиции обходят общий кулдаун; свободные места фильтрует сама ротация.
+                if (PositionRotation.IsOrdered)
+                {
+                    Videos = eligible.Select(v => v.Copy()).ToList();
+                    return;
+                }
 
                 // Фильтруем из master-списка (не из Videos!); используем копии, чтобы
                 // NormalizeWeights не мутировал оригинальные объекты в _masterVideos
-                var available = _masterVideos
+                var available = eligible
                     .Where(v => !VideoCooldownRegistry.IsOnCooldown(v.Title))
                     .Select(v => v.Copy())
                     .ToList();
 
                 // Если все на cooldown — сброс всех кроме последнего показанного
-                if (available.Count == 0)
+                if (available.Count == 0 && eligible.Count > 0)
                 {
-                    VideoCooldownRegistry.ClearAllCooldownsExcept(lastShownTitle, _masterVideos.Select(v => v.Title));
-                    available = _masterVideos
+                    VideoCooldownRegistry.ClearAllCooldownsExcept(lastShownTitle, eligible.Select(v => v.Title));
+                    available = eligible
                         .Where(v => v.Title != lastShownTitle)
                         .Select(v => v.Copy())
                         .ToList();
 
                     // Edge-case: единственное видео в конфиге
                     if (available.Count == 0)
-                        available = _masterVideos.Select(v => v.Copy()).ToList();
+                        available = eligible.Select(v => v.Copy()).ToList();
                 }
 
                 Videos = available;
@@ -241,7 +256,8 @@ namespace AMZNGoDSDK.Runtime
             public int EffectiveShowLimit => cap > 0 ? cap : MaxShowCount;
 
             /// <summary>
-            /// Креатив выбрал свой лимит показов и больше показываться не должен.
+            /// Креатив выбрал лимит и уступает приоритет MAX. JSON-фолбэк при неготовом
+            /// MAX явно обходит эту проверку для одного запроса, не сбрасывая счётчик.
             /// При отключённом или исключённом модуле AppLovin лимиты не применяются.
             /// <para>
             /// Счётчик показов ведётся в PlayerPrefs по СЫРОМУ Title (см. IncrementShowCount

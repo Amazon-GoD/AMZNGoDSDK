@@ -195,7 +195,8 @@ namespace AMZNGoDSDK.Runtime
 
         // Порядок источников фиксирован: пока у кросс-промо остаются креативы с незакрытым
         // cap'ом, показывает оно. Как только капы выбраны всеми креативами, HasFill гаснет
-        // и показы уходят в медиацию AppLovin.
+        // и показы уходят в медиацию AppLovin. Если MAX не готов, возвращаемся к JSON
+        // сверх cap, сохраняя остальные правила выбора и накопленные счётчики.
         // При отключённом модуле AppLovin cap кросс-промо не применяется.
         //
         // Решение принимается ДО передачи запроса в модуль. Войдя в CrossPromoModule.Show*,
@@ -204,26 +205,29 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>
         /// Shows an ad: cross-promo while it still has creatives left, AppLovin mediation
-        /// once every creative has burned its cap. <paramref name="onClose"/> always fires
+        /// once every creative has burned its cap, then JSON beyond the caps if MAX is not ready.
+        /// <paramref name="onClose"/> always fires
         /// exactly once — including when neither source can serve.
         /// </summary>
         public void ShowVideoPromo(Action onClose = null, Action onCTAClick = null)
         {
             if (TryShowCrossPromoVideo(onClose, onCTAClick)) return;
             if (TryShowMediationInterstitial(onClose)) return;
+            if (TryShowCrossPromoFallback(false, onClose, onCTAClick)) return;
             onClose?.Invoke();
         }
 
-        /// <summary>Shows an interstitial: cross-promo first, AppLovin mediation as the fallback.</summary>
+        /// <summary>Shows an interstitial: cross-promo within caps, MAX, then JSON beyond caps.</summary>
         public void ShowInterstitial(Action onClose = null, Action onCTAClick = null)
         {
             if (TryShowCrossPromoInterstitial(onClose, onCTAClick)) return;
             if (TryShowMediationInterstitial(onClose)) return;
+            if (TryShowCrossPromoFallback(false, onClose, onCTAClick)) return;
             onClose?.Invoke();
         }
 
         /// <summary>
-        /// Shows a rewarded ad: cross-promo first, AppLovin mediation as the fallback.
+        /// Shows a rewarded ad: cross-promo within caps, MAX, then JSON beyond caps.
         /// <paramref name="onRewarded"/> fires when the video completes (cross-promo) or when
         /// MAX grants the reward (mediation), always before <paramref name="onClose"/>.
         /// </summary>
@@ -231,6 +235,7 @@ namespace AMZNGoDSDK.Runtime
         {
             if (TryShowCrossPromoRewarded(onClose, onCTAClick, onRewarded)) return;
             if (TryShowMediationRewarded(onClose, onRewarded)) return;
+            if (TryShowCrossPromoFallback(true, onClose, onCTAClick, onRewarded)) return;
             onClose?.Invoke();
         }
 
@@ -275,10 +280,21 @@ namespace AMZNGoDSDK.Runtime
             _crossPromoModule.ShowRewarded(onClose, onCTAClick, onRewarded);
             return true;
         }
+
+        private bool TryShowCrossPromoFallback(bool rewarded, Action onClose, Action onCTAClick, Action onRewarded = null)
+        {
+#if AMZN_APPLOVIN_ENABLED
+            if (_appLovinModule != null && _appLovinModule.IsShowingAd)
+                return false;
+#endif
+            return _crossPromoModule != null
+                && _crossPromoModule.TryShowMediationFallback(rewarded, onClose, onCTAClick, onRewarded);
+        }
 #else
         private bool TryShowCrossPromoVideo(Action onClose, Action onCTAClick) => false;
         private bool TryShowCrossPromoInterstitial(Action onClose, Action onCTAClick) => false;
         private bool TryShowCrossPromoRewarded(Action onClose, Action onCTAClick, Action onRewarded) => false;
+        private bool TryShowCrossPromoFallback(bool rewarded, Action onClose, Action onCTAClick, Action onRewarded = null) => false;
 #endif
 
 #if AMZN_APPLOVIN_ENABLED
@@ -286,9 +302,8 @@ namespace AMZNGoDSDK.Runtime
         public bool IsMediationEnabled => _appLovinModule != null && _appLovinModule.Enabled;
 
         /// <summary>
-        /// Отдаёт показ в медиацию. false — готового ad'а нет; тогда запрос закрывается без
-        /// рекламы, а не ждёт загрузки: держать игрока перед чёрным экраном хуже, чем
-        /// пропустить один показ. Модуль догрузит ad к следующему запросу сам.
+        /// Отдаёт показ в медиацию. false — готового ad'а нет; тогда роутер пробует JSON
+        /// сверх cap. MAX продолжает загрузку для следующего запроса.
         /// </summary>
         private bool TryShowMediationInterstitial(Action onClose)
         {
