@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-22
+
+### Fixed
+
+- Synchronize the AppLovin SDK key from SDK Settings to MAX settings when
+  saving, after Editor reload and before Android or iOS builds. This prevents
+  Quality Service from failing Android builds with an empty SDK key when the
+  key is already configured in SDK Settings. Preserve the MAX key when the
+  SDK Settings key is empty; keep MAX optional.
+
+### Changed
+
+- Enable Firebase Remote Config by default for new SDK settings so the built-in
+  `adjust_enable` startup flag works without adding constants through the
+  Firebase module UI. Preserve explicitly saved Remote Config preferences.
+- Replace the manual Adjust flag constants button with built-in flag guidance
+  and document the required Firebase Console string value and startup behavior.
+
 ## [1.0.6] - 2026-09-22
 
 ### Fixed
