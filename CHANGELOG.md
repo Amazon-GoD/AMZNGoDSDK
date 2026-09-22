@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-22
+
+### Fixed
+
+- Automatically replace previously saved Cross-Promo Config URLs with
+  `https://amzngod.space/master.json` once on SDK upgrade, including in already
+  open SDK Settings windows. Persist the migration without requiring Save
+  Settings; keep subsequent manual URL changes after migration.
+- Fall back to JSON Cross-Promo creatives beyond their display caps when the
+  normal JSON pool is exhausted and AppLovin MAX is not ready to accept the
+  requested interstitial or rewarded ad. Preserve counters, creative rotation,
+  cooldowns, filtering and existing reward callbacks; ready MAX ads retain
+  priority after the normal JSON pool is exhausted.
+- Preserve the full creative pool and preload the next JSON fallback after
+  display caps are reached. Prevent fallback from opening over an active MAX
+  ad or after an asynchronous failure of an already accepted MAX show.
+
 ## [1.0.5] - 2026-09-21
 
 ### Added

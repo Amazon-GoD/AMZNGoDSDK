@@ -33,6 +33,8 @@ namespace AMZNGoDSDK.Runtime
 
         private bool _sdkInitialized;
         private bool _callbacksSubscribed;
+        private bool _isInterstitialShowing;
+        private bool _isRewardedShowing;
 
         private int _interstitialRetryAttempt;
         private int _rewardedRetryAttempt;
@@ -49,10 +51,13 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>SDK поднялся и ad unit'ы можно грузить.</summary>
         public bool IsInitialized => _sdkInitialized;
 
+        /// <summary>Есть активный показ MAX, поверх которого нельзя открывать JSON-рекламу.</summary>
+        public bool IsShowingAd => _isInterstitialShowing || _isRewardedShowing;
+
         /// <summary>
         /// Interstitial загружен и готов к мгновенному показу. Роутер обязан проверять
         /// именно это перед тем, как отдавать показ в медиацию: незагруженный ad unit
-        /// означает «фила нет», и запрос должен закрыться без рекламы, а не подвиснуть.
+        /// означает «фила MAX нет», и роутер может сразу перейти к JSON-фолбэку.
         /// </summary>
         public bool IsInterstitialReady =>
             _sdkInitialized
@@ -109,6 +114,8 @@ namespace AMZNGoDSDK.Runtime
             UnsubscribeCallbacks();
             StopRetryCoroutines();
             _sdkInitialized = false;
+            _isInterstitialShowing = false;
+            _isRewardedShowing = false;
         }
 
         private void OnDestroy()
@@ -151,6 +158,7 @@ namespace AMZNGoDSDK.Runtime
             // и пара «запрос → ошибка» сойдётся. Отчёт после показа такую ошибку бы потерял.
             AppLovinAnalytics.ReportInterRequested(InterstitialPlacement);
 
+            _isInterstitialShowing = true;
             MaxSdk.ShowInterstitial(_interstitialAdUnitId, InterstitialPlacement);
             return true;
         }
@@ -178,6 +186,7 @@ namespace AMZNGoDSDK.Runtime
 
             AppLovinAnalytics.ReportRewardRequested(RewardedPlacement);
 
+            _isRewardedShowing = true;
             MaxSdk.ShowRewardedAd(_rewardedAdUnitId, RewardedPlacement);
             return true;
         }
@@ -286,6 +295,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnInterstitialDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
         {
+            _isInterstitialShowing = false;
             Debug.LogWarning($"[AppLovinModule] Interstitial display failed: {errorInfo.Code} {errorInfo.Message}");
             AppLovinAnalytics.ReportDisplayFailed(InterstitialPlacement, errorInfo, adInfo);
             InvokeOnce(ref _interstitialOnClose);
@@ -294,6 +304,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnInterstitialHidden(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
+            _isInterstitialShowing = false;
             Debug.Log("[AppLovinModule] Interstitial hidden");
             AppLovinAnalytics.ReportHidden(InterstitialPlacement, adInfo);
             InvokeOnce(ref _interstitialOnClose);
@@ -330,6 +341,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnRewardedDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
         {
+            _isRewardedShowing = false;
             Debug.LogWarning($"[AppLovinModule] Rewarded display failed: {errorInfo.Code} {errorInfo.Message}");
             AppLovinAnalytics.ReportDisplayFailed(RewardedPlacement, errorInfo, adInfo);
             _rewardedOnEarned = null;   // награды не было — колбэк награды не должен пережить показ
@@ -346,6 +358,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnRewardedHidden(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
+            _isRewardedShowing = false;
             Debug.Log($"[AppLovinModule] Rewarded hidden (earned={_rewardEarned})");
             AppLovinAnalytics.ReportHidden(RewardedPlacement, adInfo);
 

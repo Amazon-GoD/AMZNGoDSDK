@@ -48,7 +48,7 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>
         /// Показ запрошен, но готового ad'а не было. Отдельное событие: в инвариант
         /// «запросов = показов + ошибок показа» такой отказ не входит — показа не начиналось,
-        /// и роутер просто закрывает запрос без рекламы.
+        /// и роутер может продолжить запрос через JSON-фолбэк.
         /// </summary>
         private const string NoFillEvent = "mediation_no_fill";
 
@@ -75,7 +75,7 @@ namespace AMZNGoDSDK.Runtime
         public static void ReportRewardRequested(string placement) =>
             ReportSimple(RewardRequestedEvent, placement);
 
-        /// <summary>Запрос закрыт без рекламы: готового ad'а не было.</summary>
+        /// <summary>MAX не принял показ: готового ad'а не было.</summary>
         public static void ReportNoFill(string placement, bool sdkInitialized)
         {
             var args = new Dictionary<string, string>

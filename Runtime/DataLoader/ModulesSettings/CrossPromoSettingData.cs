@@ -12,6 +12,11 @@ namespace AMZNGoDSDK.Runtime
     public class CrossPromoSettingData : ModuleSettingData
     {
         public const string DefaultConfigUrl = "https://amzngod.space/master.json";
+        public const int CurrentConfigUrlMigrationVersion = 1;
+
+        // Без initializer: старые JSON без этого поля должны проходить миграцию.
+        [UnityEngine.HideInInspector]
+        public int ConfigUrlMigrationVersion;
 
         [UnityEngine.Tooltip("URL of a master JSON (Packages: PackageName → ConfigUrl) or a direct creative JSON. Resolved at game startup.")]
         public string ConfigUrl = DefaultConfigUrl;

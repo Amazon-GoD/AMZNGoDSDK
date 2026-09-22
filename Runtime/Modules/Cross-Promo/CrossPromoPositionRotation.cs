@@ -55,14 +55,14 @@ namespace AMZNGoDSDK.Runtime
         }
 
         internal Selection Peek(List<PromoConfiguration> videos, string lastShownTitle,
-            Func<List<PromoConfiguration>, PromoConfiguration> selectWeighted)
+            Func<List<PromoConfiguration>, PromoConfiguration> selectWeighted, bool ignoreShowLimit)
         {
             if (!IsOrdered || videos == null)
             {
                 _pending = null;
                 return null;
             }
-            var available = videos.Where(v => v != null && !v.IsShowLimitReached()
+            var available = videos.Where(v => v != null && (ignoreShowLimit || !v.IsShowLimitReached())
                 && (!string.IsNullOrWhiteSpace(v.VideoUrl) || !string.IsNullOrWhiteSpace(v.FileName))).ToList();
             var pinned = available.Where(v => _ownerPositions.ContainsKey(v.RotationId)).ToList();
             var owner = pinned.Find(v => _ownerPositions[v.RotationId] == _nextSlot);

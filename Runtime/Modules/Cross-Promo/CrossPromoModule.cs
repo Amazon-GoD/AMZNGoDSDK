@@ -593,6 +593,22 @@ namespace AMZNGoDSDK.Runtime
             _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick, InterstitialPlacement, onRewarded: null));
         }
 
+        /// <summary>
+        /// Вызывается роутером только после отказа MAX принять показ. Игнорирует cap для
+        /// этого запроса; остальные правила, callbacks и аналитика идут обычным путём.
+        /// При false запрос остаётся у вызывающего кода, callbacks не вызываются.
+        /// </summary>
+        public bool TryShowMediationFallback(bool rewarded, Action onClose, Action onCTAClick, Action onRewarded)
+        {
+            if (!Enabled || !_configFetchReturnedVideos
+                || !(_crossPromoConfig?.HasAvailableVideos(ignoreShowLimit: true) ?? false))
+                return false;
+
+            _showCoroutine = StartCoroutine(ShowVideoInternalCoroutine(onClose, onCTAClick,
+                rewarded ? RewardedPlacement : InterstitialPlacement, onRewarded, ignoreShowLimit: true));
+            return true;
+        }
+
         /// <summary>Shows a specific video promo by <see cref="PromoConfiguration"/>.
         /// Routed through the same preload-aware path as the parameterless overload, so if the
         /// preloaded player happens to hold this config's URL, playback starts instantly.
@@ -614,7 +630,7 @@ namespace AMZNGoDSDK.Runtime
             (_videoOverlay != null && _videoOverlay.IsVisible)
             || (_exoOverlay != null && _exoOverlay.IsVisible);
 
-        private IEnumerator ShowVideoInternalCoroutine(Action onClose, Action onCTAClick, string placement, Action onRewarded, PromoConfiguration forcedConfig = null)
+        private IEnumerator ShowVideoInternalCoroutine(Action onClose, Action onCTAClick, string placement, Action onRewarded, PromoConfiguration forcedConfig = null, bool ignoreShowLimit = false)
         {
             if (!Enabled)
             {
@@ -639,8 +655,8 @@ namespace AMZNGoDSDK.Runtime
             if (placement == InterstitialPlacement)   CrossPromoAnalytics.ReportInterRequested(placement);
             else if (placement == RewardedPlacement)  CrossPromoAnalytics.ReportRewardRequested(placement);
 
-            _crossPromoConfig?.CheckVideosShowLimit();
-            _crossPromoConfig?.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
+            if (!ignoreShowLimit) _crossPromoConfig?.CheckVideosShowLimit();
+            _crossPromoConfig?.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs, ignoreShowLimit);
 
             if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
             {
@@ -666,7 +682,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 var selection = rotation.Peek(_crossPromoConfig.Videos,
                     _lastShownConfig?.Title ?? _lastShownTitleFromPrefs,
-                    pool => SelectWeightedRandom(pool, _lastShownConfig));
+                    pool => SelectWeightedRandom(pool, _lastShownConfig), ignoreShowLimit);
                 config = selection?.Video;
                 // Захватываем именно выбранный токен: прелоад и неудавшийся показ не двигают курсор.
                 onShown = () => rotation.Commit(selection);
@@ -870,7 +886,7 @@ namespace AMZNGoDSDK.Runtime
         {
             if (!Enabled) return;
 
-            if (_crossPromoConfig?.Videos == null || _crossPromoConfig.Videos.Count == 0)
+            if (_crossPromoConfig == null)
                 return;
 
             // Дедуп только для Exo: нативная докачка уходит в фон и о своём завершении не
@@ -880,9 +896,12 @@ namespace AMZNGoDSDK.Runtime
             if (_videoBackend == VideoPlayerBackend.ExoPlayer && _preloadedConfig != null)
                 return;
 
-            _crossPromoConfig.CheckVideosShowLimit();
-            _crossPromoConfig.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs);
-            if (_crossPromoConfig.Videos.Count == 0)
+            // После исчерпания обычного пула заранее готовим JSON-фолбэк. HasFill по-прежнему
+            // учитывает cap, поэтому готовый MAX сохраняет приоритет на следующем запросе.
+            bool ignoreShowLimit = !_crossPromoConfig.HasAvailableVideos();
+            if (!ignoreShowLimit) _crossPromoConfig.CheckVideosShowLimit();
+            _crossPromoConfig.ApplyCooldownFilter(_lastShownConfig?.Title ?? _lastShownTitleFromPrefs, ignoreShowLimit);
+            if (_crossPromoConfig.Videos == null || _crossPromoConfig.Videos.Count == 0)
                 return;
 
             Debug.Log($"[CrossPromoModule] PreloadNextVideo: _lastShownConfig='{_lastShownConfig?.Title}', videos.Count={_crossPromoConfig.Videos.Count}");
@@ -890,7 +909,7 @@ namespace AMZNGoDSDK.Runtime
             var next = rotation.IsOrdered
                 ? rotation.Peek(_crossPromoConfig.Videos,
                     _lastShownConfig?.Title ?? _lastShownTitleFromPrefs,
-                    pool => SelectWeightedRandom(pool, _lastShownConfig))?.Video
+                    pool => SelectWeightedRandom(pool, _lastShownConfig), ignoreShowLimit)?.Video
                 : SelectWeightedRandom(_crossPromoConfig.Videos, _lastShownConfig);
             if (next == null || (string.IsNullOrWhiteSpace(next.VideoUrl) && string.IsNullOrWhiteSpace(next.FileName)))
                 return;
