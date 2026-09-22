@@ -257,7 +257,8 @@ namespace AMZNGoDSDK.Editor
                 {
                     _currentSettings.AppLovin.SdkKey = EditorGUILayout
                         .TextField(new GUIContent("SDK Key",
-                            "Необязательно: если пусто, берётся ключ из AppLovin Integration Manager."),
+                            "Непустой ключ автоматически переносится в MAX Integration Manager при сохранении и перед сборкой. " +
+                            "Если пусто, используется ключ из Integration Manager."),
                             _currentSettings.AppLovin.SdkKey);
 
                     _currentSettings.AppLovin.InterstitialAdUnitId = EditorGUILayout
@@ -358,7 +359,9 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.Firebase.EnableCrashlytics = EditorGUILayout
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
                     _currentSettings.Firebase.EnableRemoteConfig = EditorGUILayout
-                        .Toggle("Enable Remote Config", _currentSettings.Firebase.EnableRemoteConfig);
+                        .Toggle(new GUIContent("Enable Remote Config",
+                            "Включён по умолчанию для новых установок SDK. Встроенный adjust_enable проверяется до запуска Adjust без ручного добавления A/B-теста."),
+                            _currentSettings.Firebase.EnableRemoteConfig);
                     using (new EditorGUI.DisabledScope(!_currentSettings.Firebase.EnableRemoteConfig))
                     {
                         var firebase = _currentSettings.Firebase;

@@ -15,8 +15,8 @@ namespace AMZNGoDSDK.Runtime
 
         public bool EnableAnalytics = true;
         public bool EnableCrashlytics = true;
-        // Opt-in: upgrading existing projects does not introduce network fetches.
-        public bool EnableRemoteConfig;
+        // New installations resolve the built-in Adjust flag without extra setup.
+        public bool EnableRemoteConfig = true;
         public int RemoteConfigFetchTimeoutSeconds = DefaultFetchTimeoutSeconds;
         public int RemoteConfigMinimumFetchIntervalSeconds = DefaultMinimumFetchIntervalSeconds;
         public string ABTestConstantsPath = DefaultABTestConstantsPath;

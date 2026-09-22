@@ -396,6 +396,8 @@ namespace AMZNGoDSDK.Editor
             // в immutable-пакете перемещение папок невозможно.
             ModuleDefineManager.UpdateDefineSymbols(settings);
 
+            AppLovinSettingsSynchronizer.Synchronize();
+
             return true;
         }
 

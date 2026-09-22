@@ -1,37 +1,27 @@
 # Dev Crew report
 
 **Дата:** 2026-09-22
-**Задача:** JSON-креатив вместо неготового AppLovin; пользователь подтвердил показ сверх cap.
+**Задача:** Ключ AppLovin для сборки и готовое управление Adjust через Firebase при установке SDK.
 
-## Поведение
+## Изменения
 
-ShowVideoPromo, ShowInterstitial и ShowRewarded сначала выбирают Cross-Promo в пределах cap, затем соответствующий формат MAX. Если MAX не принимает запрос из-за неготовности, запускается JSON-креатив сверх cap. Счётчики сохраняются; готовый MAX получает приоритет на следующем запросе после исчерпания обычного JSON-пула.
+AppLovin Quality Service читает ключ из AppLovinSettings Integration Manager, тогда как SDK Settings ранее сохранял его только в runtime JSON. Добавлен AppLovinSettingsSynchronizer: непустой ключ переносится через публичный API MAX при сохранении SDK Settings, после загрузки Editor и перед Android/iOS-сборкой. Reflection сохраняет необязательность MAX; пустое поле SDK не удаляет ключ Integration Manager. Quality Service не отключается, ключ не выводится в логи.
 
-Полный пул сохраняется до удаления исчерпанных креативов. Fallback использует прежние позиции, веса, кулдауны, фильтры собственной/установленных игр и общую очередь. Предзагрузка готовит резервный JSON-креатив. Награда, CTA и завершение проходят через существующий путь показа.
+Remote Config включён по умолчанию в новых editor/runtime настройках Firebase. Мастер первой установки наследует этот default. Встроенный adjust_enable уже регистрируется до старта Adjust автоматически, поэтому кнопка Add Adjust flag constants заменена описанием. Существующие A/B-тесты и их генератор не менялись; явно сохранённое EnableRemoteConfig=false не мигрируется и сохраняется.
 
-Активный показ MAX блокирует JSON-fallback повторного запроса. Состояние показа снимается до пользовательских callbacks при закрытии/ошибке и при Cleanup. Асинхронный display_failed дополнительную рекламу не запускает.
+Для отключения Adjust на следующем полном запуске приложения по-прежнему требуется опубликованный строковый параметр adjust_enable=false в Firebase Console и настроенные Firebase/Adjust. При отсутствии удалённого значения действует прежний разрешающий fallback.
 
-## Файлы
-
-Все пути относительно Assets/AMZNGoDSDK:
-
-- Runtime/Core/AmznGoDSDKCore.cs: маршрутизация и проверка активного MAX.
-- Runtime/Modules/AppLovin/AppLovinModule.cs: состояние активного показа; AppLovinAnalytics.cs: актуализированные комментарии.
-- Runtime/Modules/Cross-Promo/CrossPromoModule.cs: fallback и предзагрузка.
-- Runtime/Modules/Cross-Promo/CrossPromoPositionRotation.cs: явный обход cap при сохранении очереди.
-- Runtime/Modules/Cross-Promo/Pyro Entertainment/Video Cross Promo Plugin/Scripts/CrossPromoConfigurationManager.cs: сохранение полного пула и фильтрация для обычного/fallback выбора.
-- Runtime/Modules/Cross-Promo/README.md: правила нового поведения.
+В текущем проекте отдельно синхронизирован существующий Assets/MaxSdk/Resources/AppLovinSettings.asset и включён Firebase.EnableRemoteConfig в Assets/Resources/amzn_god_sdk.json. Ключи проверены на равенство без вывода значений; QualityServiceEnabled=true и Adjust.Enabled=false сохранены. Эти настройки проекта находятся вне git-репозитория SDK.
 
 ## Проверки
 
-Ревью: обнаруженный показ JSON поверх активного MAX исправлен; повторное ревью одобрено, замечаний нет.
+- Ревью обеих частей: approved, issues=[].
+- Компиляция AMZNGoD.Runtime и AMZNGoDSDK.Editor штатным Roslyn Unity 2022.3.60f1 успешна. Два прежних CS0168; новых ошибок нет.
+- Одноразовые проверки реальных новых исходников с заглушками Unity: 16/16 с MAX, 6/6 без MAX. Проверены defaults, явное отключение RC, пустой список ABTests, приоритет ключа, пустой ключ, идемпотентность, отключённые модули, ожидание compilation/export, Android/iOS prebuild, отсутствие ключа в логах и отсутствие MAX.
+- git diff --check с cr-at-eol пройден. Проверочные артефакты: Temp~/AppLovinKeyAdjustDefaults (игнорируются git и Unity).
 
-Компиляция отдельных AppLovin/CrossPromo/Core штатным Roslyn Unity 2022.3.60f1 успешна для четырёх комбинаций: оба модуля, только Cross-Promo, только AppLovin, ни один. Использована существующая MAX DLL из кэша Android-сборки. Предупреждения CS0618 (SetSdkKey) и CS0414 (_firstWarmupTriggered) совпадают с исходной версией; USG0001 — информационное сообщение изолированного запуска генератора.
-
-Одноразовые проверки реальных исходников вне Editor с заглушками Unity/MAX: выбор креативов — 19/19; активный показ, закрытие, ошибки, порядок награды/callbacks и Cleanup — 22/22. Проверены восстановление capped-пула, исходные веса, кулдауны, Copy, self/installed-фильтры, общий курсор позиций и выключенный MAX. Артефакты находятся в игнорируемой Temp~/AppLovinJsonFallback.
-
-git diff --check с cr-at-eol пройден. Tester и Unity Test Framework отключены и не запускались. Editor этого проекта не был подключён; доступный MCP относится к другому проекту. Воспроизведение рекламы на устройстве и реальная сеть MAX не проверялись.
+Unity Test Framework и Tester не запускались по AGENTS.md. Полный Android-билд не перезапускался: через MCP подключён другой Unity-проект. Доступность Quality Service по сети и опубликованный параметр Firebase Console в этой проверке не проверялись.
 
 ## Git
 
-Изменения подготовлены в tmp/applovin-json-fallback, созданной от safety. После завершения выполняется локальный commit и обычный merge в safety; push не выполняется.
+Подготовлено в tmp/applovin-build-key-sync от safety для локального commit и merge в safety. Пользовательское изменение Runtime/Modules/AppLovin/AMZNGoDSDK.Module.AppLovin.asmdef не входит в commit. Push не выполняется.
