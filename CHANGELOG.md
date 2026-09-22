@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Automatically replace previously saved Cross-Promo Config URLs with
+  `https://amzngod.space/master.json` once on SDK upgrade, including in already
+  open SDK Settings windows. Persist the migration without requiring Save
+  Settings; keep subsequent manual URL changes after migration.
+
 ## [1.0.5] - 2026-09-21
 
 ### Added

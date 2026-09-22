@@ -16,7 +16,31 @@ namespace AMZNGoDSDK.Editor
         [InitializeOnLoadMethod]
         private static void Initialize()
         {
-            
+            ScheduleConfigUrlMigration();
+        }
+
+        internal static void ScheduleConfigUrlMigration()
+        {
+            EditorApplication.delayCall -= MigrateConfigUrlOnLoad;
+            EditorApplication.delayCall += MigrateConfigUrlOnLoad;
+        }
+
+        private static void MigrateConfigUrlOnLoad()
+        {
+            if (SessionState.GetBool(SdkPackageExporter.ExportInProgressKey, false))
+            {
+                ScheduleConfigUrlMigration();
+                return;
+            }
+
+            try
+            {
+                LoadRuntimeSettings();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AMZNGoDSDK] Не удалось обновить Cross-Promo Config URL: {e.Message}");
+            }
         }
 
         private static bool ConfigFileIsAlreadyExist()
@@ -38,7 +62,11 @@ namespace AMZNGoDSDK.Editor
             var runtimeSettings = LoadRuntimeSettings();
 
             if (runtimeSettings == null)
-                return new SdkSettingsData();
+            {
+                var defaults = new SdkSettingsData();
+                MigrateConfigUrl(defaults);
+                return defaults;
+            }
 
             // Load runtime settings and convert to editor settings
             return ConvertToEditorSettings(runtimeSettings);
@@ -48,7 +76,7 @@ namespace AMZNGoDSDK.Editor
         internal static string ConfigAssetPath => Path.Combine(ResourcesPath, ConfigFileName).Replace('\\', '/');
 
         /// <summary>
-        /// Читает конфиг «как есть», без конвертации в editor-представление.
+        /// Читает runtime-конфиг и сохраняет обязательные миграции перед использованием.
         /// Возвращает null, если конфига ещё нет — вызывающий сам решает, ошибка это или нет.
         ///
         /// Читаем с диска, а не через Resources.Load: TextAsset кэшируется, и сразу после
@@ -62,7 +90,33 @@ namespace AMZNGoDSDK.Editor
             if (!File.Exists(fullPath))
                 return null;
 
-            return JsonUtility.FromJson<Runtime.SdkSettingsData>(File.ReadAllText(fullPath));
+            var settings = JsonUtility.FromJson<Runtime.SdkSettingsData>(File.ReadAllText(fullPath));
+            if (settings == null)
+                return null;
+
+            settings.CrossPromo ??= new Runtime.CrossPromoSettingData();
+            if (settings.CrossPromo.ConfigUrlMigrationVersion < Runtime.CrossPromoSettingData.CurrentConfigUrlMigrationVersion)
+            {
+                settings.CrossPromo.ConfigUrl = Runtime.CrossPromoSettingData.DefaultConfigUrl;
+                settings.CrossPromo.ConfigUrlMigrationVersion = Runtime.CrossPromoSettingData.CurrentConfigUrlMigrationVersion;
+                // Без SaveSettings: миграция не зависит от модулей, нативных SDK и валидации IAP.
+                WriteRuntimeSettings(settings);
+            }
+
+            return settings;
+        }
+
+        internal static void MigrateConfigUrl(SdkSettingsData settings)
+        {
+            if (settings == null)
+                return;
+
+            settings.CrossPromo ??= new CrossPromoSettingData();
+            if (settings.CrossPromo.ConfigUrlMigrationVersion >= Runtime.CrossPromoSettingData.CurrentConfigUrlMigrationVersion)
+                return;
+
+            settings.CrossPromo.ConfigUrl = Runtime.CrossPromoSettingData.DefaultConfigUrl;
+            settings.CrossPromo.ConfigUrlMigrationVersion = Runtime.CrossPromoSettingData.CurrentConfigUrlMigrationVersion;
         }
 
         /// <summary>
@@ -130,6 +184,7 @@ namespace AMZNGoDSDK.Editor
             return new CrossPromoSettingData
             {
                 Enabled = runtimeSettings.Enabled,
+                ConfigUrlMigrationVersion = runtimeSettings.ConfigUrlMigrationVersion,
                 ConfigUrl = string.IsNullOrWhiteSpace(runtimeSettings.ConfigUrl)
                     ? Runtime.CrossPromoSettingData.DefaultConfigUrl : runtimeSettings.ConfigUrl,
                 // DefaultPromotedAppId убран из настроек; VideoBackend всегда ExoPlayer.
@@ -289,6 +344,8 @@ namespace AMZNGoDSDK.Editor
         public static bool SaveSettings(SdkSettingsData settings)
         {
             if (settings == null) return false;
+            // Старое сериализованное окно/визард не должно вернуть прежний URL после upgrade.
+            MigrateConfigUrl(settings);
             if (!ValidateABTests(settings.Firebase, out var abError))
             {
                 Debug.LogError($"[SdkSettingsManager] Save rejected: {abError}");
@@ -404,6 +461,7 @@ namespace AMZNGoDSDK.Editor
             return new Runtime.CrossPromoSettingData
             {
                 Enabled = editorSettings.Enabled,
+                ConfigUrlMigrationVersion = editorSettings.ConfigUrlMigrationVersion,
                 ConfigUrl = editorSettings.ConfigUrl,
                 // DefaultPromotedAppId всегда дефолтный (пустой) — из настроек убран.
                 DefaultPromotedAppId = string.Empty,

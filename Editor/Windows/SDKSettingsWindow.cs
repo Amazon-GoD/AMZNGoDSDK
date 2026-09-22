@@ -36,6 +36,7 @@ namespace AMZNGoDSDK.Editor
         private void OnEnable()
         {
             _currentSettings ??= SdkSettingsManager.LoadSettings();
+            SdkSettingsManager.MigrateConfigUrl(_currentSettings);
             LoadDependenciesAsync();
         }
 

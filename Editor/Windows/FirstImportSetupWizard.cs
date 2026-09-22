@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -228,6 +229,11 @@ namespace AMZNGoDSDK.Editor
             // mistake the export for a real import.
             if (SessionState.GetBool(SdkPackageExporter.ExportInProgressKey, false))
                 return;
+
+            // Восстановленный старый JSON тоже мигрируем, даже без перекомпиляции SDK.
+            if (importedAssets.Contains(SdkSettingsManager.ConfigAssetPath)
+                || movedAssets.Contains(SdkSettingsManager.ConfigAssetPath))
+                SdkSettingsManager.ScheduleConfigUrlMigration();
 
             foreach (var asset in importedAssets)
             {
