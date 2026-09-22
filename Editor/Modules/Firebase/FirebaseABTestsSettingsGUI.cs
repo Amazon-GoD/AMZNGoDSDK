@@ -16,23 +16,13 @@ namespace AMZNGoDSDK.Editor
                 "В коде задайте обработчики через RegisterABTestFeature и вызовите RunABTest. " +
                 "Для чтения группы без обработчиков используйте TryGetABTestGroup.", MessageType.Info);
             EditorGUILayout.HelpBox(
-                "Встроенный флаг Adjust: adjust_enable, строковые группы true / false. " +
+                $"Встроенный флаг Adjust: {Runtime.FirebaseSettingData.AdjustEnableTestId}, строковые группы " +
+                $"{Runtime.FirebaseSettingData.AdjustEnabledGroup} / {Runtime.FirebaseSettingData.AdjustDisabledGroup}. " +
                 "При включённых Adjust и Remote Config SDK проверяет его до запуска Adjust. " +
-                "Обработчики уже подключены; добавление в список нужно только для генерации констант.", MessageType.Info);
-            if (!settings.ABTests.Exists(t => t?.TestId == Runtime.FirebaseSettingData.AdjustEnableTestId)
-                && GUILayout.Button("Add Adjust flag constants"))
-            {
-                string name = "AdjustEnable";
-                int suffix = 1;
-                while (settings.ABTests.Exists(t => t?.TestName == name)) name = "AdjustEnable" + suffix++;
-                settings.ABTests.Add(new Runtime.ABTestEntry
-                {
-                    TestName = name,
-                    TestId = Runtime.FirebaseSettingData.AdjustEnableTestId,
-                    DefaultGroup = Runtime.FirebaseSettingData.AdjustEnabledGroup,
-                    GroupNames = new List<string> { Runtime.FirebaseSettingData.AdjustEnabledGroup, Runtime.FirebaseSettingData.AdjustDisabledGroup }
-                });
-            }
+                "Регистрация и обработчики встроены: добавлять A/B-тест в этот список не требуется. " +
+                "Опубликуйте значение в Firebase Console и полностью перезапустите приложение.\n" +
+                "Константы в AMZNGoDSDK.Runtime.FirebaseSettingData: AdjustEnableTestId, AdjustEnabledGroup, AdjustDisabledGroup.",
+                MessageType.Info);
             EditorGUILayout.LabelField("Generated Constants File", EditorStyles.miniBoldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
