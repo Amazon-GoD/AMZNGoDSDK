@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.
+  Pass them to MAX shows, analytics and ad revenue reports, while keeping
+  ad formats independent of placement names. Empty or missing values retain
+  the existing `interstitial` and `rewarded` defaults.
+
 ## [1.0.7] - 2026-09-22
 
 ### Fixed

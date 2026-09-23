@@ -18,17 +18,14 @@ namespace AMZNGoDSDK.Runtime
     /// </summary>
     public class AppLovinModule : ModuleBase
     {
-        // Плейсменты MAX — попадают в отчётность AppLovin, зеркалят названия воронок
-        // кросс-промо (CrossPromoModule.InterstitialPlacement / RewardedPlacement).
-        private const string InterstitialPlacement = "interstitial";
-        private const string RewardedPlacement = "rewarded";
-
         // Бэкофф ретраев из документации MAX: 2^n секунд с потолком 2^6 = 64с.
         private const int MaxRetryExponent = 6;
 
         private string _sdkKey;
         private string _interstitialAdUnitId;
         private string _rewardedAdUnitId;
+        private string _interstitialAdPlacement = AppLovinSettingData.DefaultInterstitialAdPlacement;
+        private string _rewardedAdPlacement = AppLovinSettingData.DefaultRewardedAdPlacement;
         private bool _verboseLogging;
 
         private bool _sdkInitialized;
@@ -72,10 +69,21 @@ namespace AMZNGoDSDK.Runtime
 
         public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId, bool verboseLogging)
         {
+            Construct(enable, sdkKey, interstitialAdUnitId, rewardedAdUnitId, verboseLogging,
+                AppLovinSettingData.DefaultInterstitialAdPlacement, AppLovinSettingData.DefaultRewardedAdPlacement);
+        }
+
+        public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId,
+            bool verboseLogging, string interstitialAdPlacement, string rewardedAdPlacement)
+        {
             Enabled = enable;
             _sdkKey = sdkKey;
             _interstitialAdUnitId = interstitialAdUnitId;
             _rewardedAdUnitId = rewardedAdUnitId;
+            _interstitialAdPlacement = AppLovinSettingData.NormalizeAdPlacement(
+                interstitialAdPlacement, AppLovinSettingData.DefaultInterstitialAdPlacement);
+            _rewardedAdPlacement = AppLovinSettingData.NormalizeAdPlacement(
+                rewardedAdPlacement, AppLovinSettingData.DefaultRewardedAdPlacement);
             _verboseLogging = verboseLogging;
 
             Debug.Log($"[AppLovinModule] Construct() called. Enabled={enable}, " +
@@ -146,7 +154,7 @@ namespace AMZNGoDSDK.Runtime
                 // Отказ репортим только при включённом модуле: у выключенного роутер сюда даже
                 // не заходит, и событие означало бы несуществующий запрос к медиации.
                 if (Enabled)
-                    AppLovinAnalytics.ReportNoFill(InterstitialPlacement, _sdkInitialized);
+                    AppLovinAnalytics.ReportNoFill(_interstitialAdPlacement, _sdkInitialized);
 
                 return false;
             }
@@ -156,10 +164,10 @@ namespace AMZNGoDSDK.Runtime
 
             // Запрос репортим ДО показа: если MAX не сумеет отрисовать, придёт display_failed,
             // и пара «запрос → ошибка» сойдётся. Отчёт после показа такую ошибку бы потерял.
-            AppLovinAnalytics.ReportInterRequested(InterstitialPlacement);
+            AppLovinAnalytics.ReportInterRequested(_interstitialAdPlacement);
 
             _isInterstitialShowing = true;
-            MaxSdk.ShowInterstitial(_interstitialAdUnitId, InterstitialPlacement);
+            MaxSdk.ShowInterstitial(_interstitialAdUnitId, _interstitialAdPlacement);
             return true;
         }
 
@@ -174,7 +182,7 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"[AppLovinModule] ShowRewarded: нет готового ad'а (Enabled={Enabled}, initialized={_sdkInitialized}).");
 
                 if (Enabled)
-                    AppLovinAnalytics.ReportNoFill(RewardedPlacement, _sdkInitialized);
+                    AppLovinAnalytics.ReportNoFill(_rewardedAdPlacement, _sdkInitialized);
 
                 return false;
             }
@@ -184,10 +192,10 @@ namespace AMZNGoDSDK.Runtime
             _rewardEarned = false;
             Debug.Log($"[AppLovinModule] ShowRewarded('{_rewardedAdUnitId}')");
 
-            AppLovinAnalytics.ReportRewardRequested(RewardedPlacement);
+            AppLovinAnalytics.ReportRewardRequested(_rewardedAdPlacement);
 
             _isRewardedShowing = true;
-            MaxSdk.ShowRewardedAd(_rewardedAdUnitId, RewardedPlacement);
+            MaxSdk.ShowRewardedAd(_rewardedAdUnitId, _rewardedAdPlacement);
             return true;
         }
 
@@ -276,12 +284,12 @@ namespace AMZNGoDSDK.Runtime
         private void OnInterstitialDisplayed(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
             Debug.Log($"[AppLovinModule] Interstitial displayed: network='{adInfo.NetworkName}'");
-            AppLovinAnalytics.ReportDisplayed(InterstitialPlacement, adInfo);
+            AppLovinAnalytics.ReportDisplayed(_interstitialAdPlacement, adInfo, isRewarded: false);
         }
 
         private void OnInterstitialClicked(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportClicked(InterstitialPlacement, adInfo);
+            AppLovinAnalytics.ReportClicked(_interstitialAdPlacement, adInfo, isRewarded: false);
         }
 
         /// <summary>
@@ -290,14 +298,14 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         private void OnInterstitialRevenuePaid(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportAdRevenue(InterstitialPlacement, adInfo);
+            AppLovinAnalytics.ReportAdRevenue(_interstitialAdPlacement, adInfo, isRewarded: false);
         }
 
         private void OnInterstitialDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
         {
             _isInterstitialShowing = false;
             Debug.LogWarning($"[AppLovinModule] Interstitial display failed: {errorInfo.Code} {errorInfo.Message}");
-            AppLovinAnalytics.ReportDisplayFailed(InterstitialPlacement, errorInfo, adInfo);
+            AppLovinAnalytics.ReportDisplayFailed(_interstitialAdPlacement, errorInfo, adInfo, isRewarded: false);
             InvokeOnce(ref _interstitialOnClose);
             LoadInterstitial();
         }
@@ -306,7 +314,7 @@ namespace AMZNGoDSDK.Runtime
         {
             _isInterstitialShowing = false;
             Debug.Log("[AppLovinModule] Interstitial hidden");
-            AppLovinAnalytics.ReportHidden(InterstitialPlacement, adInfo);
+            AppLovinAnalytics.ReportHidden(_interstitialAdPlacement, adInfo, isRewarded: false);
             InvokeOnce(ref _interstitialOnClose);
             LoadInterstitial();
         }
@@ -326,24 +334,24 @@ namespace AMZNGoDSDK.Runtime
         private void OnRewardedDisplayed(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
             Debug.Log($"[AppLovinModule] Rewarded displayed: network='{adInfo.NetworkName}'");
-            AppLovinAnalytics.ReportDisplayed(RewardedPlacement, adInfo);
+            AppLovinAnalytics.ReportDisplayed(_rewardedAdPlacement, adInfo, isRewarded: true);
         }
 
         private void OnRewardedClicked(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportClicked(RewardedPlacement, adInfo);
+            AppLovinAnalytics.ReportClicked(_rewardedAdPlacement, adInfo, isRewarded: true);
         }
 
         private void OnRewardedRevenuePaid(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportAdRevenue(RewardedPlacement, adInfo);
+            AppLovinAnalytics.ReportAdRevenue(_rewardedAdPlacement, adInfo, isRewarded: true);
         }
 
         private void OnRewardedDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
         {
             _isRewardedShowing = false;
             Debug.LogWarning($"[AppLovinModule] Rewarded display failed: {errorInfo.Code} {errorInfo.Message}");
-            AppLovinAnalytics.ReportDisplayFailed(RewardedPlacement, errorInfo, adInfo);
+            AppLovinAnalytics.ReportDisplayFailed(_rewardedAdPlacement, errorInfo, adInfo, isRewarded: true);
             _rewardedOnEarned = null;   // награды не было — колбэк награды не должен пережить показ
             InvokeOnce(ref _rewardedOnClose);
             LoadRewarded();
@@ -353,14 +361,14 @@ namespace AMZNGoDSDK.Runtime
         {
             _rewardEarned = true;
             Debug.Log($"[AppLovinModule] Reward received: {reward.Amount} {reward.Label}");
-            AppLovinAnalytics.ReportRewardEarned(reward, adInfo);
+            AppLovinAnalytics.ReportRewardEarned(_rewardedAdPlacement, reward, adInfo);
         }
 
         private void OnRewardedHidden(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
             _isRewardedShowing = false;
             Debug.Log($"[AppLovinModule] Rewarded hidden (earned={_rewardEarned})");
-            AppLovinAnalytics.ReportHidden(RewardedPlacement, adInfo);
+            AppLovinAnalytics.ReportHidden(_rewardedAdPlacement, adInfo, isRewarded: true);
 
             // Награду отдаём ДО onClose: игра обычно закрывает свой UI по onClose и начисление
             // после этого прилетело бы в уже разобранный экран.

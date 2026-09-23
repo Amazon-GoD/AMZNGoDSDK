@@ -250,6 +250,10 @@ namespace AMZNGoDSDK.Editor
                 SdkKey = runtimeSettings.SdkKey,
                 InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
+                InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    runtimeSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
+                RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    runtimeSettings.RewardedAdPlacement, Runtime.AppLovinSettingData.DefaultRewardedAdPlacement),
                 VerboseLogging = runtimeSettings.VerboseLogging
             };
         }
@@ -524,6 +528,10 @@ namespace AMZNGoDSDK.Editor
                 SdkKey = editorSettings.SdkKey,
                 InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = editorSettings.RewardedAdUnitId,
+                InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    editorSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
+                RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    editorSettings.RewardedAdPlacement, Runtime.AppLovinSettingData.DefaultRewardedAdPlacement),
                 VerboseLogging = editorSettings.VerboseLogging
             };
         }

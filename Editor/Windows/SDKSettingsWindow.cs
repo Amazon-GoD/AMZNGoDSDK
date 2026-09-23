@@ -267,6 +267,17 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.AppLovin.RewardedAdUnitId = EditorGUILayout
                         .TextField("Rewarded Ad Unit", _currentSettings.AppLovin.RewardedAdUnitId);
 
+                    GUILayout.Space(6);
+                    EditorGUILayout.LabelField("AD Placements", EditorStyles.miniBoldLabel);
+                    _currentSettings.AppLovin.InterstitialAdPlacement = EditorGUILayout
+                        .TextField("Interstitial Placement", _currentSettings.AppLovin.InterstitialAdPlacement);
+                    _currentSettings.AppLovin.RewardedAdPlacement = EditorGUILayout
+                        .TextField("Rewarded Placement", _currentSettings.AppLovin.RewardedAdPlacement);
+                    EditorGUILayout.HelpBox(
+                        "Названия мест показа передаются в MAX и аналитику. Если поле пустое, используется " +
+                        $"'{Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement}' для interstitial и " +
+                        $"'{Runtime.AppLovinSettingData.DefaultRewardedAdPlacement}' для rewarded.", MessageType.None);
+
                     _currentSettings.AppLovin.VerboseLogging = EditorGUILayout
                         .Toggle(new GUIContent("Verbose Logging",
                             "Подробный лог MAX. В релизных сборках держать выключенным."),

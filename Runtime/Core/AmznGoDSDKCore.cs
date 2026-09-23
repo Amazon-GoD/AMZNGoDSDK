@@ -151,7 +151,9 @@ namespace AMZNGoDSDK.Runtime
                 appLovinSettings.SdkKey,
                 appLovinSettings.InterstitialAdUnitId,
                 appLovinSettings.RewardedAdUnitId,
-                appLovinSettings.VerboseLogging);
+                appLovinSettings.VerboseLogging,
+                appLovinSettings.InterstitialAdPlacement,
+                appLovinSettings.RewardedAdPlacement);
 #endif
 
             #endregion

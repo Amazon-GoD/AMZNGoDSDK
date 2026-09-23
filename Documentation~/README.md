@@ -85,6 +85,17 @@ Android resolve it enables `Assets/Plugins/Android/mainTemplate.gradle` (plus
 `gradleTemplate.properties` / `settingsTemplate.gradle`) in the consumer
 project and injects the Maven dependencies of the enabled modules there.
 
+### AppLovin AD Placements
+
+In `AMZN GoD > SDK Settings > AppLovin > AD Placements`, set separate
+Interstitial and Rewarded placement names for MAX reporting. Save Settings
+stores them in the SDK config and uses them for MAX shows, analytics events
+and ad revenue reports. These names are separate from the Ad Unit IDs.
+
+Empty values and older configs use `interstitial` and `rewarded` respectively.
+Leading and trailing whitespace is removed. Custom placement names do not
+change the ad format reported to analytics.
+
 ### Build-time notes
 
 - **Analytics App Type is reset on every Unity Editor start** (so a paid build

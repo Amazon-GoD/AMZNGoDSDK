@@ -64,9 +64,6 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         private const string AdjustAdRevenueSource = "applovin_max_sdk";
 
-        private const string InterstitialPlacement = "interstitial";
-        private const string RewardedPlacement = "rewarded";
-
         #region Показы
 
         public static void ReportInterRequested(string placement) =>
@@ -91,15 +88,16 @@ namespace AMZNGoDSDK.Runtime
         /// Показ состоялся. Уходит и в Adjust — как у кросс-промо: показ это ключевое событие
         /// воронки, по нему считаются когорты.
         /// </summary>
-        public static void ReportDisplayed(string placement, MaxSdkBase.AdInfo adInfo)
+        public static void ReportDisplayed(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
-            string eventName = placement == RewardedPlacement ? RewardDisplayedEvent : InterDisplayedEvent;
+            string eventName = isRewarded ? RewardDisplayedEvent : InterDisplayedEvent;
             Report(eventName, BuildArgs(placement, adInfo), alsoAdjust: true);
         }
 
-        public static void ReportDisplayFailed(string placement, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
+        public static void ReportDisplayFailed(string placement, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo,
+            bool isRewarded)
         {
-            string eventName = placement == RewardedPlacement ? RewardDisplayFailedEvent : InterDisplayFailedEvent;
+            string eventName = isRewarded ? RewardDisplayFailedEvent : InterDisplayFailedEvent;
 
             var args = BuildArgs(placement, adInfo);
             args["reason"] = errorInfo != null && !string.IsNullOrEmpty(errorInfo.Message)
@@ -113,9 +111,9 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Клик по рекламе — как и показ, уходит в оба трекера.</summary>
-        public static void ReportClicked(string placement, MaxSdkBase.AdInfo adInfo)
+        public static void ReportClicked(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
-            string eventName = placement == RewardedPlacement ? RewardClickedEvent : InterClickedEvent;
+            string eventName = isRewarded ? RewardClickedEvent : InterClickedEvent;
             Report(eventName, BuildArgs(placement, adInfo), alsoAdjust: true);
 
             // Собственный бэкенд: mediation_click. Отдельный тип события, потому что cp_click
@@ -136,16 +134,16 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        public static void ReportHidden(string placement, MaxSdkBase.AdInfo adInfo)
+        public static void ReportHidden(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
-            string eventName = placement == RewardedPlacement ? RewardHiddenEvent : InterHiddenEvent;
+            string eventName = isRewarded ? RewardHiddenEvent : InterHiddenEvent;
             Report(eventName, BuildArgs(placement, adInfo), alsoAdjust: false);
         }
 
         /// <summary>Награда за rewarded выдана — отдельное событие для экономики.</summary>
-        public static void ReportRewardEarned(MaxSdkBase.Reward reward, MaxSdkBase.AdInfo adInfo)
+        public static void ReportRewardEarned(string placement, MaxSdkBase.Reward reward, MaxSdkBase.AdInfo adInfo)
         {
-            var args = BuildArgs(RewardedPlacement, adInfo);
+            var args = BuildArgs(placement, adInfo);
 
             // MaxSdkBase.Reward — struct, а не класс: проверка на null тут невозможна
             // (CS0019). Пустой Label при этом штатен — сеть может не прислать подпись награды.
@@ -170,13 +168,13 @@ namespace AMZNGoDSDK.Runtime
         /// Пропущенный вызов — это молча потерянные деньги в отчётности, поэтому исключения
         /// глушатся по отдельности: сбой одного трекера не должен отменять отправку в другой.</para>
         /// </summary>
-        public static void ReportAdRevenue(string placement, MaxSdkBase.AdInfo adInfo)
+        public static void ReportAdRevenue(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
             if (adInfo == null)
                 return;
 
             ReportAdRevenueToAdjust(placement, adInfo);
-            ReportAdRevenueToAppMetrica(placement, adInfo);
+            ReportAdRevenueToAppMetrica(placement, adInfo, isRewarded);
 
             // Собственный бэкенд (/v1/events, событие mediation_impression). Шлём именно здесь,
             // а не по OnAdDisplayedEvent: MAX отдаёт OnAdRevenuePaidEvent ровно один раз на показ,
@@ -227,7 +225,7 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        private static void ReportAdRevenueToAppMetrica(string placement, MaxSdkBase.AdInfo adInfo)
+        private static void ReportAdRevenueToAppMetrica(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
 #if AMZN_APPMETRICA_ENABLED
             try
@@ -237,7 +235,7 @@ namespace AMZNGoDSDK.Runtime
                     AdNetwork = adInfo.NetworkName,
                     AdUnitId = adInfo.AdUnitIdentifier,
                     AdPlacementName = placement,
-                    AdType = placement == RewardedPlacement ? AdType.Rewarded : AdType.Interstitial,
+                    AdType = isRewarded ? AdType.Rewarded : AdType.Interstitial,
 
                     // Precision — насколько точна сумма (exact / estimated / publisher_defined /
                     // undisclosed). Без неё выручку нельзя корректно агрегировать.
