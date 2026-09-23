@@ -26,20 +26,6 @@ namespace AMZNGoDSDK.Editor
     {
         public int callbackOrder => -50;
 
-        /// <summary>
-        /// Минимальный compileSdk, который переваривает текущий набор зависимостей.
-        /// Требуют 34: androidx.core 1.12, work-runtime 2.9.1, datastore 1.1.1,
-        /// media3 1.4.1 (ExoPlayer кросс-промо), lifecycle 2.7.0, transition 1.5.0.
-        /// В Unity compileSdk берётся из Target API Level.
-        /// </summary>
-        private const int RequiredCompileSdk = 34;
-
-        /// <summary>
-        /// applovin-sdk 13.6.2 объявляет minSdkVersion 24 начиная с 13.6.3, поэтому SDK
-        /// пинит плагин на 8.6.3. Сам 13.6.2 требует 23 — ниже manifest merger не пустит.
-        /// </summary>
-        private const int RequiredMinSdkWithAppLovin = 23;
-
         private const string LogTag = "[AMZN GoD SDK] [Preflight]";
 
         public void OnPreprocessBuild(BuildReport report)
@@ -51,11 +37,20 @@ namespace AMZNGoDSDK.Editor
             if (settings == null || !settings.Enabled)
                 return;
 
+            if (SdkDependencyManager.IsBusy || DependencyInstaller.IsBusy || FirebasePackageInstaller.IsBusy)
+                throw new BuildFailedException("Подготовка зависимостей SDK ещё выполняется. Дождитесь её завершения в AMZN GoD / SDK Settings.");
+            if (settings.AppLovin != null && settings.AppLovin.Enabled && !AppLovinPackageInstaller.IsRequiredSetInstalled)
+                throw new BuildFailedException("Комплект AppLovin ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");
+            if (settings.Firebase != null && settings.Firebase.Enabled && !FirebasePackageInstaller.IsRequiredInstallationReady)
+                throw new BuildFailedException("Комплект Firebase ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");
+
             var errors = new List<string>();
             var warnings = new List<string>();
 
-            CheckCompileSdk(errors);
-            CheckMinSdk(settings, errors);
+            AndroidToolchainInstaller.EnsureInstalled();
+            AndroidToolchainSettings.CollectValidationErrors(errors);
+            CheckTargetSdk(errors);
+            EnsureMinSdk(settings);
             CheckInternetPermission(warnings);
             CheckAppLovinConfiguration(settings, warnings);
 
@@ -64,6 +59,7 @@ namespace AMZNGoDSDK.Editor
 
             if (errors.Count == 0)
             {
+                AndroidToolchainSettings.UseGradleForBuild();
                 Debug.Log($"{LogTag} настройки Android-сборки в порядке.");
                 return;
             }
@@ -82,49 +78,35 @@ namespace AMZNGoDSDK.Editor
         }
 
         /// <summary>
-        /// В Unity compileSdk = Target API Level. Ниже 34 Gradle валится на
-        /// checkReleaseAarMetadata десятками сообщений «requires ... compile against version 34».
+        /// compileSdk задаёт AndroidGradleToolchain. Unity может экспортировать проект
+        /// со своей установленной платформой, а Gradle компилирует его SDK из отдельного профиля.
         /// </summary>
-        private static void CheckCompileSdk(List<string> errors)
+        private static void CheckTargetSdk(List<string> errors)
         {
             var target = PlayerSettings.Android.targetSdkVersion;
 
-            // Auto = «самый свежий установленный», это всегда ≥ 34 на поддерживаемых редакторах.
             if (target == AndroidSdkVersions.AndroidApiLevelAuto)
                 return;
-
-            if ((int)target >= RequiredCompileSdk)
+            if ((int)target <= AndroidToolchainSettings.CompileSdk)
                 return;
-
             errors.Add(
-                $"Target API Level = {(int)target}, нужен минимум {RequiredCompileSdk}.\n" +
-                $"    В Unity Target API Level задаёт и compileSdk, а зависимости SDK " +
-                $"(androidx.core 1.12, work-runtime 2.9.1, datastore 1.1.1, media3 1.4.1, lifecycle 2.7.0) " +
-                $"требуют компиляции против API {RequiredCompileSdk}+.\n" +
-                $"    Симптом без этой проверки: ':launcher:checkReleaseAarMetadata FAILED' с десятками\n" +
-                $"    'requires libraries and applications that depend on it to compile against version 34 or later'.\n" +
-                $"    Player Settings → Other Settings → Target API Level → {RequiredCompileSdk} или выше.");
+                $"Target API Level = {(int)target}, но подготовленный compileSdk = {AndroidToolchainSettings.CompileSdk}.\n" +
+                "    Target API Level не должен превышать compileSdk. Проверьте Player Settings → Other Settings.");
         }
 
         /// <summary>
-        /// minSdk ниже требований AppLovin роняет manifest merger, причём сообщение указывает
-        /// на библиотеку, а не на настройку.
+        /// После установки SDK поднимаем минимум до требований включённых модулей автоматически.
+        /// Более высокий минимум проекта сохраняется.
         /// </summary>
-        private static void CheckMinSdk(Runtime.SdkSettingsData settings, List<string> errors)
+        private static void EnsureMinSdk(Runtime.SdkSettingsData settings)
         {
-            if (settings.AppLovin == null || !settings.AppLovin.Enabled)
-                return;
-
+            int required = settings.AppLovin != null && settings.AppLovin.Enabled
+                ? AndroidToolchainSettings.MinimumSdkWithAppLovin
+                : settings.Firebase != null && settings.Firebase.Enabled ? FirebasePackageInstaller.MinimumAndroidSdk : 0;
             int min = (int)PlayerSettings.Android.minSdkVersion;
-            if (min >= RequiredMinSdkWithAppLovin)
-                return;
-
-            errors.Add(
-                $"Minimum API Level = {min}, а модуль AppLovin требует {RequiredMinSdkWithAppLovin}+.\n" +
-                $"    Симптом без этой проверки: 'uses-sdk:minSdkVersion {min} cannot be smaller than version 23\n" +
-                $"    declared in library [com.applovin:applovin-sdk]'.\n" +
-                $"    Player Settings → Other Settings → Minimum API Level → {RequiredMinSdkWithAppLovin} или выше,\n" +
-                $"    либо выключи модуль AppLovin в AMZN GoD → SDK Settings.");
+            if (min >= required) return;
+            PlayerSettings.Android.minSdkVersion = (AndroidSdkVersions)required;
+            Debug.Log($"{LogTag} Minimum API Level автоматически повышен с {min} до {required} для включённых модулей SDK.");
         }
 
         /// <summary>

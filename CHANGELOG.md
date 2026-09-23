@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Retain Unity 2022.3 and update Android dependencies for API 24: MAX Unity
+  8.6.6 / Android 13.6.4 with all 17 supported allowed adapters pinned, Firebase 13.17.0,
+  Adjust 5.8.0, AppMetrica Unity 6.10.0 / Android 8.5.1 and EDM4U 1.2.189.
+- Automatically prepare dependencies of enabled modules and the Android build
+  tools. Use AGP 8.13.2, Gradle 8.13, a separate JDK 17 and compileSdk 36 while
+  preserving Unity's bundled JDK/SDK/NDK and the project's target API.
+- Raise the Android minimum to API 24 when MAX is enabled and remove the old
+  generated R8/Kotlin overrides. See `Documentation~/ANDROID-DEPENDENCIES.md`.
+- Stop installing HyprMX and Maio, which MAX 8.6.6 removes as obsolete networks.
+
 ### Added
 
 - Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.

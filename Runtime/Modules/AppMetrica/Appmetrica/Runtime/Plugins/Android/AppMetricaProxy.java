@@ -207,6 +207,10 @@ public final class AppMetricaProxy {
         AppMetrica.getReporter(getActivity(), apiKey);
     }
 
+    public static void setAdvIdentifiersTracking(boolean enabled) {
+        AppMetrica.setAdvIdentifiersTracking(enabled);
+    }
+
     @NonNull
     private static Activity getActivity() {
         // TODO: check UnityPlayer.currentActivity != null

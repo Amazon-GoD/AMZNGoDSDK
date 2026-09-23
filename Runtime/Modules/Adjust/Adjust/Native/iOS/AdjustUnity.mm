@@ -108,13 +108,17 @@ extern "C"
         int isAppTrackingTransparencyUsageEnabled,
         int isFirstSessionDelayEnabled,
         int isDeferredDeeplinkOpeningEnabled,
+        int isFbIdReadingEnabled,
+        int isDeviceIdsReadingEnabled,
         AdjustDelegateAttributionCallback attributionCallback,
         AdjustDelegateEventSuccessCallback eventSuccessCallback,
         AdjustDelegateEventFailureCallback eventFailureCallback,
         AdjustDelegateSessionSuccessCallback sessionSuccessCallback,
         AdjustDelegateSessionFailureCallback sessionFailureCallback,
         AdjustDelegateDeferredDeeplinkCallback deferredDeeplinkCallback,
-        AdjustDelegateSkanUpdatedCallback skanUpdatedCallback) {
+        AdjustDelegateRemoteTriggerCallback remoteTriggerCallback,
+        AdjustDelegateSkanUpdatedCallback skanUpdatedCallback,
+        AdjustDelegateThirdPartySharingSettingsChangedCallback thirdPartySharingSettingsChangedCallback) {
         NSString *strAppToken = isStringValid(appToken) == true ? [NSString stringWithUTF8String:appToken] : nil;
         NSString *strEnvironment = isStringValid(environment) == true ? [NSString stringWithUTF8String:environment] : nil;
         NSString *strSdkPrefix = isStringValid(sdkPrefix) == true ? [NSString stringWithUTF8String:sdkPrefix] : nil;
@@ -144,7 +148,9 @@ extern "C"
             eventSuccessCallback != nil ||
             eventFailureCallback != nil ||
             deferredDeeplinkCallback != nil ||
-            skanUpdatedCallback != nil) {
+            remoteTriggerCallback != nil ||
+            skanUpdatedCallback != nil ||
+            thirdPartySharingSettingsChangedCallback != nil) {
             [adjustConfig setDelegate:
                 [AdjustUnityDelegate getInstanceWithAttributionCallback:attributionCallback
                                                    eventSuccessCallback:eventSuccessCallback
@@ -152,7 +158,9 @@ extern "C"
                                                  sessionSuccessCallback:sessionSuccessCallback
                                                  sessionFailureCallback:sessionFailureCallback
                                                deferredDeeplinkCallback:deferredDeeplinkCallback
+                                                  remoteTriggerCallback:remoteTriggerCallback
                                                     skanUpdatedCallback:skanUpdatedCallback
+                               thirdPartySharingSettingsChangedCallback:thirdPartySharingSettingsChangedCallback
                                            shouldLaunchDeferredDeeplink:isDeferredDeeplinkOpeningEnabled]];
         }
 
@@ -200,6 +208,20 @@ extern "C"
         if (isIdfvReadingEnabled != -1) {
             if ((BOOL)isIdfvReadingEnabled == NO) {
                 [adjustConfig disableIdfvReading];
+            }
+        }
+
+        // FB ID reading
+        if (isFbIdReadingEnabled != -1) {
+            if ((BOOL)isFbIdReadingEnabled == NO) {
+                [adjustConfig disableFbIdReading];
+            }
+        }
+
+        // reading of all the device IDs
+        if (isDeviceIdsReadingEnabled != -1) {
+            if ((BOOL)isDeviceIdsReadingEnabled == NO) {
+                [adjustConfig disableDeviceIdsReading];
             }
         }
 
@@ -434,10 +456,57 @@ extern "C"
         }];
     }
 
+    void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, AdjustDelegateAttributionGetter callback) {
+        [Adjust attributionWithTimeout:timeoutInMilliseconds completionHandler:^(ADJAttribution * _Nullable attribution) {
+            if (attribution != nil) {
+                NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+                addValueOrEmpty(dictionary, @"trackerToken", attribution.trackerToken);
+                addValueOrEmpty(dictionary, @"trackerName", attribution.trackerName);
+                addValueOrEmpty(dictionary, @"network", attribution.network);
+                addValueOrEmpty(dictionary, @"campaign", attribution.campaign);
+                addValueOrEmpty(dictionary, @"creative", attribution.creative);
+                addValueOrEmpty(dictionary, @"adgroup", attribution.adgroup);
+                addValueOrEmpty(dictionary, @"clickLabel", attribution.clickLabel);
+                addValueOrEmpty(dictionary, @"costType", attribution.costType);
+                addValueOrEmpty(dictionary, @"costAmount", attribution.costAmount);
+                addValueOrEmpty(dictionary, @"costCurrency", attribution.costCurrency);
+                if (attribution.jsonResponse != nil) {
+                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:attribution.jsonResponse
+                                                                       options:0
+                                                                         error:nil];
+                    NSString *strJsonResponse = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                    addValueOrEmpty(dictionary, @"jsonResponse", strJsonResponse);
+                }
+
+                NSData *dataAttribution = [NSJSONSerialization dataWithJSONObject:dictionary
+                                                                          options:0
+                                                                            error:nil];
+                NSString *stringAttribution = [[NSString alloc] initWithBytes:[dataAttribution bytes]
+                                                                       length:[dataAttribution length]
+                                                                     encoding:NSUTF8StringEncoding];
+                const char* attributionCString = [stringAttribution UTF8String];
+                callback(attributionCString);
+            } else {
+                // pass NULL when attribution is nil - C# callback will handle it
+                callback(NULL);
+            }
+        }];
+    }
+
     void _AdjustGetAdid(AdjustDelegateAdidGetter callback) {
         [Adjust adidWithCompletionHandler:^(NSString * _Nullable adid) {
             // TODO: nil checks
             callback([adid UTF8String]);
+        }];
+    }
+
+    void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, AdjustDelegateAdidGetter callback) {
+        [Adjust adidWithTimeout:timeoutInMilliseconds completionHandler:^(NSString * _Nullable adid) {
+            if (adid != nil) {
+                callback([adid UTF8String]);
+            } else {
+                callback(NULL);
+            }
         }];
     }
 
@@ -467,6 +536,19 @@ extern "C"
         [Adjust sdkVersionWithCompletionHandler:^(NSString * _Nullable sdkVersion) {
             // TODO: nil checks
             callback([sdkVersion UTF8String]);
+        }];
+    }
+
+    void _AdjustGetThirdPartySharingSettingsWithTimeout(int timeoutInMilliseconds,
+                                                        AdjustDelegateThirdPartySharingGetter callback) {
+        [Adjust thirdPartySharingSettingsWithTimeout:timeoutInMilliseconds
+                                   completionHandler:^(ADJThirdPartySharingResult * _Nullable thirdPartySharingResult) {
+            if (thirdPartySharingResult != nil && thirdPartySharingResult.thirdPartySharingSettingsJson != nil) {
+                callback([thirdPartySharingResult.thirdPartySharingSettingsJson UTF8String]);
+            } else {
+                // pass NULL when third party sharing settings are not available - C# callback will handle it
+                callback(NULL);
+            }
         }];
     }
 
@@ -691,7 +773,9 @@ extern "C"
 
     void _AdjustRequestAppTrackingAuthorization(AdjustDelegateAttCallback callback) {
         [Adjust requestAppTrackingAuthorizationWithCompletionHandler:^(NSUInteger status) {
-            callback((int)status);
+            // NSUIntegerMax represents error in native world
+            int mappedStatus = (status == NSUIntegerMax) ? -1 : (int)status;
+            callback(mappedStatus);
         }];
     }
 

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
 
@@ -8,13 +7,12 @@ namespace AMZNGoDSDK.Editor
     [InitializeOnLoad]
     public static class SdkDependencyManager
     {
-        static SdkDependencyManager()
-        {
-            EditorApplication.delayCall += async () => 
-            {
-                await DependencyInstaller.InstallRequiredDependenciesAsync();
-            };
-        }
+        public static bool IsBusy => SdkDependencyBootstrap.IsBusy;
+        public static string Status => SdkDependencyBootstrap.Status;
+        public static void RequestInstall() => SdkDependencyBootstrap.RequestInstall();
+        public static void Retry() => SdkDependencyBootstrap.Retry();
+        public static bool CanInstallAutomatically(string define) =>
+            define == ModuleDefineManager.APPLOVIN_DEFINE || define == ModuleDefineManager.FIREBASE_DEFINE;
         public static async Task<Dictionary<string, bool>> GetSdkDependenciesInstallInfoAsync()
         {
             var dependenciesInstallInfo = new Dictionary<string, bool>();
@@ -29,14 +27,6 @@ namespace AMZNGoDSDK.Editor
             return dependenciesInstallInfo;
         }
 
-        public static async void InstallMissingDependencies()
-        {
-            var dependenciesToInstall = (await GetSdkDependenciesInstallInfoAsync()).
-                    Where(x => x.Value == false)
-                    .Select(x => x.Key);
-            
-            foreach (var dependency in dependenciesToInstall)
-                await DependencyInstaller.InstallDependency(dependency);
-        }
+        public static void InstallMissingDependencies() => Retry();
     }
 }

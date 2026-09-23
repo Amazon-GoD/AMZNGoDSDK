@@ -402,6 +402,8 @@ namespace AMZNGoDSDK.Editor
 
             AppLovinSettingsSynchronizer.Synchronize();
 
+            SdkDependencyManager.RequestInstall();
+
             return true;
         }
 

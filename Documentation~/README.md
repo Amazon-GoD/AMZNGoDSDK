@@ -98,6 +98,11 @@ change the ad format reported to analytics.
 
 ### Build-time notes
 
+The current dependency upgrade retains Unity 2022.3 and supports Android API
+24. Enabled module dependencies and Android build tools are prepared
+automatically. See [Android dependencies](ANDROID-DEPENDENCIES.md) for pinned
+versions, installation behavior and verification limits.
+
 - **Analytics App Type is reset on every Unity Editor start** (so a paid build
   cannot silently inherit yesterday's free type). Re-select it in
   `AMZN GoD > SDK Settings` before building — otherwise the build stops with a

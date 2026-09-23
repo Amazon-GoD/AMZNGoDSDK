@@ -24,9 +24,9 @@ namespace AMZNGoDSDK.Editor
     /// через Client.Add / Client.AddAndRemove.
     /// </para>
     /// <para>
-    /// Молча при загрузке редактора ничего не ставится — в отличие от EDM4U
-    /// (<see cref="DependencyInstaller"/>), который весит один пакет. Здесь речь о плагине плюс
-    /// два десятка адаптеров, тянущих нативные зависимости; такое делается по явной команде.
+    /// Для включённого в сохранённых настройках модуля SdkDependencyManager автоматически
+    /// устанавливает проверенный комплект MAX и разрешённых адаптеров после EDM4U.
+    /// Команды меню также позволяют отдельно установить или заменить пакеты.
     /// </para>
     /// </summary>
     [InitializeOnLoad]
@@ -38,6 +38,14 @@ namespace AMZNGoDSDK.Editor
 
         /// <summary>Основной пакет плагина (displayName: AppLovin MAX Mediation Plugin for Unity).</summary>
         public const string MaxPluginPackageId = "com.applovin.mediation.ads";
+        public const string ObsoleteAdaptersNotice = "MAX 8.6.6 больше не поддерживает HyprMX и Maio; их UPM-пакеты удаляются при включении или обновлении AppLovin.";
+
+        // MAX 8.6.6 removes these packages itself. Never restore them from a disabled-module stash.
+        private static readonly HashSet<string> ObsoleteAdapterPackageIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "com.applovin.mediation.adapters.hyprmx.android",
+            "com.applovin.mediation.adapters.maio.android",
+        };
 
         private const string ManifestPath = "Packages/manifest.json";
         private const string BackupDirectory = "Library/AmznGoDSDK";
@@ -97,20 +105,27 @@ namespace AMZNGoDSDK.Editor
             if (_installedStatus != null && EditorApplication.timeSinceStartup - _statusCheckedAt < 2) return;
             _statusCheckedAt = EditorApplication.timeSinceStartup;
             _isRequiredVersionInstalled = false;
-            var package = PackageInfo.GetAllRegisteredPackages().FirstOrDefault(item => item.name == MaxPluginPackageId);
+            var packages = PackageInfo.GetAllRegisteredPackages();
+            var package = packages.FirstOrDefault(item => item.name == MaxPluginPackageId);
             try
             {
                 string legacy = AppLovinLegacyInstallation.Description;
-                var stashed = LoadDisabledState().Packages.FirstOrDefault(entry => entry.Id == MaxPluginPackageId);
+                var disabledPackages = LoadDisabledState().Packages;
+                var stashed = disabledPackages.FirstOrDefault(entry => entry.Id == MaxPluginPackageId);
                 _hasInstalledPlugin = package != null || legacy != null || stashed != null;
                 string requiredVersion = PinnedVersions[MaxPluginPackageId];
                 _isRequiredVersionInstalled = _hasInstalledPlugin &&
                     (package == null || package.version == requiredVersion) &&
                     (legacy == null || AppLovinLegacyInstallation.InstalledVersion == requiredVersion) &&
-                    (stashed == null || stashed.Version == requiredVersion);
+                    (stashed == null || stashed.Version == requiredVersion) &&
+                    packages.All(item => !ObsoleteAdapterPackageIds.Contains(item.name) &&
+                        (!PinnedVersions.TryGetValue(item.name, out string pin) || item.version == pin)) &&
+                    disabledPackages.All(item => !ObsoleteAdapterPackageIds.Contains(item.Id) &&
+                        (!PinnedVersions.TryGetValue(item.Id, out string pin) || item.Version == pin));
                 _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy,
                     stashed == null ? null : "UPM " + stashed.Version + " (модуль отключён)" }.Where(value => value != null));
                 if (!_hasInstalledPlugin) _installedStatus = "MAX не установлен";
+                else if (!_isRequiredVersionInstalled) _installedStatus += "; доступно обновление MAX или установленных адаптеров";
             }
             catch (Exception ex)
             {
@@ -147,7 +162,8 @@ namespace AMZNGoDSDK.Editor
         }
 
         /// <summary>
-        /// Сетки, у которых в реестре AppLovin есть именно Android-адаптер (25 на 2026-09-07).
+        /// Поддерживаемые MAX 8.6.6 Android-адаптеры в реестре AppLovin (23 на 2026-09-23).
+        /// Устаревшие HyprMX и Maio исключены согласно AppLovinInitialize.ObsoleteNetworks.
         /// CSJ, Pangle и Tencent GDT представлены только iOS-пакетами и сюда не входят.
         /// Список проверен через /-/v1/search и оставлен статическим: набор пакетов
         /// должен быть воспроизводимым и не зависеть от того, доступна ли сеть в момент сборки.
@@ -156,7 +172,7 @@ namespace AMZNGoDSDK.Editor
         private static readonly string[] RegistryNetworks =
         {
             "bidmachine", "bigoads", "bytedance", "chartboost", "facebook", "fyber",
-            "google", "googleadmanager", "hyprmx", "inmobi", "ironsource", "line", "maio",
+            "google", "googleadmanager", "inmobi", "ironsource", "line",
             "mintegral", "mobilefuse", "moloco", "mytarget", "ogurypresage",
             "pubmatic", "smaato", "unityads", "verve", "vungle", "yandex",
             "ysonetwork",
@@ -167,36 +183,30 @@ namespace AMZNGoDSDK.Editor
         private const string AdapterIdFormat = "com.applovin.mediation.adapters.{0}.android";
 
         /// <summary>
-        /// Потолки версий для пакетов, чьи свежие релизы не собираются в этом проекте.
-        /// Без пина Client.Add ставит latest, и одно нажатие кнопки установки молча
-        /// возвращает сборку в нерабочее состояние.
-        /// <para>
-        /// Проект: minSdk 23, compileSdk = targetSdk = 34, AGP 7.4.2 (потолок Unity 2022.3 —
-        /// bundled Gradle 7.5.1 + JDK 11; AGP 8.9 требует Gradle 8.11+ и JDK 17).
-        /// Версии ниже — последние, которые в эти рамки укладываются (проверено по
-        /// AndroidManifest.xml и aar-metadata.properties самих артефактов, 2026-09-03):
-        /// </para>
-        /// <list type="bullet">
-        /// <item>ads 8.6.3 → applovin-sdk 13.6.2, minSdk 23. С 13.6.3 AppLovin поднял minSdk до 24.</item>
-        /// <item>facebook 6210000.0.0 → facebook-adapter 6.21.0.0, minSdk 16. Следующий (6.22.0.0)
-        /// сам объявляет minSdk 24 и тянет audience-network-sdk 6.22.0 → androidx.browser 1.9.0,
-        /// которому нужны compileSdk 36 и AGP 8.9.1.</item>
-        /// <item>line 300000010.0.0 → line-adapter 3000.0.1.0 → fivead 3.0.1 → androidx.activity 1.9.3.
-        /// Следующий тянет fivead 3.1.1 → activity 1.10.1, а ей нужен compileSdk 35.</item>
-        /// <item>ogurypresage 6020200.0.0 → ogury-presage-adapter 6.2.2.0 → ogury-sdk 6.2.2 без
-        /// ограничения по compileSdk. У 6.3.1 в aar-metadata стоит minCompileSdk 35.</item>
-        /// </list>
-        /// <para>
-        /// Снимать пин можно только вместе с поднятием compileSdk/minSdk — и только проверив
-        /// сборку, а не по номеру версии.
-        /// </para>
+        /// Проверенный набор на 2026-09-23: MAX 13.6.4, minSdk 24, compileSdk 36.
+        /// Все разрешённые адаптеры закреплены, чтобы новая установка не подняла
+        /// требования Android незаметно. Инструменты сборки задаёт AndroidGradleToolchain.
         /// </summary>
         private static readonly Dictionary<string, string> PinnedVersions = new Dictionary<string, string>
         {
-            { "com.applovin.mediation.ads", "8.6.3" },
-            { "com.applovin.mediation.adapters.facebook.android", "6210000.0.0" },
-            { "com.applovin.mediation.adapters.line.android", "300000010.0.0" },
-            { "com.applovin.mediation.adapters.ogurypresage.android", "6020200.0.0" },
+            { "com.applovin.mediation.ads", "8.6.6" },
+            { "com.applovin.mediation.adapters.bigoads.android", "6010000.0.0" },
+            { "com.applovin.mediation.adapters.bytedance.android", "803000401.0.0" },
+            { "com.applovin.mediation.adapters.chartboost.android", "9140101.0.0" },
+            { "com.applovin.mediation.adapters.facebook.android", "6220000.0.0" },
+            { "com.applovin.mediation.adapters.inmobi.android", "11040103.0.0" },
+            { "com.applovin.mediation.adapters.ironsource.android", "906000000.0.0" },
+            { "com.applovin.mediation.adapters.line.android", "300001010.1.0" },
+            { "com.applovin.mediation.adapters.mintegral.android", "17018100.0.0" },
+            { "com.applovin.mediation.adapters.mobilefuse.android", "1120000.0.0" },
+            { "com.applovin.mediation.adapters.moloco.android", "4120000.0.0" },
+            { "com.applovin.mediation.adapters.ogurypresage.android", "6030100.0.0" },
+            { "com.applovin.mediation.adapters.pubmatic.android", "5040000.0.0" },
+            { "com.applovin.mediation.adapters.smaato.android", "23020200.0.0" },
+            { "com.applovin.mediation.adapters.unityads.android", "4200100.0.0" },
+            { "com.applovin.mediation.adapters.verve.android", "3090200.0.0" },
+            { "com.applovin.mediation.adapters.vungle.android", "7070801.0.0" },
+            { "com.applovin.mediation.adapters.ysonetwork.android", "1030900.0.0" },
         };
 
         /// <summary>
@@ -322,8 +332,7 @@ namespace AMZNGoDSDK.Editor
                     "AppLovin MAX",
                     $"Будет прописан scoped registry {RegistryUrl} в {ManifestPath} " +
                     $"и установлен пакет {PackageSpec(MaxPluginPackageId)}.\n\n" +
-                    "Версия закреплена намеренно: начиная с applovin-sdk 13.6.3 плагин требует " +
-                    "minSdk 24, а проект собирается с 23 (см. PinnedVersions).\n\nПродолжить?",
+                    "Для сборки нужны minSdk 24, compileSdk 36 и настроенные Android Toolchain инструменты.\n\nПродолжить?",
                     "Установить", "Отмена"))
                 return;
 
@@ -342,7 +351,7 @@ namespace AMZNGoDSDK.Editor
             }
             if (!EditorUtility.DisplayDialog("Заменить AppLovin MAX",
                     InstalledStatus + " → " + PackageSpec(MaxPluginPackageId) + ".\n\n" +
-                    "Состав сетей и версии адаптеров сохранятся; установленные Facebook, Line и Ogury Presage вернутся к закреплённым версиям.\n\n" +
+                    "Поддерживаемые адаптеры обновятся до закреплённых версий. " + ObsoleteAdaptersNotice + "\n\n" +
                     "Legacy-файлы SDK будут заменены пакетом UPM. Resources, настройки и SDK keys сохраняются. " +
                     "Резервная копия: Library/AmznGoDSDK/AppLovin.", "Заменить", "Отмена")) return;
             _ = RunOperationAsync(true, false);
@@ -364,10 +373,11 @@ namespace AMZNGoDSDK.Editor
             if (!EditorUtility.DisplayDialog(
                     "AppLovin MAX",
                     $"Будет установлено адаптеров: {adapters.Count}.\n\n" +
+                    ObsoleteAdaptersNotice + "\n\n" +
                     $"Исключены по стоп-листу: {(blocked.Count == 0 ? "—" : string.Join(", ", blocked))}\n\n" +
                     (pinned.Count == 0
                         ? string.Empty
-                        : "С закреплённой версией (свежие ломают minSdk 23 / compileSdk 34):\n" +
+                        : "Проверенные версии для minSdk 24 / compileSdk 36:\n" +
                           string.Join("\n", pinned) + "\n\n") +
                     "Установка нескольких пакетов занимает время, редактор будет подвисать. Продолжить?",
                     "Установить", "Отмена"))
@@ -386,7 +396,35 @@ namespace AMZNGoDSDK.Editor
             return RunOperationAsync(false, true);
         }
 
-        private static async Task RunOperationAsync(bool replace, bool adaptersOnly)
+        /// <summary>Checks the entire pinned set, including adapters missing from the project.</summary>
+        public static bool IsRequiredSetInstalled
+        {
+            get
+            {
+                if (AppLovinLegacyInstallation.HasCore) return false;
+                var packages = PackageInfo.GetAllRegisteredPackages();
+                if (packages.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)) ||
+                    File.Exists(ManifestPath) && ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys.Any(ObsoleteAdapterPackageIds.Contains))
+                    return false;
+                return AllowedAdapterPackageIds().Concat(new[] { MaxPluginPackageId }).All(id =>
+                    packages.Any(package => package.name == id && package.version == PinnedVersions[id] &&
+                        !string.IsNullOrEmpty(package.resolvedPath) && File.Exists(Path.Combine(package.resolvedPath, "package.json"))));
+            }
+        }
+
+        /// <summary>Installs the enabled module's complete pinned set without confirmation dialogs.</summary>
+        public static async Task EnsureRequiredAsync()
+        {
+            if (!IsModuleEnabledInSavedSettings) return;
+            if (IsRequiredSetInstalled) return;
+            if (!CanStart()) throw new InvalidOperationException(Status);
+            await RunOperationAsync(HasInstalledPlugin, false, true, true);
+            if (!IsRequiredSetInstalled)
+                throw new IOException("Не подтверждён полный комплект AppLovin MAX и адаптеров. " + Status);
+        }
+
+        private static async Task RunOperationAsync(bool replace, bool adaptersOnly,
+            bool throwOnError = false, bool includeAllAdapters = false)
         {
             if (!CanStart()) return;
             _busy = true;
@@ -407,8 +445,12 @@ namespace AMZNGoDSDK.Editor
                 if (replace && installedCore != null && installedCore.source == PackageSource.Embedded)
                     throw new IOException("MAX установлен как embedded package. Сначала перенесите его из Packages в обычный UPM пакет.");
                 var adapters = installed.Where(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal)).ToArray();
+                var obsolete = ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys
+                    .Where(ObsoleteAdapterPackageIds.Contains).ToArray();
                 foreach (var adapter in adapters)
                 {
+                    if (ObsoleteAdapterPackageIds.Contains(adapter.name) && adapter.source == PackageSource.Embedded)
+                        throw new IOException("Устаревший адаптер установлен как embedded package: " + adapter.name + ". Удалите его явно перед обновлением MAX.");
                     var forbidden = ForbiddenAdNetworks.MatchByGroup(adapter.name);
                     if (forbidden != null)
                         throw new IOException("Установлен запрещённый адаптер " + forbidden.DisplayName + ". Удалите его явно перед установкой.");
@@ -438,27 +480,28 @@ namespace AMZNGoDSDK.Editor
                 if (adaptersOnly)
                 {
                     var allowed = AllowedAdapterPackageIds();
-                    if (allowed.Count > 0)
+                    if (allowed.Count > 0 || obsolete.Length > 0)
                     {
                         EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка адаптеров…", 0.5f);
                         upmTouched = true;
                         // Один расчёт зависимостей для всего набора: ошибка пакета не оставляет
                         // цепочку ранее установленных адаптеров от последовательных Client.Add.
-                        await WaitForRequest(Client.AddAndRemove(allowed.Select(PackageSpec).ToArray(), Array.Empty<string>()));
+                        await WaitForRequest(Client.AddAndRemove(allowed.Select(PackageSpec).ToArray(), obsolete));
                     }
                     foreach (string id in allowed)
                         expected[id] = PinnedVersions.TryGetValue(id, out string pin) ? pin : null;
                 }
-                else if (!replace)
+                else if (!replace && !includeAllAdapters)
                 {
                     upmTouched = true;
-                    await InstallPackageAsync(MaxPluginPackageId);
+                    await WaitForRequest(Client.AddAndRemove(new[] { PackageSpec(MaxPluginPackageId) }, obsolete));
                 }
                 else
                 {
                     var specifications = new List<string> { PackageSpec(MaxPluginPackageId) };
                     foreach (var adapter in adapters)
                     {
+                        if (ObsoleteAdapterPackageIds.Contains(adapter.name)) continue;
                         string version = PinnedVersions.TryGetValue(adapter.name, out string pin) ? pin : adapter.version;
                         expected[adapter.name] = version;
                         if (adapter.source == PackageSource.Registry)
@@ -466,15 +509,24 @@ namespace AMZNGoDSDK.Editor
                     }
                     foreach (string adapter in legacy.AdapterPins)
                     {
+                        if (!PinnedVersions.ContainsKey(adapter)) continue;
                         expected[adapter] = PinnedVersions[adapter];
                         if (!specifications.Contains(PackageSpec(adapter))) specifications.Add(PackageSpec(adapter));
                     }
+                    if (includeAllAdapters)
+                        foreach (string adapter in AllowedAdapterPackageIds())
+                        {
+                            expected[adapter] = PinnedVersions[adapter];
+                            if (!specifications.Contains(PackageSpec(adapter))) specifications.Add(PackageSpec(adapter));
+                        }
                     EditorUtility.DisplayProgressBar("AppLovin MAX", "Установка " + PackageSpec(MaxPluginPackageId), 0.5f);
                     upmTouched = true;
-                    await WaitForRequest(Client.AddAndRemove(specifications.ToArray(), Array.Empty<string>()));
+                    await WaitForRequest(Client.AddAndRemove(specifications.ToArray(), obsolete));
                 }
                 var check = Client.List(true, true);
                 await WaitForRequest(check);
+                if (check.Result.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)))
+                    throw new IOException("UPM не удалил устаревшие адаптеры HyprMX/Maio.");
                 foreach (var package in expected)
                     if (!check.Result.Any(item => item.name == package.Key && (package.Value == null || item.version == package.Value)))
                         throw new IOException("UPM не подтвердил пакет " + package.Key + (package.Value == null ? "" : "@" + package.Value));
@@ -483,6 +535,7 @@ namespace AMZNGoDSDK.Editor
                 SessionState.EraseString(PendingKey);
                 SetStatus("AppLovin: " + (adaptersOnly ? "адаптеры установлены" : PackageSpec(MaxPluginPackageId) + " установлен") + ". Резервная копия: " + backup);
                 Debug.Log("[AppLovinInstaller] " + Status);
+                if (obsolete.Length > 0) Debug.Log("[AppLovinInstaller] " + ObsoleteAdaptersNotice);
             }
             catch (Exception failure)
             {
@@ -537,6 +590,7 @@ namespace AMZNGoDSDK.Editor
                 SessionState.EraseString(PendingKey);
                 SetStatus("Ошибка AppLovin: " + failure.Message + " " + recovery);
                 Debug.LogError("[AppLovinInstaller] " + Status);
+                if (throwOnError) throw new IOException(Status, failure);
             }
             finally
             {
@@ -569,7 +623,7 @@ namespace AMZNGoDSDK.Editor
                 var dependencies = File.Exists(ManifestPath)
                     ? ReadManifestDependencies(File.ReadAllText(ManifestPath)) : new Dictionary<string, string>();
                 var state = LoadDisabledState();
-                bool hasPackageChanges = enabled ? state.Packages.Count > 0 :
+                bool hasPackageChanges = enabled ? state.Packages.Count > 0 || dependencies.Keys.Any(ObsoleteAdapterPackageIds.Contains) :
                     dependencies.Keys.Any(id => id.StartsWith("com.applovin.", StringComparison.Ordinal));
                 bool hasSettingsChanges = File.Exists(enabled ? DisabledAppLovinSettingsPath : AppLovinSettingsPath);
                 if (!hasPackageChanges && !hasSettingsChanges) return;
@@ -667,24 +721,29 @@ namespace AMZNGoDSDK.Editor
         private static async Task RestoreDisabledPackages()
         {
             var state = LoadDisabledState();
-            if (state.Packages.Count == 0)
-                return;
             if (!File.Exists(ManifestPath))
                 throw new IOException("Не найден Packages/manifest.json для восстановления AppLovin.");
 
             var dependencies = ReadManifestDependencies(File.ReadAllText(ManifestPath));
+            var obsolete = dependencies.Keys.Where(ObsoleteAdapterPackageIds.Contains).ToArray();
+            bool skippedObsolete = state.Packages.Any(entry => ObsoleteAdapterPackageIds.Contains(entry.Id));
             var missing = state.Packages
-                .Where(entry => !dependencies.ContainsKey(entry.Id))
+                .Where(entry => !ObsoleteAdapterPackageIds.Contains(entry.Id) && !dependencies.ContainsKey(entry.Id))
                 .ToList();
-            if (missing.Count > 0)
+            if (missing.Count > 0 || obsolete.Length > 0)
             {
                 var specifications = missing.Select(entry =>
                     Regex.IsMatch(entry.Version, @"^(file:|https?://|git[+:]|ssh://)")
                         ? entry.Version : entry.Id + "@" + entry.Version).ToArray();
-                await WaitForRequest(Client.AddAndRemove(specifications, Array.Empty<string>()));
+                await WaitForRequest(Client.AddAndRemove(specifications, obsolete));
+                var check = Client.List(true, true);
+                await WaitForRequest(check);
+                if (check.Result.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)))
+                    throw new IOException("UPM не удалил устаревшие адаптеры HyprMX/Maio при включении AppLovin.");
             }
             DeleteDisabledState();
             Debug.Log($"[AppLovinInstaller] AppLovin включён: восстановлено пакетов {missing.Count}.");
+            if (obsolete.Length > 0 || skippedObsolete) Debug.Log("[AppLovinInstaller] " + ObsoleteAdaptersNotice);
         }
 
         private static DisabledPackageState LoadDisabledState()

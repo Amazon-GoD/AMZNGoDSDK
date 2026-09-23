@@ -128,6 +128,10 @@ namespace AMZNGoDSDK.Editor
 
             // Dependencies section
             GUILayout.Label("Required External Dependencies:", EditorStyles.boldLabel);
+#if UNITY_ANDROID
+            if (GUILayout.Button("Состояние инструментов Android"))
+                AndroidToolchainWindow.ShowWindow();
+#endif
 
             _dependenciesScrollPosition = EditorGUILayout.BeginScrollView(_dependenciesScrollPosition, GUILayout.Height(200));
 
@@ -147,17 +151,14 @@ namespace AMZNGoDSDK.Editor
             GUILayout.Space(20);
 
             EditorGUILayout.HelpBox(
-                $"Total dependencies configured: {_dependenciesInfo.Count}\n\n" +
-                "Dependencies will be automatically checked when Unity starts.\nIf any dependencies are missing, SDK will be install it again.", 
+                "Зависимости включённых модулей и инструменты Android подготавливаются автоматически. " +
+                "Для первой установки нужен интернет.\n\n" + SdkDependencyManager.Status,
                 MessageType.Info);
 
-            if (_dependenciesInfo.Any(x => x.Value == false))
+            using (new EditorGUI.DisabledScope(SdkDependencyManager.IsBusy || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
             {
-                using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
-                {
-                    if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
-                        SdkDependencyManager.InstallMissingDependencies();
-                }
+                if (GUILayout.Button("Проверить / повторить установку зависимостей"))
+                    SdkDependencyManager.Retry();
             }
 
             GUILayout.Space(10);
@@ -323,12 +324,13 @@ namespace AMZNGoDSDK.Editor
                         EditorGUILayout.HelpBox(AppLovinPackageInstaller.Status, MessageType.None);
 
                     var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
+                    EditorGUILayout.HelpBox(AppLovinPackageInstaller.ObsoleteAdaptersNotice, MessageType.Info);
                     if (pinnedAdapters.Count > 0)
                     {
                         GUILayout.Space(4);
                         EditorGUILayout.HelpBox(
-                            "Адаптеры с закреплённой версией — свежие релизы требуют compileSdk 35/36 " +
-                            "или minSdk 24, чего проект (minSdk 23, compileSdk 34, AGP 7.4.2) не даёт:\n" +
+                            "Проверенный набор адаптеров: Android minSdk 24, compileSdk 36. " +
+                            "Unity 2022.3 использует отдельные инструменты Gradle 8.13 и JDK 17:\n" +
                             string.Join("\n", pinnedAdapters),
                             MessageType.None);
                     }
@@ -383,6 +385,7 @@ namespace AMZNGoDSDK.Editor
                             "Fetch interval (seconds)", firebase.RemoteConfigMinimumFetchIntervalSeconds > 0
                                 ? firebase.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds));
                     }
+
                     EditorGUILayout.HelpBox(
                         "Ключ Remote Config совпадает с ID теста, значение — с именем группы. " +
                         "Без Remote Config используются контрольные группы. Для экспериментов Firebase включите Analytics.", MessageType.Info);
@@ -393,7 +396,7 @@ namespace AMZNGoDSDK.Editor
                     EditorGUILayout.LabelField("Версия Unity SDK", FirebasePackageInstaller.UnityVersion + " (закреплена)");
                     EditorGUILayout.HelpBox(FirebasePackageInstaller.InstalledStatus, MessageType.None);
                     EditorGUILayout.HelpBox(
-                        "Analytics 22.4.0; Remote Config 22.1.0; Crashlytics / NDK 19.4.2; Common 21.0.0.\n" +
+                        "Analytics 23.2.0; Remote Config 23.1.0; Crashlytics / NDK 20.1.1; Common 22.2.1.\n" +
                         "Устанавливаются Analytics, Remote Config и Crashlytics. Firebase Unity требует Android minSdk 23.", MessageType.Info);
                     if ((int)PlayerSettings.Android.minSdkVersion < FirebasePackageInstaller.MinimumAndroidSdk)
                         EditorGUILayout.HelpBox("В Player Settings требуется Android Minimum API Level 23 или выше.", MessageType.Warning);

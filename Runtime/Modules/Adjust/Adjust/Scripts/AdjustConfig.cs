@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace AdjustSdk
@@ -18,6 +18,8 @@ namespace AdjustSdk
         public bool? AllowSuppressLogLevel { get; private set; }
         public bool? IsDataResidency { get; private set; }
         public bool? ShouldUseSubdomains { get; private set; }
+        public bool? IsFbIdReadingEnabled { get; set; }
+        public bool? IsDeviceIdsReadingEnabled { get; set; }
         public int? EventDeduplicationIdsMaxSize { get; set; }
         public List<string> UrlStrategyDomains { get; private set; }
         public AdjustLogLevel? LogLevel { get; set; }
@@ -29,7 +31,9 @@ namespace AdjustSdk
         public Action<AdjustSessionSuccess> SessionSuccessDelegate { get; set; }
         public Action<AdjustSessionFailure> SessionFailureDelegate { get; set; }
         public Action<string> DeferredDeeplinkDelegate { get; set; }
+        public Action<AdjustRemoteTrigger> RemoteTriggerDelegate { get; set; }
         public Action<Dictionary<string, string>> SkanUpdatedDelegate { get; set; }
+        public Action<AdjustThirdPartySharingResult> ThirdPartySharingSettingsChangedDelegate { get; set; }
 
         // iOS specific
         public bool? IsAdServicesEnabled { get; set; }
@@ -42,6 +46,11 @@ namespace AdjustSdk
         // Android specific
         public bool? IsPlayStoreKidsComplianceEnabled { get; set; }
         public bool? IsPreinstallTrackingEnabled { get; set; }
+        public bool? IsAppSetIdReadingEnabled { get; set; }
+        public bool? IsGoogleAdIdReadingEnabled { get; set; }
+        public bool? IsAndroidIdReadingEnabled { get; set; }
+        public bool? IsFireAdIdReadingEnabled { get; set; }
+        public bool? IsDeviceIdsFromPluginsReadingEnabled { get; set; }
         public string PreinstallFilePath { get; set; }
         public string FbAppId { get; set; }
 

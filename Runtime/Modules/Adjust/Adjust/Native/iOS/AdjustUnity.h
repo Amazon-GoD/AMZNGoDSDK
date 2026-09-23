@@ -24,6 +24,7 @@ typedef void (*AdjustDelegatePurchaseVerificationCallback)(const char* verificat
 typedef void (*AdjustDelegateVerifyAndTrackCallback)(const char* verificationResult, int callbackId);
 typedef void (*AdjustDelegateResolvedDeeplinkCallback)(const char* deeplink);
 typedef void (*AdjustDelegateSkanErrorCallback)(const char* error);
+typedef void (*AdjustDelegateThirdPartySharingGetter)(const char* thirdPartySharingSettings);
 
 // app callbacks as subscriptions
 typedef void (*AdjustDelegateAttributionCallback)(const char* attribution);
@@ -32,6 +33,8 @@ typedef void (*AdjustDelegateSessionFailureCallback)(const char* sessionFailure)
 typedef void (*AdjustDelegateEventSuccessCallback)(const char* eventSuccess);
 typedef void (*AdjustDelegateEventFailureCallback)(const char* eventFailure);
 typedef void (*AdjustDelegateDeferredDeeplinkCallback)(const char* deeplink);
+typedef void (*AdjustDelegateRemoteTriggerCallback)(const char* remoteTrigger);
 typedef void (*AdjustDelegateSkanUpdatedCallback)(const char* skanData);
+typedef void (*AdjustDelegateThirdPartySharingSettingsChangedCallback)(const char* thirdPartySharingSettings);
 
 @end

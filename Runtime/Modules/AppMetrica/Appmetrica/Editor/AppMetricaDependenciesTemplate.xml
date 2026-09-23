@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
-<!--Auto generated file from AppMetrica Unity Plugin. Do not delete or change manually-->
-<!--Add this file to your Version Control System(Git, SVN etc.)-->
 <dependencies>
     <androidPackages>
-        <androidPackage spec="io.appmetrica.analytics:analytics:7.12.0"/>
+        <androidPackage spec="io.appmetrica.analytics:analytics:8.5.1"/>
+        <androidPackage spec="androidx.annotation:annotation:1.7.1"/>
     </androidPackages>
     <iosPods>
-        <iosPod name="AppMetricaAnalytics" version="5.13.0" minTargetSdk="12.0"/>
+        <iosPod name="AppMetricaAnalytics" version="~> 6.3"/>
+        <iosPod name="AppMetricaLibraryAdapter" version="~> 6.3"/>
     </iosPods>
 </dependencies>

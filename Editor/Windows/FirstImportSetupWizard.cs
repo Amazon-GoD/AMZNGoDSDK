@@ -53,7 +53,7 @@ namespace AMZNGoDSDK.Editor
 
             foreach (var info in _detectedModules)
             {
-                _moduleToggles[info.DefineSymbol] = info.DependenciesPresent;
+                _moduleToggles[info.DefineSymbol] = info.DependenciesPresent || SdkDependencyManager.CanInstallAutomatically(info.DefineSymbol);
             }
         }
 
@@ -70,9 +70,9 @@ namespace AMZNGoDSDK.Editor
             GUILayout.Space(5);
 
             EditorGUILayout.HelpBox(
-                "No SDK configuration found. This wizard will help you enable only the modules " +
-                "whose dependencies are installed in this project.\n\n" +
-                "Modules with missing dependencies are unchecked — enabling them will cause compilation errors.",
+                "Select the SDK modules for this project. After saving, required dependencies are installed automatically: " +
+                "External Dependency Manager, AppLovin MAX with the allowed adapters, and Firebase for enabled modules.\n\n" +
+                "Modules become active after their dependencies finish importing.",
                 MessageType.Info);
 
             GUILayout.Space(10);
@@ -99,7 +99,7 @@ namespace AMZNGoDSDK.Editor
             {
                 foreach (var info in _detectedModules)
                 {
-                    _moduleToggles[info.DefineSymbol] = info.DependenciesPresent;
+                    _moduleToggles[info.DefineSymbol] = info.DependenciesPresent || SdkDependencyManager.CanInstallAutomatically(info.DefineSymbol);
                 }
             }
             if (GUILayout.Button("Disable All", GUILayout.Height(28)))
@@ -166,9 +166,11 @@ namespace AMZNGoDSDK.Editor
 
             if (newVal && info.HasExternalDependency && !info.DependenciesPresent)
             {
-                EditorGUILayout.HelpBox(
-                    "Dependencies not found. Enabling this module will cause compilation errors.",
-                    MessageType.Warning);
+                bool automatic = SdkDependencyManager.CanInstallAutomatically(info.DefineSymbol);
+                EditorGUILayout.HelpBox(automatic
+                    ? "Dependencies will be installed automatically after saving."
+                    : "Dependencies are missing. This module stays inactive until they are available.",
+                    automatic ? MessageType.Info : MessageType.Warning);
             }
 
             EditorGUILayout.EndVertical();
@@ -192,10 +194,7 @@ namespace AMZNGoDSDK.Editor
             if (!SdkSettingsManager.SaveSettings(settings))
                 return;
 
-            Debug.Log("[AMZN GoD SDK] Setup complete — settings saved, defines updated.");
-            EditorUtility.DisplayDialog("Setup Complete",
-                "SDK configuration saved.\nUnity will recompile scripts now.",
-                "OK");
+            Debug.Log("[AMZN GoD SDK] Settings saved. Automatic dependency setup queued; progress is shown in SDK Settings.");
 
             Close();
         }
