@@ -7,12 +7,12 @@ using UnityEngine;
 
 namespace AMZNGoDSDK.Editor
 {
-    /// <summary>MAX build plugins need the SDK key before runtime initialization.</summary>
+    /// <summary>Synchronizes the MAX key and disables Android Ad Review before vendor build hooks.</summary>
     [InitializeOnLoad]
     internal sealed class AppLovinSettingsSynchronizer : IPreprocessBuildWithReport
     {
         private const string ErrorMessage = "[AMZNGoDSDK][AppLovin] Не удалось синхронизировать SDK Key " +
-            "с MAX Integration Manager. Проверьте установленный пакет MAX и его AppLovinSettings.";
+            "или выключить MAX Ad Review (SafeDK). Проверьте установленный пакет MAX и его AppLovinSettings.";
 
         public int callbackOrder => -100;
 
@@ -38,7 +38,7 @@ namespace AMZNGoDSDK.Editor
         {
             try
             {
-                SynchronizeCore();
+                SynchronizeCore(EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android);
             }
             catch (Exception)
             {
@@ -54,7 +54,7 @@ namespace AMZNGoDSDK.Editor
 
             try
             {
-                SynchronizeCore();
+                SynchronizeCore(report.summary.platform == BuildTarget.Android);
             }
             catch (Exception)
             {
@@ -62,15 +62,14 @@ namespace AMZNGoDSDK.Editor
             }
         }
 
-        private static void SynchronizeCore()
+        private static void SynchronizeCore(bool android)
         {
             var settings = SdkSettingsManager.LoadRuntimeSettings();
-            if (settings == null || !settings.Enabled || settings.AppLovin == null || !settings.AppLovin.Enabled)
+            if (settings == null || !settings.Enabled)
                 return;
 
-            var sdkKey = settings.AppLovin.SdkKey;
-            // Empty means the user manages the key in MAX Integration Manager.
-            if (string.IsNullOrWhiteSpace(sdkKey)) return;
+            var sdkKey = settings.AppLovin != null && settings.AppLovin.Enabled ? settings.AppLovin.SdkKey : null;
+            if (!android && string.IsNullOrWhiteSpace(sdkKey)) return;
 
             Type settingsType = null;
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -83,11 +82,32 @@ namespace AMZNGoDSDK.Editor
             if (settingsType == null) return;
 
             var instanceProperty = settingsType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
-            var keyProperty = settingsType.GetProperty("SdkKey", BindingFlags.Public | BindingFlags.Instance);
             var instance = instanceProperty?.GetValue(null) as ScriptableObject;
-            if (instance == null || keyProperty == null || !keyProperty.CanRead || !keyProperty.CanWrite)
+            if (instance == null)
                 throw new InvalidOperationException();
 
+            // SafeDK can be injected even when our MAX runtime module is disabled or
+            // the publisher manages the SDK key in MAX. Do this before either early return.
+            if (android)
+            {
+                var qualityProperty = settingsType.GetProperty("QualityServiceEnabled", BindingFlags.Public | BindingFlags.Instance);
+                if (qualityProperty == null || qualityProperty.PropertyType != typeof(bool)
+                    || !qualityProperty.CanRead || !qualityProperty.CanWrite)
+                    throw new InvalidOperationException();
+                if ((bool)qualityProperty.GetValue(instance))
+                {
+                    qualityProperty.SetValue(instance, false);
+                    EditorUtility.SetDirty(instance);
+                    AssetDatabase.SaveAssetIfDirty(instance);
+                    Debug.Log("[AMZNGoDSDK][AppLovin] MAX Ad Review выключен: SafeDK содержит ссылки на запрещённые SDK.");
+                }
+            }
+
+            // Empty means the user manages the key in MAX Integration Manager.
+            if (string.IsNullOrWhiteSpace(sdkKey)) return;
+            var keyProperty = settingsType.GetProperty("SdkKey", BindingFlags.Public | BindingFlags.Instance);
+            if (keyProperty == null || !keyProperty.CanRead || !keyProperty.CanWrite)
+                throw new InvalidOperationException();
             if (string.Equals(keyProperty.GetValue(instance) as string, sdkKey, StringComparison.Ordinal)) return;
 
             keyProperty.SetValue(instance, sdkKey);

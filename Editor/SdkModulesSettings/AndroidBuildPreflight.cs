@@ -17,10 +17,8 @@ namespace AMZNGoDSDK.Editor
     /// «37 issues were found when checking AAR metadata» про десятки androidx-библиотек не
     /// подсказывает, что дело в одном поле Player Settings.</para>
     ///
-    /// <para>Порядок callbackOrder — раньше <see cref="AppLovinNetworkGuard"/> (0) и
-    /// <see cref="DependencyPreprocessor"/> (-100)? Нет: DependencyPreprocessor обновляет
-    /// define'ы, и запускать проверки до него бессмысленно — состояние модулей ещё не
-    /// синхронизировано. Поэтому -50: после define'ов, до всего остального.</para>
+    /// <para>Порядок -50: после обновления define'ов (-100), до подготовки нативных
+    /// входов в <see cref="AppLovinNetworkGuard"/> (int.MaxValue - 1).</para>
     /// </summary>
     public class AndroidBuildPreflight : IPreprocessBuildWithReport
     {
@@ -37,9 +35,12 @@ namespace AMZNGoDSDK.Editor
             if (settings == null || !settings.Enabled)
                 return;
 
-            if (SdkDependencyManager.IsBusy || DependencyInstaller.IsBusy || FirebasePackageInstaller.IsBusy)
+            // A queued cleanup can be completed by the synchronous native build pass.
+            // Only an operation already changing packages makes the project unstable.
+            if (SdkDependencyBootstrap.IsRunning || DependencyInstaller.IsBusy ||
+                AppLovinPackageInstaller.IsOperationRunning || FirebasePackageInstaller.IsBusy)
                 throw new BuildFailedException("Подготовка зависимостей SDK ещё выполняется. Дождитесь её завершения в AMZN GoD / SDK Settings.");
-            if (settings.AppLovin != null && settings.AppLovin.Enabled && !AppLovinPackageInstaller.IsRequiredSetInstalled)
+            if (settings.AppLovin != null && settings.AppLovin.Enabled && !AppLovinPackageInstaller.IsRequiredBuildSetInstalled)
                 throw new BuildFailedException("Комплект AppLovin ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");
             if (settings.Firebase != null && settings.Firebase.Enabled && !FirebasePackageInstaller.IsRequiredInstallationReady)
                 throw new BuildFailedException("Комплект Firebase ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");

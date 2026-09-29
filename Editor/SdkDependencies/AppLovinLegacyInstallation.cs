@@ -20,6 +20,56 @@ namespace AMZNGoDSDK.Editor
 
         internal static AppLovinLegacyInstallation CaptureModuleState() => new AppLovinLegacyInstallation();
 
+        internal static bool HasProhibitedAdapters => ProhibitedAdapterFiles().Any(path =>
+            !path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) && IsAdapterCode(path));
+
+        private static IEnumerable<string> ProhibitedAdapterFiles()
+        {
+            string mediation = Root + "/Mediation";
+            if (!Directory.Exists(mediation)) return Enumerable.Empty<string>();
+            return Directory.GetDirectories(mediation)
+                .Where(directory => ForbiddenAdNetworks.MatchByAdapterFolder(Path.GetFileName(directory)) != null)
+                .SelectMany(directory => FirebaseUnityPackageUtility.Files(directory.Replace('\\', '/')));
+        }
+
+        private static bool IsAdapterCode(string path)
+        {
+            return Regex.IsMatch(path, @"\.(cs|java|kt|dll|aar|jar|so|a|m|mm|h|asmdef|xml|gradle|androidlib)$", RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>Only exported SDK files and unambiguous dependency declarations are removed.</summary>
+        internal static AppLovinLegacyInstallation InspectProhibitedAdapters()
+        {
+            var plan = new AppLovinLegacyInstallation();
+            foreach (string path in ProhibitedAdapterFiles())
+            {
+                FirebaseUnityPackageUtility.CheckedPath(path);
+                if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || Preserve(path)) continue;
+                bool recognized = IsSdkFile(path);
+                if (!recognized && path.EndsWith("Dependencies.xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    var xml = new XmlDocument { XmlResolver = null };
+                    using (var reader = XmlReader.Create(path, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit }))
+                        xml.Load(reader);
+                    var packages = xml.SelectNodes("/dependencies/androidPackages/androidPackage").Cast<XmlNode>().ToArray();
+                    recognized = packages.Length > 0 && packages.All(node =>
+                    {
+                        string[] coordinate = (node.Attributes?["spec"]?.Value ?? "").Split(':');
+                        return coordinate.Length >= 2 && ForbiddenAdNetworks.MatchMavenCoordinate(coordinate[0], coordinate[1]) != null;
+                    });
+                }
+                if (recognized)
+                {
+                    plan._delete.Add(path);
+                    plan._delete.Add(path + ".meta");
+                }
+                else if (IsAdapterCode(path))
+                    throw new IOException("Автоочистка сохраняет неизвестный файл запрещённого legacy-адаптера: " +
+                        path + ". Удалите адаптер через Integration Manager либо проверьте файл вручную.");
+            }
+            return plan;
+        }
+
         internal static bool HasCore => Files().Any(path => !Preserve(path) && IsCorePath(path) &&
             (IsSdkFile(path) || Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|asmdef)$", RegexOptions.IgnoreCase)));
 

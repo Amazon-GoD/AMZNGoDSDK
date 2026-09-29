@@ -9,8 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Automatically remove prohibited Android SDK dependencies and known carriers
+  (ironSource, Unity Ads, AppMetrica Fyber revenue bridge and MAX Quality Service).
+  Verify final APK/AAB DEX definitions and references after every Android build;
+  fail the build if prohibited types remain. Applies even with AppLovin disabled.
+  See `Documentation~/AMAZON-SDK-CLEANUP.md`.
+- Run synchronous cleanup before every Android build: sanitize custom Gradle
+  templates and exclude recognized native plugins, then continue the same
+  build without a UPM cleanup/retry cycle. Preserve source libraries and
+  back up changed templates; defer package synchronization until after builds.
+
 - Retain Unity 2022.3 and update Android dependencies for API 24: MAX Unity
-  8.6.6 / Android 13.6.4 with all 17 supported allowed adapters pinned, Firebase 13.17.0,
+  8.6.6 / Android 13.6.4 with 15 allowed adapters pinned, Firebase 13.17.0,
   Adjust 5.8.0, AppMetrica Unity 6.10.0 / Android 8.5.1 and EDM4U 1.2.189.
 - Automatically prepare dependencies of enabled modules and the Android build
   tools. Use AGP 8.13.2, Gradle 8.13, a separate JDK 17 and compileSdk 36 while

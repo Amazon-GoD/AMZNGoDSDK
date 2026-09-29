@@ -47,6 +47,13 @@ namespace AMZNGoDSDK.Editor
             "com.applovin.mediation.adapters.maio.android",
         };
 
+        private static bool MustRemoveAdapter(string packageId)
+        {
+            return ObsoleteAdapterPackageIds.Contains(packageId) ||
+                packageId.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) &&
+                ForbiddenAdNetworks.MatchByGroup(packageId) != null;
+        }
+
         private const string ManifestPath = "Packages/manifest.json";
         private const string BackupDirectory = "Library/AmznGoDSDK";
         internal const string DisabledStatePath = "ProjectSettings/AMZNGoDSDK/AppLovinPackages.disabled.json";
@@ -78,6 +85,7 @@ namespace AMZNGoDSDK.Editor
         private static double _statusCheckedAt;
 
         public static bool IsBusy => _busy || _synchronizing || _pendingModuleState.HasValue;
+        internal static bool IsOperationRunning => _busy || _synchronizing;
         public static string Status => SessionState.GetString(StatusKey, "");
         public static bool HasInstalledPlugin { get { ReadInstalledStatus(); return _hasInstalledPlugin; } }
         public static string InstalledStatus { get { ReadInstalledStatus(); return _installedStatus; } }
@@ -118,9 +126,9 @@ namespace AMZNGoDSDK.Editor
                     (package == null || package.version == requiredVersion) &&
                     (legacy == null || AppLovinLegacyInstallation.InstalledVersion == requiredVersion) &&
                     (stashed == null || stashed.Version == requiredVersion) &&
-                    packages.All(item => !ObsoleteAdapterPackageIds.Contains(item.name) &&
+                    packages.All(item => !MustRemoveAdapter(item.name) &&
                         (!PinnedVersions.TryGetValue(item.name, out string pin) || item.version == pin)) &&
-                    disabledPackages.All(item => !ObsoleteAdapterPackageIds.Contains(item.Id) &&
+                    disabledPackages.All(item => !MustRemoveAdapter(item.Id) &&
                         (!PinnedVersions.TryGetValue(item.Id, out string pin) || item.Version == pin));
                 _installedStatus = string.Join("; ", new[] { package == null ? null : "UPM " + package.version, legacy,
                     stashed == null ? null : "UPM " + stashed.Version + " (модуль отключён)" }.Where(value => value != null));
@@ -195,7 +203,6 @@ namespace AMZNGoDSDK.Editor
             { "com.applovin.mediation.adapters.chartboost.android", "9140101.0.0" },
             { "com.applovin.mediation.adapters.facebook.android", "6220000.0.0" },
             { "com.applovin.mediation.adapters.inmobi.android", "11040103.0.0" },
-            { "com.applovin.mediation.adapters.ironsource.android", "906000000.0.0" },
             { "com.applovin.mediation.adapters.line.android", "300001010.1.0" },
             { "com.applovin.mediation.adapters.mintegral.android", "17018100.0.0" },
             { "com.applovin.mediation.adapters.mobilefuse.android", "1120000.0.0" },
@@ -203,7 +210,6 @@ namespace AMZNGoDSDK.Editor
             { "com.applovin.mediation.adapters.ogurypresage.android", "6030100.0.0" },
             { "com.applovin.mediation.adapters.pubmatic.android", "5040000.0.0" },
             { "com.applovin.mediation.adapters.smaato.android", "23020200.0.0" },
-            { "com.applovin.mediation.adapters.unityads.android", "4200100.0.0" },
             { "com.applovin.mediation.adapters.verve.android", "3090200.0.0" },
             { "com.applovin.mediation.adapters.vungle.android", "7070801.0.0" },
             { "com.applovin.mediation.adapters.ysonetwork.android", "1030900.0.0" },
@@ -231,7 +237,7 @@ namespace AMZNGoDSDK.Editor
 
             foreach (var id in packageIds)
             {
-                if (PinnedVersions.ContainsKey(id))
+                if (!MustRemoveAdapter(id) && PinnedVersions.ContainsKey(id))
                     result.Add(PackageSpec(id));
             }
 
@@ -255,7 +261,7 @@ namespace AMZNGoDSDK.Editor
 
         private static void DrainModuleSynchronization()
         {
-            if (!_pendingModuleState.HasValue || _busy || _synchronizing || FirebasePackageInstaller.IsBusy ||
+            if (BuildPipeline.isBuildingPlayer || !_pendingModuleState.HasValue || _busy || _synchronizing || FirebasePackageInstaller.IsBusy ||
                 EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
             bool enabled = _pendingModuleState.Value;
@@ -399,16 +405,140 @@ namespace AMZNGoDSDK.Editor
         /// <summary>Checks the entire pinned set, including adapters missing from the project.</summary>
         public static bool IsRequiredSetInstalled
         {
-            get
+            get { return RequiredSetPresent(PackageInfo.GetAllRegisteredPackages()); }
+        }
+
+        // Extra forbidden adapters are stripped from this build synchronously. UPM can
+        // remove their source packages later, without interrupting the current build.
+        internal static bool IsRequiredBuildSetInstalled =>
+            RequiredSetPresent(PackageInfo.GetAllRegisteredPackages(), false);
+
+        private static bool RequiredSetPresent(IEnumerable<PackageInfo> packages, bool requirePackageCleanup = true)
+        {
+            if (AppLovinLegacyInstallation.HasCore || requirePackageCleanup && NeedsCleanup(packages)) return false;
+            return AllowedAdapterPackageIds().Concat(new[] { MaxPluginPackageId }).All(id =>
+                packages.Any(package => package.name == id && package.version == PinnedVersions[id] &&
+                    !string.IsNullOrEmpty(package.resolvedPath) && File.Exists(Path.Combine(package.resolvedPath, "package.json"))));
+        }
+
+        /// <summary>Also checks disabled state so an old adapter cannot return on the next toggle.</summary>
+        internal static bool NeedsProhibitedCleanup => NeedsCleanup(PackageInfo.GetAllRegisteredPackages());
+
+        private static bool NeedsCleanup(IEnumerable<PackageInfo> packages) =>
+            packages.Any(package => MustRemoveAdapter(package.name)) ||
+            File.Exists(ManifestPath) && ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys.Any(MustRemoveAdapter) ||
+            LoadDisabledState().Packages.Any(entry => MustRemoveAdapter(entry.Id)) ||
+            AppLovinLegacyInstallation.HasProhibitedAdapters;
+
+        private static void ValidateRemovableAdapters(PackageInfo[] installed, Dictionary<string, string> dependencies)
+        {
+            foreach (var package in installed.Where(package => MustRemoveAdapter(package.name)))
             {
-                if (AppLovinLegacyInstallation.HasCore) return false;
-                var packages = PackageInfo.GetAllRegisteredPackages();
-                if (packages.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)) ||
-                    File.Exists(ManifestPath) && ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys.Any(ObsoleteAdapterPackageIds.Contains))
-                    return false;
-                return AllowedAdapterPackageIds().Concat(new[] { MaxPluginPackageId }).All(id =>
-                    packages.Any(package => package.name == id && package.version == PinnedVersions[id] &&
-                        !string.IsNullOrEmpty(package.resolvedPath) && File.Exists(Path.Combine(package.resolvedPath, "package.json"))));
+                if (package.source != PackageSource.Registry)
+                    throw new IOException("Автоочистка сохраняет пакет с нестандартным источником: " +
+                        package.packageId + " (" + package.source + ", " + package.resolvedPath +
+                        "). Удалите адаптер или замените его обычным registry UPM-пакетом.");
+                if (!dependencies.ContainsKey(package.name))
+                {
+                    string owners = string.Join(", ", installed.Where(owner => owner.dependencies != null &&
+                        owner.dependencies.Any(dependency => dependency.name == package.name)).Select(owner => owner.name));
+                    throw new IOException("Запрещённый адаптер " + package.name + " является транзитивной зависимостью" +
+                        (owners.Length == 0 ? "" : " пакетов " + owners) + ". Обновите или удалите пакет-источник.");
+                }
+            }
+            foreach (var dependency in dependencies.Where(entry => MustRemoveAdapter(entry.Key)))
+                if (!installed.Any(package => package.name == dependency.Key) &&
+                    !Regex.IsMatch(dependency.Value, @"^[~^]?\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$"))
+                    throw new IOException("Неопознанный источник запрещённого адаптера: " + dependency.Key +
+                        " = " + dependency.Value + " в " + ManifestPath + ". Проверьте и удалите эту зависимость вручную.");
+        }
+
+        /// <summary>Removes owned forbidden adapters without requiring the MAX module to be enabled.</summary>
+        internal static async Task RemoveProhibitedAdaptersAsync()
+        {
+            if (!NeedsProhibitedCleanup) return;
+            if (IsBusy || FirebasePackageInstaller.IsBusy)
+                throw new InvalidOperationException("Дождитесь текущей операции Unity Package Manager перед очисткой SDK.");
+            _busy = true;
+            bool locked = false;
+            bool backedUp = false;
+            bool upmTouched = false;
+            AppLovinLegacyInstallation snapshot = null;
+            Dictionary<string, string> previous = null;
+            string[] remove = Array.Empty<string>();
+            try
+            {
+                previous = ReadManifestDependencies(File.ReadAllText(ManifestPath));
+                var inventory = Client.List(true, true);
+                await WaitForRequest(inventory);
+                var installed = inventory.Result.ToArray();
+                ValidateRemovableAdapters(installed, previous);
+                remove = previous.Keys.Where(MustRemoveAdapter).ToArray();
+                snapshot = AppLovinLegacyInstallation.InspectProhibitedAdapters();
+                string backup = BackupDirectory + "/AppLovin/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") +
+                    "-cleanup-" + Guid.NewGuid().ToString("N");
+                EditorApplication.LockReloadAssemblies();
+                locked = true;
+                snapshot.Backup(backup);
+                backedUp = true;
+                SessionState.SetString(PendingKey, backup);
+                SetStatus("Удаление запрещённых адаптеров и источников ссылок на SDK…");
+                AssetDatabase.DisallowAutoRefresh();
+                try
+                {
+                    snapshot.RemoveLegacy();
+                    var disabled = LoadDisabledState();
+                    if (disabled.Packages.RemoveAll(entry => MustRemoveAdapter(entry.Id)) > 0)
+                        SaveDisabledState(disabled);
+                }
+                finally { AssetDatabase.AllowAutoRefresh(); }
+                if (remove.Length > 0)
+                {
+                    upmTouched = true;
+                    await WaitForRequest(Client.AddAndRemove(Array.Empty<string>(), remove));
+                    var check = Client.List(true, true);
+                    await WaitForRequest(check);
+                    var remaining = check.Result.Where(package => MustRemoveAdapter(package.name)).Select(package => package.name).ToArray();
+                    if (remaining.Length > 0)
+                        throw new IOException("UPM сохранил запрещённые адаптеры: " + string.Join(", ", remaining) +
+                            ". Проверьте зависимости пакетов, которые их устанавливают.");
+                }
+                SetStatus("Запрещённые адаптеры удалены" + (remove.Length == 0 ? "" : ": " + string.Join(", ", remove)) +
+                    ". Резервная копия: " + backup);
+                Debug.Log("[AppLovinInstaller] " + Status);
+            }
+            catch (Exception failure)
+            {
+                string recovery = "";
+                if (backedUp)
+                {
+                    try
+                    {
+                        try
+                        {
+                            if (upmTouched)
+                                await WaitForRequest(Client.AddAndRemove(remove.Select(id => id + "@" + previous[id]).ToArray(), Array.Empty<string>()));
+                        }
+                        finally { snapshot.Restore(); }
+                        recovery = " Исходные файлы восстановлены.";
+                    }
+                    catch (Exception restoreFailure)
+                    {
+                        recovery = " Откат неполон: " + restoreFailure.Message + ". Резервная копия: " + snapshot.BackupPath;
+                    }
+                }
+                throw new IOException(failure.Message + recovery, failure);
+            }
+            finally
+            {
+                if (backedUp) SessionState.EraseString(PendingKey);
+                _installedStatus = null;
+                try { if (backedUp) AssetDatabase.Refresh(); }
+                finally
+                {
+                    _busy = false;
+                    if (locked) EditorApplication.UnlockReloadAssemblies();
+                }
             }
         }
 
@@ -419,7 +549,9 @@ namespace AMZNGoDSDK.Editor
             if (IsRequiredSetInstalled) return;
             if (!CanStart()) throw new InvalidOperationException(Status);
             await RunOperationAsync(HasInstalledPlugin, false, true, true);
-            if (!IsRequiredSetInstalled)
+            var check = Client.List(true, true);
+            await WaitForRequest(check);
+            if (!RequiredSetPresent(check.Result))
                 throw new IOException("Не подтверждён полный комплект AppLovin MAX и адаптеров. " + Status);
         }
 
@@ -427,6 +559,14 @@ namespace AMZNGoDSDK.Editor
             bool throwOnError = false, bool includeAllAdapters = false)
         {
             if (!CanStart()) return;
+            try { await RemoveProhibitedAdaptersAsync(); }
+            catch (Exception ex)
+            {
+                SetStatus("Очистка AppLovin остановлена: " + ex.Message);
+                Debug.LogError("[AppLovinInstaller] " + Status);
+                if (throwOnError) throw;
+                return;
+            }
             _busy = true;
             bool locked = false;
             bool backedUp = false;
@@ -440,16 +580,18 @@ namespace AMZNGoDSDK.Editor
                     throw new IOException("MAX уже установлен. Для смены версии нажмите Replace MAX Plugin.");
                 if ((replace || adaptersOnly) && !HasInstalledPlugin)
                     throw new IOException("Сначала установите MAX кнопкой Install MAX Plugin.");
-                installed = PackageInfo.GetAllRegisteredPackages();
+                var inventory = Client.List(true, true);
+                await WaitForRequest(inventory);
+                installed = inventory.Result.ToArray();
                 var installedCore = installed.FirstOrDefault(package => package.name == MaxPluginPackageId);
                 if (replace && installedCore != null && installedCore.source == PackageSource.Embedded)
                     throw new IOException("MAX установлен как embedded package. Сначала перенесите его из Packages в обычный UPM пакет.");
                 var adapters = installed.Where(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal)).ToArray();
                 var obsolete = ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys
-                    .Where(ObsoleteAdapterPackageIds.Contains).ToArray();
+                    .Where(MustRemoveAdapter).ToArray();
                 foreach (var adapter in adapters)
                 {
-                    if (ObsoleteAdapterPackageIds.Contains(adapter.name) && adapter.source == PackageSource.Embedded)
+                    if (MustRemoveAdapter(adapter.name) && adapter.source == PackageSource.Embedded)
                         throw new IOException("Устаревший адаптер установлен как embedded package: " + adapter.name + ". Удалите его явно перед обновлением MAX.");
                     var forbidden = ForbiddenAdNetworks.MatchByGroup(adapter.name);
                     if (forbidden != null)
@@ -501,7 +643,7 @@ namespace AMZNGoDSDK.Editor
                     var specifications = new List<string> { PackageSpec(MaxPluginPackageId) };
                     foreach (var adapter in adapters)
                     {
-                        if (ObsoleteAdapterPackageIds.Contains(adapter.name)) continue;
+                        if (MustRemoveAdapter(adapter.name)) continue;
                         string version = PinnedVersions.TryGetValue(adapter.name, out string pin) ? pin : adapter.version;
                         expected[adapter.name] = version;
                         if (adapter.source == PackageSource.Registry)
@@ -525,8 +667,8 @@ namespace AMZNGoDSDK.Editor
                 }
                 var check = Client.List(true, true);
                 await WaitForRequest(check);
-                if (check.Result.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)))
-                    throw new IOException("UPM не удалил устаревшие адаптеры HyprMX/Maio.");
+                if (check.Result.Any(package => MustRemoveAdapter(package.name)))
+                    throw new IOException("UPM не удалил запрещённые или устаревшие адаптеры.");
                 foreach (var package in expected)
                     if (!check.Result.Any(item => item.name == package.Key && (package.Value == null || item.version == package.Value)))
                         throw new IOException("UPM не подтвердил пакет " + package.Key + (package.Value == null ? "" : "@" + package.Value));
@@ -623,7 +765,7 @@ namespace AMZNGoDSDK.Editor
                 var dependencies = File.Exists(ManifestPath)
                     ? ReadManifestDependencies(File.ReadAllText(ManifestPath)) : new Dictionary<string, string>();
                 var state = LoadDisabledState();
-                bool hasPackageChanges = enabled ? state.Packages.Count > 0 || dependencies.Keys.Any(ObsoleteAdapterPackageIds.Contains) :
+                bool hasPackageChanges = enabled ? state.Packages.Count > 0 || dependencies.Keys.Any(MustRemoveAdapter) :
                     dependencies.Keys.Any(id => id.StartsWith("com.applovin.", StringComparison.Ordinal));
                 bool hasSettingsChanges = File.Exists(enabled ? DisabledAppLovinSettingsPath : AppLovinSettingsPath);
                 if (!hasPackageChanges && !hasSettingsChanges) return;
@@ -704,6 +846,7 @@ namespace AMZNGoDSDK.Editor
             foreach (var package in packages)
             {
                 string id = package.Key;
+                if (MustRemoveAdapter(id)) continue;
                 string version = package.Value;
                 var existing = state.Packages.FirstOrDefault(entry =>
                     string.Equals(entry.Id, id, StringComparison.Ordinal));
@@ -713,6 +856,7 @@ namespace AMZNGoDSDK.Editor
                     existing.Version = version;
             }
 
+            state.Packages.RemoveAll(entry => MustRemoveAdapter(entry.Id));
             SaveDisabledState(state);
             await WaitForRequest(Client.AddAndRemove(Array.Empty<string>(), packages.Select(package => package.Key).ToArray()));
             Debug.Log($"[AppLovinInstaller] AppLovin выключен: из manifest удалено пакетов {packages.Length}.");
@@ -725,10 +869,13 @@ namespace AMZNGoDSDK.Editor
                 throw new IOException("Не найден Packages/manifest.json для восстановления AppLovin.");
 
             var dependencies = ReadManifestDependencies(File.ReadAllText(ManifestPath));
-            var obsolete = dependencies.Keys.Where(ObsoleteAdapterPackageIds.Contains).ToArray();
-            bool skippedObsolete = state.Packages.Any(entry => ObsoleteAdapterPackageIds.Contains(entry.Id));
+            var obsolete = dependencies.Keys.Where(MustRemoveAdapter).ToArray();
+            var inventory = Client.List(true, true);
+            await WaitForRequest(inventory);
+            ValidateRemovableAdapters(inventory.Result.ToArray(), dependencies);
+            bool skippedObsolete = state.Packages.Any(entry => MustRemoveAdapter(entry.Id));
             var missing = state.Packages
-                .Where(entry => !ObsoleteAdapterPackageIds.Contains(entry.Id) && !dependencies.ContainsKey(entry.Id))
+                .Where(entry => !MustRemoveAdapter(entry.Id) && !dependencies.ContainsKey(entry.Id))
                 .ToList();
             if (missing.Count > 0 || obsolete.Length > 0)
             {
@@ -738,8 +885,8 @@ namespace AMZNGoDSDK.Editor
                 await WaitForRequest(Client.AddAndRemove(specifications, obsolete));
                 var check = Client.List(true, true);
                 await WaitForRequest(check);
-                if (check.Result.Any(package => ObsoleteAdapterPackageIds.Contains(package.name)))
-                    throw new IOException("UPM не удалил устаревшие адаптеры HyprMX/Maio при включении AppLovin.");
+                if (check.Result.Any(package => MustRemoveAdapter(package.name)))
+                    throw new IOException("UPM не удалил запрещённые или устаревшие адаптеры при включении AppLovin.");
             }
             DeleteDisabledState();
             Debug.Log($"[AppLovinInstaller] AppLovin включён: восстановлено пакетов {missing.Count}.");

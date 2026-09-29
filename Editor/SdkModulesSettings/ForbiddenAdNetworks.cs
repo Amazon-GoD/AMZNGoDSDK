@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace AMZNGoDSDK.Editor
 {
@@ -41,6 +42,12 @@ namespace AMZNGoDSDK.Editor
     {
         public string DisplayName;
 
+        /// <summary>Разрешённая сама по себе сетка, содержащая ссылки на запрещённые SDK.</summary>
+        public bool IsCarrier;
+
+        /// <summary>Префиксы Java-пакетов в DEX descriptors; только семь запрещённых SDK.</summary>
+        public string[] DexTypePrefixes = Array.Empty<string>();
+
         /// <summary>
         /// Maven group id, который можно запретить целиком: ничего разрешённого в нём нет.
         /// Идёт и в Gradle-исключения, и в проверку имён .aar/.jar и spec'ов Dependencies.xml.
@@ -68,6 +75,7 @@ namespace AMZNGoDSDK.Editor
 
     public static class ForbiddenAdNetworks
     {
+        public const string PolicyVersion = "amazon-prohibited-sdk-2";
         private const string MaxMediationGroup = "com.applovin.mediation";
 
         public static readonly IReadOnlyList<ForbiddenAdNetwork> All = new List<ForbiddenAdNetwork>
@@ -75,57 +83,100 @@ namespace AMZNGoDSDK.Editor
             new ForbiddenAdNetwork
             {
                 DisplayName = "Tapjoy",
+                DexTypePrefixes = new[] { "com/tapjoy/" },
                 MavenGroups = new[] { "com.tapjoy" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "tapjoy-adapter") },
                 AdapterFolderNames = new[] { "Tapjoy" },
+                UpmPackageTokens = new[] { "mediation.adapters.tapjoy." },
             },
             new ForbiddenAdNetwork
             {
                 // MoPub закрыт в 2022 (поглощён AppLovin), актуального адаптера MAX нет.
                 // Держим в списке на случай legacy-зависимости в чужом плагине.
                 DisplayName = "MoPub",
+                DexTypePrefixes = new[] { "com/mopub/" },
                 MavenGroups = new[] { "com.mopub" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "mopub-adapter") },
                 AdapterFolderNames = new[] { "MoPub" },
+                UpmPackageTokens = new[] { "mediation.adapters.mopub." },
             },
             new ForbiddenAdNetwork
             {
                 // Inneractive → Fyber → DT Exchange: одна сетка под тремя именами в разные
                 // годы, артефакты встречаются под всеми тремя.
                 DisplayName = "Inneractive / Fyber / DT Exchange",
+                DexTypePrefixes = new[] { "com/fyber/", "com/inneractive/" },
                 MavenGroups = new[] { "com.fyber", "com.inneractive", "com.digitalturbine" },
                 Artifacts = new[]
                 {
                     new ForbiddenArtifact(MaxMediationGroup, "fyber-adapter"),
                     new ForbiddenArtifact(MaxMediationGroup, "inneractive-adapter"),
                     new ForbiddenArtifact(MaxMediationGroup, "dtexchange-adapter"),
+                    new ForbiddenArtifact("io.appmetrica.analytics", "analytics-ad-revenue-fyber-v3"),
                 },
-                UpmPackageTokens = new[] { "mediation.adapters.fyber." },
+                UpmPackageTokens = new[] { "mediation.adapters.fyber.", "mediation.adapters.inneractive.", "mediation.adapters.dtexchange." },
                 AdapterFolderNames = new[] { "Fyber", "Inneractive", "DTExchange" },
             },
             new ForbiddenAdNetwork
             {
                 DisplayName = "Appnext",
-                MavenGroups = new[] { "com.appnext" },
+                DexTypePrefixes = new[] { "com/appnext/" },
+                MavenGroups = new[] { "com.appnext", "com.appnext.sdk", "com.appnext.sdk.adapters" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "appnext-adapter") },
                 AdapterFolderNames = new[] { "Appnext" },
+                UpmPackageTokens = new[] { "mediation.adapters.appnext." },
             },
             new ForbiddenAdNetwork
             {
                 DisplayName = "Amplitude",
+                DexTypePrefixes = new[] { "com/amplitude/" },
                 MavenGroups = new[] { "com.amplitude" },
             },
             new ForbiddenAdNetwork
             {
                 DisplayName = "Flurry",
-                MavenGroups = new[] { "com.flurry" },
+                DexTypePrefixes = new[] { "com/flurry/" },
+                MavenGroups = new[] { "com.flurry", "com.flurry.android" },
                 Artifacts = new[] { new ForbiddenArtifact(MaxMediationGroup, "flurry-adapter") },
                 AdapterFolderNames = new[] { "Flurry" },
+                UpmPackageTokens = new[] { "mediation.adapters.flurry." },
             },
             new ForbiddenAdNetwork
             {
                 DisplayName = "Branch",
-                MavenGroups = new[] { "io.branch" },
+                DexTypePrefixes = new[] { "io/branch/" },
+                MavenGroups = new[] { "io.branch", "io.branch.sdk.android" },
+            },
+            new ForbiddenAdNetwork
+            {
+                // Ad Quality содержит ссылки на Tapjoy/Fyber. Удаляется вся цепочка:
+                // исключать только adquality-sdk небезопасно для runtime ironSource.
+                DisplayName = "ironSource / LevelPlay (источник ссылок на запрещённые SDK)",
+                IsCarrier = true,
+                Artifacts = new[]
+                {
+                    new ForbiddenArtifact(MaxMediationGroup, "ironsource-adapter"),
+                    new ForbiddenArtifact("ironsource.sdk", "mediationsdk"),
+                    new ForbiddenArtifact("com.ironsource.sdk", "mediationsdk"),
+                    new ForbiddenArtifact("com.unity3d.ads-mediation", "mediation-sdk"),
+                    new ForbiddenArtifact("com.unity3d.ads-mediation", "adquality-sdk"),
+                    new ForbiddenArtifact("com.ironsource", "adquality-sdk"),
+                    new ForbiddenArtifact("com.ironsource", "adqualitysdk"),
+                },
+                UpmPackageTokens = new[] { "mediation.adapters.ironsource." },
+                AdapterFolderNames = new[] { "IronSource" },
+            },
+            new ForbiddenAdNetwork
+            {
+                DisplayName = "Unity Ads (источник reflection-ссылок на Tapjoy)",
+                IsCarrier = true,
+                Artifacts = new[]
+                {
+                    new ForbiddenArtifact(MaxMediationGroup, "unityads-adapter"),
+                    new ForbiddenArtifact("com.unity3d.ads", "unity-ads"),
+                },
+                UpmPackageTokens = new[] { "mediation.adapters.unityads." },
+                AdapterFolderNames = new[] { "UnityAds" },
             },
             new ForbiddenAdNetwork
             {
@@ -220,28 +271,52 @@ namespace AMZNGoDSDK.Editor
             if (string.IsNullOrEmpty(value))
                 return null;
 
+            string[] coordinate = value.Split(':');
+            if (coordinate.Length >= 2 && Regex.IsMatch(coordinate[0], @"^[a-zA-Z0-9_.-]+$"))
+                return MatchMavenCoordinate(coordinate[0], coordinate[1]);
+
             foreach (var network in All)
             {
                 foreach (var group in network.MavenGroups)
                 {
-                    if (Contains(value, group))
+                    if (ContainsIdentity(value, group))
                         return network;
                 }
 
                 foreach (var artifact in network.Artifacts)
                 {
-                    if (Contains(value, artifact.Group) && Contains(value, artifact.Module))
+                    if (ContainsIdentity(value, artifact.Group) && ContainsIdentity(value, artifact.Module))
                         return network;
                 }
 
                 foreach (var token in network.UpmPackageTokens)
                 {
-                    if (Contains(value, token))
+                    if (value.StartsWith("com.applovin." + token, StringComparison.OrdinalIgnoreCase))
                         return network;
                 }
             }
 
             return null;
+        }
+
+        /// <summary>Точное совпадение Maven-координат, без поиска подстрок.</summary>
+        public static ForbiddenAdNetwork MatchMavenCoordinate(string group, string module)
+        {
+            foreach (var network in All)
+            {
+                foreach (string forbiddenGroup in network.MavenGroups)
+                    if (string.Equals(group, forbiddenGroup, StringComparison.OrdinalIgnoreCase)) return network;
+                foreach (var artifact in network.Artifacts)
+                    if (string.Equals(group, artifact.Group, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(module, artifact.Module, StringComparison.OrdinalIgnoreCase)) return network;
+            }
+            return null;
+        }
+
+        /// <summary>Необязательный reflection-модуль, который безопасно исключается поздно в Gradle.</summary>
+        public static bool IsOptionalArtifact(string group, string module)
+        {
+            return group == "io.appmetrica.analytics" && module == "analytics-ad-revenue-fyber-v3";
         }
 
         /// <summary>Возвращает сетку по имени папки адаптера MAX, либо null.</summary>
@@ -262,9 +337,10 @@ namespace AMZNGoDSDK.Editor
             return null;
         }
 
-        private static bool Contains(string haystack, string needle)
+        private static bool ContainsIdentity(string haystack, string needle)
         {
-            return haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+            return Regex.IsMatch(haystack, @"(^|[^a-zA-Z0-9])" + Regex.Escape(needle) + @"(?=$|[^a-zA-Z0-9])",
+                RegexOptions.IgnoreCase);
         }
     }
 }

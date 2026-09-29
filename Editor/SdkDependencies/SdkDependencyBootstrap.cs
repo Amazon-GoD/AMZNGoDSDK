@@ -28,12 +28,13 @@ namespace AMZNGoDSDK.Editor
         private sealed class BootstrapState
         {
             public string Fingerprint;
-            public string Stage = "edm";
+            public string Stage = "cleanup";
             public string Status = "Ожидание настройки зависимостей SDK…";
             public int Attempts;
         }
 
         internal static bool IsBusy => _running || _queued;
+        internal static bool IsRunning => _running;
         internal static string Status => _state?.Status ?? "Ожидание настройки зависимостей SDK…";
 
         static SdkDependencyBootstrap()
@@ -113,6 +114,14 @@ namespace AMZNGoDSDK.Editor
         {
             switch (_state.Stage)
             {
+                case "cleanup":
+                    if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android && AppLovinPackageInstaller.NeedsProhibitedCleanup)
+                    {
+                        BeginAttempt("Удаление запрещённых SDK и адаптеров-источников…");
+                        await AppLovinPackageInstaller.RemoveProhibitedAdaptersAsync();
+                    }
+                    Advance("edm", "Проверка External Dependency Manager…");
+                    break;
                 case "edm":
                     EditorApplication.LockReloadAssemblies();
                     try
@@ -220,6 +229,7 @@ namespace AMZNGoDSDK.Editor
 
         private static bool RequirementsReady(SdkSettingsData settings)
         {
+            if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android && AppLovinPackageInstaller.NeedsProhibitedCleanup) return false;
             if (!IsEdmReady()) return false;
             if (settings.AppLovin?.Enabled == true && !AppLovinPackageInstaller.IsRequiredSetInstalled) return false;
             if (settings.Firebase?.Enabled == true && !FirebasePackageInstaller.IsRequiredInstallationReady) return false;
@@ -236,6 +246,7 @@ namespace AMZNGoDSDK.Editor
             var requirements = new List<string>
             {
                 "bootstrap-api24-1", Application.unityVersion, EditorUserBuildSettings.activeBuildTarget.ToString(),
+                "cleanup:" + ForbiddenAdNetworks.PolicyVersion,
                 "edm:" + DependencyInstaller.ExternalDependencyManagerVersion,
                 "bundled:adjust-5.8.0:appmetrica-6.10.0-android-8.5.1",
                 "modules:" + string.Join(",", new[] { settings.Adjust?.Enabled == true, settings.AppMetrica?.Enabled == true,

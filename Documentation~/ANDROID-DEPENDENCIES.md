@@ -54,7 +54,7 @@ Xcode 26.2; iOS builds are outside this Android verification.
 
 ## Pinned MAX adapter set
 
-All 17 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
+All 15 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
 UPM versions are read from the AppLovin registry rather than inferred from
 native version numbers. Replacing MAX updates the installed adapters and
 preserves their network selection. Automatic initial setup installs the
@@ -73,7 +73,6 @@ networks keep their settings. This follows the vendor's
 | Chartboost | 9140101.0.0 | 9.14.1.1 |
 | Meta | 6220000.0.0 | 6.22.0.0 |
 | InMobi | 11040103.0.0 | 11.4.1.3 |
-| ironSource | 906000000.0.0 | 9.6.0.0.0 |
 | LINE | 300001010.1.0 | 3000.1.1.1 |
 | Mintegral | 17018100.0.0 | 17.1.81.0 |
 | MobileFuse | 1120000.0.0 | 1.12.0.0 |
@@ -81,10 +80,14 @@ networks keep their settings. This follows the vendor's
 | Ogury | 6030100.0.0 | 6.3.1.0 |
 | PubMatic | 5040000.0.0 | 5.4.0.0 |
 | Smaato | 23020200.0.0 | 23.2.2.0 |
-| Unity Ads | 4200100.0.0 | 4.20.1.0 |
 | Verve | 3090200.0.0 | 3.9.2.0 |
 | Vungle | 7070801.0.0 | 7.7.8.1 |
 | YSO | 1030900.0.0 | 1.3.9.0 |
+
+ironSource and Unity Ads are removed by the Amazon prohibited SDK cleanup policy.
+Quality Service is disabled on Android, and the optional AppMetrica Fyber revenue
+bridge is excluded. See [Automatic cleanup](AMAZON-SDK-CLEANUP.md) for the process
+and final APK/AAB verification.
 
 ## Other modules reviewed
 
@@ -109,8 +112,8 @@ networks keep their settings. This follows the vendor's
 - [AppMetrica Android release notes](https://appmetrica.yandex.com/docs/en/sdk/android/changelog-android)
 - [EDM4U 1.2.189](https://github.com/googlesamples/unity-jar-resolver/releases/tag/v1.2.189)
 
-The initial dependency audit inspected 279 resolved AAR manifests. The final
-17-adapter set and updated Firebase/AppMetrica successfully build an APK
+The initial dependency audit inspected 279 resolved AAR manifests. Before the
+Amazon cleanup, the 17-adapter set and updated Firebase/AppMetrica built an APK
 through Unity 2022.3.60f1 (Mono, armeabi-v7a): minSdk 24, targetSdk 34,
 compileSdk 36. Automatic preparation was checked by downloading tools from
 scratch and by importing the SDK into a clean consumer with no external SDKs.
