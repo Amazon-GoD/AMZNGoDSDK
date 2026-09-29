@@ -219,34 +219,40 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        public void TrackImpression(string paidAppId)
+        public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
+
+        public void TrackImpression(string paidAppId, string placement)
         {
             // ts фиксируем СРАЗУ, в момент показа: если device_id ещё резолвится, отправка
             // подождёт его пару кадров, но время события останется настоящим, а не поздним.
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
-            StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts));
+            StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts, placement));
         }
 
-        public void TrackClick(string paidAppId)
+        public void TrackClick(string paidAppId) => TrackClick(paidAppId, null);
+
+        public void TrackClick(string paidAppId, string placement)
         {
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
-            StartCoroutine(TrackCrossPromoEvent("cp_click", paidAppId, ts));
+            StartCoroutine(TrackCrossPromoEvent("cp_click", paidAppId, ts, placement));
         }
 
         /// <summary>
         /// Awaitable-версия отправки клика — её ждёт оверлей перед открытием стора, чтобы
-        /// GET клика успел уйти до сворачивания приложения.
+        /// запрос клика успел уйти до сворачивания приложения.
         /// </summary>
-        public IEnumerator TrackClickRoutine(string paidAppId)
+        public IEnumerator TrackClickRoutine(string paidAppId) => TrackClickRoutine(paidAppId, null);
+
+        public IEnumerator TrackClickRoutine(string paidAppId, string placement)
         {
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 yield break;
-            yield return TrackCrossPromoEvent("cp_click", paidAppId, ts);
+            yield return TrackCrossPromoEvent("cp_click", paidAppId, ts, placement);
         }
 
         /// <summary>
@@ -310,7 +316,7 @@ namespace AMZNGoDSDK.Runtime
             yield return SendEventWithRetry(json, eventId);
         }
 
-        private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts)
+        private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts, string placement)
         {
             // Раньше здесь был ранний return при !IsReady — событие пропадало навсегда,
             // хотя device_id резолвился буквально десятки миллисекунд спустя. Теперь ждём
@@ -326,9 +332,9 @@ namespace AMZNGoDSDK.Runtime
 
             string deviceIdHash = EventDeviceIdHash;
             string eventId = NewEventId();
-            Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
+            Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, placement={placement}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
-            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId);
+            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId, placement);
             yield return SendEventWithRetry(json, eventId);
         }
 
@@ -781,14 +787,21 @@ namespace AMZNGoDSDK.Runtime
         }
 
         private static string BuildCrossPromoEventJson(
-            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId)
+            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement)
         {
+            // Старые вызовы без плейсмента сохраняют прежний payload. Очередь хранит
+            // готовый JSON, поэтому плейсмент баннера сохранится и при повторной отправке.
+            string placementField = string.IsNullOrWhiteSpace(placement)
+                ? string.Empty
+                : $"\"placement\":\"{EscapeJson(placement)}\",";
+
             return "{" +
                    $"\"event_name\":\"{EscapeJson(eventName)}\"," +
                    $"\"event_id\":\"{EscapeJson(eventId)}\"," +
                    $"\"paid_app_id\":\"{EscapeJson(paidAppId)}\"," +
                    $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   placementField +
                    $"\"ts\":{ts}" +
                    "}";
         }

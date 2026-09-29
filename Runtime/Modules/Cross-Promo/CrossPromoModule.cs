@@ -498,21 +498,25 @@ namespace AMZNGoDSDK.Runtime
             OnBannerFuncsUpdated?.Invoke(onClose, isNoAds);
         }
 
-        public void TrackImpression(string paidAppId)
+        public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
+
+        public void TrackImpression(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
-            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved);
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved, placement);
 #endif
         }
 
-        public void TrackClick(string paidAppId)
+        public void TrackClick(string paidAppId) => TrackClick(paidAppId, null);
+
+        public void TrackClick(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
-            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved);
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved, placement);
 #endif
         }
 
@@ -521,7 +525,9 @@ namespace AMZNGoDSDK.Runtime
         /// дождаться перед открытием стора. Живёт на модуле (он переживает закрытие оверлея),
         /// поэтому незавершённые ретраи не обрываются вместе с оверлеем.
         /// </summary>
-        public IEnumerator TrackClickRoutine(string paidAppId)
+        public IEnumerator TrackClickRoutine(string paidAppId) => TrackClickRoutine(paidAppId, null);
+
+        public IEnumerator TrackClickRoutine(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"} → delegating to Analytics (awaited)");
@@ -529,7 +535,7 @@ namespace AMZNGoDSDK.Runtime
             var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
             if (analytics == null)
                 yield break;
-            yield return analytics.TrackClickRoutine(resolved);
+            yield return analytics.TrackClickRoutine(resolved, placement);
 #else
             yield break;
 #endif

@@ -1,3 +1,37 @@
+# Cross-promo banner backend events — 2026-09-29
+
+Implemented on `tmp/crosspromo-banner-backend`, created from `safety` at
+`4526aa3`. Work is isolated in `Temp~/CrossPromoBannerBackend` because other
+tasks changed the shared checkout's branch during investigation.
+
+- Visible banner rotation sends `cp_impression` with `placement: "banner"`.
+  Hidden banners, disabled Images, missing sprites and no-ads are excluded.
+- Banner clicks send exactly one `cp_click` with the same placement. Backend
+  tracking starts independently of Adjust/TrackingUrl. Redirect waits at most
+  1.5 seconds, and pending tracking runs on the persistent module.
+- Both modules retain their existing public single-argument methods and add
+  placement overloads. The JSON queue retains placement during retries.
+  Existing interstitial/rewarded calls retain their previous payloads.
+- `first_open` and incoming attribution are unchanged: the installed game
+  does not know its source placement. Backend attribution must inherit it
+  from the matched cross-promo event. Server implementation is not in this
+  repository; no install-placement support is claimed for the backend.
+
+Validation: independent read-only transport and banner reviews approved.
+Analytics and CrossPromo compiled with Unity 2022.3.60f1's Roslyn compiler
+against the project's Unity assembly references. CrossPromo compiled with
+Analytics enabled and disabled. Only existing unused-field warnings remained
+(`DeviceIdProvider._lastRequestTime`, `CrossPromoModule._firstWarmupTriggered`).
+Diff whitespace checks used `cr-at-eol` for the repository's stored CRLF C#
+files. Compiler responses and logs are under ignored `Temp~/Validation`.
+
+Unity Test Framework remains disabled. No Editor play session, device run,
+or live backend delivery was performed. Delivery/enqueue is not guaranteed
+within the redirect deadline, especially while device ID is resolving.
+No merge or push was performed.
+
+---
+
 # Automatic prohibited SDK cleanup — 2026-09-29
 
 ## Follow-up: five review fixes

@@ -28,8 +28,8 @@ namespace AMZNGoDSDK.Runtime
         private const string Interstitial = "interstitial";
         private const string Rewarded = "rewarded";
 
-        // ---- Banner (AppMetrica only). Показ баннера НЕ репортится: он крутится каждые
-        //      8 секунд и засорял бы аналитику. Уходит только клик. ----
+        // ---- Banner: здесь только AppMetrica-клик. Баннер отдельно отправляет на бэкенд
+        //      cp_impression/cp_click с placement="banner" через CrossPromoModule. ----
 
         public static void ReportBannerClick(BannerData data) =>
             ReportAppMetrica(BannerClickEvent, data, "banner_click");

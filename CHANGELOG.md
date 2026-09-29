@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Send cross-promo banner impressions and clicks to the backend with
+  `placement: "banner"`. Start backend click tracking before redirect, with
+  up to 1.5 seconds of waiting and tracking hosted on the persistent module.
 - Verify every split APK from the current Android build report; distinguish
   Gradle export from a directory containing completed APKs.
 - Preserve allowed Gradle dependencies with prohibited transitive exclusions,
