@@ -246,7 +246,7 @@ namespace AMZNGoDSDK.Runtime
             var data = bannerDataList[_lastShownIndex];
             CrossPromoAnalytics.ReportBannerClick(data);
             Debug.Log($"[CrossPromoBanner] Banner clicked → sending cp_click (paidAppId={data.paidAppId}, title={data.title})");
-            CrossPromoModule.Instance?.TrackClick(data.paidAppId);
+            CrossPromoModule.Instance?.TrackClick(data.paidAppId, "banner");
             StartCoroutine(TrackAndOpenUrl(data));
         }
 
