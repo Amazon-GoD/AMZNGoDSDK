@@ -250,6 +250,7 @@ namespace AMZNGoDSDK.Editor
                 SdkKey = runtimeSettings.SdkKey,
                 InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
+                BannerAdUnitId = runtimeSettings.BannerAdUnitId,
                 InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
                     runtimeSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
                 RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
@@ -532,6 +533,7 @@ namespace AMZNGoDSDK.Editor
                 SdkKey = editorSettings.SdkKey,
                 InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = editorSettings.RewardedAdUnitId,
+                BannerAdUnitId = editorSettings.BannerAdUnitId,
                 InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
                     editorSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
                 RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(

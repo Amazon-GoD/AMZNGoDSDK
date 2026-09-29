@@ -268,6 +268,11 @@ namespace AMZNGoDSDK.Editor
                     _currentSettings.AppLovin.RewardedAdUnitId = EditorGUILayout
                         .TextField("Rewarded Ad Unit", _currentSettings.AppLovin.RewardedAdUnitId);
 
+                    _currentSettings.AppLovin.BannerAdUnitId = EditorGUILayout
+                        .TextField(new GUIContent("Banner Ad Unit",
+                            "Баннер MAX после исчерпания всех капов JSON-рекламы. Если пусто, остаётся баннер кросс-промо."),
+                            _currentSettings.AppLovin.BannerAdUnitId);
+
                     GUILayout.Space(6);
                     EditorGUILayout.LabelField("AD Placements", EditorStyles.miniBoldLabel);
                     _currentSettings.AppLovin.InterstitialAdPlacement = EditorGUILayout

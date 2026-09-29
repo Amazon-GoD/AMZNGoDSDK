@@ -16,6 +16,10 @@ namespace AMZNGoDSDK.Runtime
 
         public string InterstitialAdUnitId;
         public string RewardedAdUnitId;
+
+        /// <summary>Пустое значение сохраняет баннер кросс-промо после исчерпания капов.</summary>
+        public string BannerAdUnitId;
+
         public string InterstitialAdPlacement = DefaultInterstitialAdPlacement;
         public string RewardedAdPlacement = DefaultRewardedAdPlacement;
 
