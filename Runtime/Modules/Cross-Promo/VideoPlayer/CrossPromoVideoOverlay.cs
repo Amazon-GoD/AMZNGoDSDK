@@ -248,7 +248,7 @@ namespace AMZNGoDSDK.Runtime
 
             IncrementShowCount(config);
             onShown?.Invoke();
-            ReportImpression(config);
+            ReportImpression(config, placement);
 
             var adjustImpression = CrossPromoAdjustTracking.BuildImpressionUrl(config);
             if (!string.IsNullOrWhiteSpace(adjustImpression))
@@ -633,13 +633,13 @@ namespace AMZNGoDSDK.Runtime
 
         #region Internal — Tracking & Analytics
 
-        private static void ReportImpression(PromoConfiguration config)
+        private static void ReportImpression(PromoConfiguration config, string placement)
         {
             // Показ в AppMetrica (inter/reward_displayed) для Unity-пути репортит модуль в
             // ShowVideoInternalCoroutine. Здесь остаётся только показ на наш бэкенд
             // (cp_impression); отдельный crosspromo_video_show убран как дубль.
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
-            CrossPromoModule.Instance?.TrackImpression(paidAppId);
+            CrossPromoModule.Instance?.TrackImpression(paidAppId, placement);
         }
 
         private void ReportClick(PromoConfiguration config)
@@ -653,7 +653,7 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoAnalytics.ReportClicked(_placement, data);
 
             string paidAppId = config.AppPackageName?.Count > 0 ? config.AppPackageName[0] : null;
-            CrossPromoModule.Instance?.TrackClick(paidAppId);
+            CrossPromoModule.Instance?.TrackClick(paidAppId, _placement);
         }
 
         private static void IncrementShowCount(PromoConfiguration config)

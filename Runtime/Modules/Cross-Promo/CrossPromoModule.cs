@@ -503,7 +503,7 @@ namespace AMZNGoDSDK.Runtime
         public void TrackImpression(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"} → delegating to Analytics");
+            Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
             SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved, placement);
 #endif
@@ -514,7 +514,7 @@ namespace AMZNGoDSDK.Runtime
         public void TrackClick(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"} → delegating to Analytics");
+            Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
             SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved, placement);
 #endif
@@ -530,7 +530,7 @@ namespace AMZNGoDSDK.Runtime
         public IEnumerator TrackClickRoutine(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"} → delegating to Analytics (awaited)");
+            Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics (awaited)");
 #if AMZN_ANALYTICS_ENABLED
             var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
             if (analytics == null)

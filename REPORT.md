@@ -1,3 +1,32 @@
+# Cross-promo event placements — 2026-09-29
+
+Implemented on `tmp/crosspromo-event-placements`, based on `safety`, in a
+separate worktree. No merge or push was performed.
+
+Existing cross-promo impressions and clicks include `placement`:
+`interstitial`, `rewarded`, or `banner`. Both video players pass the format;
+native asynchronous clicks retain a snapshot of the placement at click time.
+The retry queue preserves placement in the stored event JSON. Legacy API
+overloads remain available and omit the field when the placement is unknown.
+
+Banner impressions are handled in another branch; their future call is
+`TrackImpression(paidAppId, "banner")`. Install attribution requires the backend
+to inherit placement from the attributed `cp_click`, matching `device_id_hash`
+and the click's `paid_app_id` to the installed game's `app_id`. Backend code
+is absent here; first-open events and Adjust URLs are unchanged.
+
+Validation: production C# compiled using Unity 2022.3.60f1 compiler/references
+and freshly built intermodule references for `EditorAndroid-Enabled`,
+`EditorAndroid-Disabled`, `AndroidPlayer-Enabled`, and `AndroidPlayer-Disabled`.
+Runtime, Analytics (when enabled), CrossPromo, and Core passed. Only existing
+CS0414 warnings for `_lastRequestTime` and `_firstWarmupTriggered` remained.
+Logs: `Temp~/PlacementValidation/<variant>/*.log` in the worktree.
+
+Independent read-only architecture review: **APPROVE**, `findings=[]`.
+`git diff --check`: **PASS**. The test agent and Unity Test Framework remain
+disabled. Live HTTP delivery, backend processing, and install attribution
+were not exercised.
+
 # Cross-promo banner backend events — 2026-09-29
 
 Implemented on `tmp/crosspromo-banner-backend`, created from `safety` at
