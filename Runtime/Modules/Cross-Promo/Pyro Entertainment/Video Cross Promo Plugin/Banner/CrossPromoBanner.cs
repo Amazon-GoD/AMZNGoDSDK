@@ -11,6 +11,9 @@ namespace AMZNGoDSDK.Runtime
 {
     public class CrossPromoBanner : MonoBehaviour
     {
+        private const string BannerPlacement = "banner";
+        private const float ClickTrackingTimeoutSeconds = 1.5f;
+
         private readonly List<BannerData> bannerDataList = new();
         [SerializeField] private Image adImage;
         [SerializeField] private GameObject bannerGO;
@@ -171,7 +174,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void ShowBanner()
         {
-            if (bannerDataList.Count == 0 || adImage == null)
+            if (bannerDataList.Count == 0 || adImage == null || !adImage.isActiveAndEnabled)
                 return;
 
             // Баннера не видно на экране — показ не шлём.
@@ -184,14 +187,17 @@ namespace AMZNGoDSDK.Runtime
 
             var index = _currentBannerIndex % bannerDataList.Count;
             var data = bannerDataList[index];
+            if (data.sprite == null)
+                return;
+
             adImage.sprite = data.sprite;
 
-            // Показ баннера НЕ шлём в аналитику вообще: баннер меняется каждые 8 секунд и это
-            // засоряло бы аналитику (раньше — 68% всех событий). Ни AppMetrica, ни бэкенд, ни
-            // Adjust. Привязку установки даёт только клик по баннеру — его шлём во все каналы
-            // (см. OnBannerClick).
             _lastShownIndex = index;
             _currentBannerIndex = (index + 1) % bannerDataList.Count;
+
+            // Каждая итерация видимого баннера — показ на нашем бэкенде.
+            // В AppMetrica и Adjust показы баннера по-прежнему не отправляются.
+            CrossPromoModule.Instance?.TrackImpression(data.paidAppId, BannerPlacement);
         }
 
         private IEnumerator DownloadBannerSprite(PromoConfiguration video)
@@ -245,12 +251,51 @@ namespace AMZNGoDSDK.Runtime
 
             var data = bannerDataList[_lastShownIndex];
             CrossPromoAnalytics.ReportBannerClick(data);
-            Debug.Log($"[CrossPromoBanner] Banner clicked → sending cp_click (paidAppId={data.paidAppId}, title={data.title})");
-            CrossPromoModule.Instance?.TrackClick(data.paidAppId);
-            StartCoroutine(TrackAndOpenUrl(data));
+            Debug.Log($"[CrossPromoBanner] Banner clicked → sending cp_click (paidAppId={data.paidAppId}, placement={BannerPlacement}, title={data.title})");
+
+            // Модуль переживает скрытие/уничтожение баннера. Данные креатива и callback
+            // фиксируем при клике, чтобы ротация не изменила событие или переход.
+            var module = CrossPromoModule.Instance;
+            MonoBehaviour host = module != null ? module : this;
+            host.StartCoroutine(TrackAndOpenUrl(host, module, data, onClose));
         }
 
-        private IEnumerator TrackAndOpenUrl(BannerData data)
+        private static IEnumerator TrackAndOpenUrl(
+            MonoBehaviour host, CrossPromoModule module, BannerData data, Action onClose)
+        {
+            bool backendDone = module == null;
+            bool externalDone = false;
+            float deadline = Time.realtimeSinceStartup + ClickTrackingTimeoutSeconds;
+
+            // Бэкенд стартует первым, независимо от скорости Adjust/TrackingUrl.
+            // Это единственный cp_click: отдельного fire-and-forget вызова нет.
+            if (module != null)
+                host.StartCoroutine(TrackAndNotify(
+                    module.TrackClickRoutine(data.paidAppId, BannerPlacement), () => backendDone = true));
+            else
+                Debug.LogWarning("[CrossPromoBanner] CrossPromoModule is unavailable — backend click cannot be sent.");
+
+            host.StartCoroutine(TrackAndNotify(SendExternalClickTracking(data), () => externalDone = true));
+
+            while ((!backendDone || !externalDone) && Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            if (!backendDone || !externalDone)
+                Debug.LogWarning($"[CrossPromoBanner] Click tracking still in flight after {ClickTrackingTimeoutSeconds}s — continuing redirect, tracking continues in background.");
+
+            if (!string.IsNullOrWhiteSpace(data.redirectUrl))
+                Application.OpenURL(data.redirectUrl);
+            else
+                onClose?.Invoke();
+        }
+
+        private static IEnumerator TrackAndNotify(IEnumerator tracking, Action onDone)
+        {
+            yield return tracking;
+            onDone();
+        }
+
+        private static IEnumerator SendExternalClickTracking(BannerData data)
         {
             // Собираем ссылку Adjust В МОМЕНТ КЛИКА — когда device id уже готов. Раньше она
             // собиралась заранее (при скачивании картинки) и уходила без device id.
@@ -263,20 +308,12 @@ namespace AMZNGoDSDK.Runtime
             if (CrossPromoAdjustTracking.IsHttpUrl(data.trackingUrl))
             {
                 using UnityWebRequest request = UnityWebRequest.Get(data.trackingUrl);
+                request.timeout = 15;
                 yield return request.SendWebRequest();
             }
             else if (!string.IsNullOrWhiteSpace(data.trackingUrl))
             {
                 Debug.LogWarning($"[CrossPromoBanner] Skipping non-http(s) TrackingUrl: {data.trackingUrl}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(data.redirectUrl))
-            {
-                Application.OpenURL(data.redirectUrl);
-            }
-            else
-            {
-                onClose?.Invoke();
             }
         }
 
