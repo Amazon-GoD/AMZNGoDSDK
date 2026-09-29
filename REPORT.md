@@ -1,3 +1,46 @@
+# Integration of agent tmp branches — 2026-09-29
+
+Audited all 29 existing local `tmp/*` branches against `safety` at `8423620`.
+26 were already ancestors of `safety`; the three remaining changes were merged
+on `tmp/integrate-agent-changes`, created from `safety`:
+
+| Source branch | Source commit | Integration merge |
+| --- | --- | --- |
+| `tmp/crosspromo-banner-backend` | `378cf42` | `1883fc4` |
+| `tmp/crosspromo-event-placements` | `3961c45` | `238dc39` |
+| `tmp/crosspromo-banner-caps` | `099a3e4` | `a852d77` |
+
+A read-only remote check found no remote `tmp/*` branches and confirmed
+`origin/safety` at `d0904c3`. All 30 local tmp refs, including the integration
+branch, are covered by the validated integration history, ready for a
+fast-forward merge into `safety` after this report is committed.
+
+Overlapping placement overloads were combined consistently. Banner clicks
+retain exactly one backend event, persistent-module tracking and the bounded
+1.5-second wait before redirect. Banner cap switching and MAX lifecycle were
+preserved. A visibility guard prevents fully transparent CanvasGroups from
+generating banner impressions. Contradictory README statements were corrected;
+all earlier report sections below were retained as historical task records.
+No conflict required an ambiguous product decision.
+
+Independent final reviews of events and banner/cap integration approved
+`a852d77` with no remaining findings. Whitespace and conflict-marker checks
+passed, and no Infatica code was added.
+
+Unity 2022.3.60f1 Roslyn compilation passed **44/44 module builds** across eight
+configurations: Editor Android / Android Player × Analytics on/off × AppLovin
+on/off. Runtime, Firebase, enabled optional modules, CrossPromo, Core and Editor
+were rebuilt with fresh references. All 138 compiled source files stayed
+unchanged during validation; disabled module defines/references were excluded.
+Only CS0168, CS0414 and the existing obsolete `MaxSdk.SetSdkKey` warning remained.
+Evidence: ignored `Temp~/AgentIntegrationValidation/Summary.log` and adjacent
+response files/logs. Unity tests remain disabled by AGENTS.md; no Editor play,
+device or live backend validation was performed.
+
+No push, changes to `main`, branch deletion or worktree cleanup was performed.
+
+---
+
 # Dev Crew report
 
 **Date:** 2026-09-29
