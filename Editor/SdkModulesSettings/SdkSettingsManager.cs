@@ -268,6 +268,8 @@ namespace AMZNGoDSDK.Editor
                 EnableAnalytics = runtimeSettings.EnableAnalytics,
                 EnableCrashlytics = runtimeSettings.EnableCrashlytics,
                 EnableRemoteConfig = runtimeSettings.EnableRemoteConfig,
+                AdjustEnableRemoteConfigKey = string.IsNullOrWhiteSpace(runtimeSettings.AdjustEnableRemoteConfigKey)
+                    ? Runtime.FirebaseSettingData.AdjustEnableTestId : runtimeSettings.AdjustEnableRemoteConfigKey,
                 RemoteConfigFetchTimeoutSeconds = runtimeSettings.RemoteConfigFetchTimeoutSeconds > 0
                     ? runtimeSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
                 RemoteConfigMinimumFetchIntervalSeconds = runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
@@ -547,6 +549,8 @@ namespace AMZNGoDSDK.Editor
                 EnableAnalytics = editorSettings.EnableAnalytics,
                 EnableCrashlytics = editorSettings.EnableCrashlytics,
                 EnableRemoteConfig = editorSettings.EnableRemoteConfig,
+                AdjustEnableRemoteConfigKey = Runtime.FirebaseSettingData.NormalizeAdjustEnableRemoteConfigKey(
+                    editorSettings.AdjustEnableRemoteConfigKey),
                 RemoteConfigFetchTimeoutSeconds = editorSettings.RemoteConfigFetchTimeoutSeconds > 0
                     ? editorSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
                 RemoteConfigMinimumFetchIntervalSeconds = editorSettings.RemoteConfigMinimumFetchIntervalSeconds > 0

@@ -373,8 +373,13 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
                     _currentSettings.Firebase.EnableRemoteConfig = EditorGUILayout
                         .Toggle(new GUIContent("Enable Remote Config",
-                            "Включён по умолчанию для новых установок SDK. Встроенный adjust_enable проверяется до запуска Adjust без ручного добавления A/B-теста."),
+                            "Включён по умолчанию для новых установок SDK. Встроенный флаг с именем из Adjust Remote Config Key проверяется до запуска Adjust без ручного добавления A/B-теста."),
                             _currentSettings.Firebase.EnableRemoteConfig);
+                    _currentSettings.Firebase.AdjustEnableRemoteConfigKey = EditorGUILayout
+                        .TextField(new GUIContent("Adjust Remote Config Key",
+                            "Имя параметра Firebase Remote Config для включения Adjust. Пустое значение использует adjust_enable. " +
+                            "1–100 символов: латиница, цифры, '_'; первый символ — буква или '_'."),
+                            _currentSettings.Firebase.AdjustEnableRemoteConfigKey);
                     using (new EditorGUI.DisabledScope(!_currentSettings.Firebase.EnableRemoteConfig))
                     {
                         var firebase = _currentSettings.Firebase;

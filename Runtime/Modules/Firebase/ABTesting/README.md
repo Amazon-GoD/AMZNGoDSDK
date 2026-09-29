@@ -185,6 +185,8 @@ Firebase и отложенные A/B-вызовы также ждут этого
 
 Встроенный [`adjust_enable`](../AdjustRemoteConfig.md) SDK сам регистрирует вместе с
 обработчиками перед запуском Adjust: для него не нужно добавлять A/B-тест в настройках или коде.
+Имя этого параметра можно изменить в **SDK Settings → Firebase → Adjust Remote Config Key**;
+при переименовании используйте такое же имя в Firebase Console и вызовах `TryGetABTestGroup`.
 
 ## Аналитика участия
 

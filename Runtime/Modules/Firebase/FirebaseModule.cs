@@ -31,6 +31,7 @@ namespace AMZNGoDSDK.Runtime
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             Construct(settings.Enabled, settings.EnableAnalytics, settings.EnableCrashlytics, settings.EnableRemoteConfig);
+            _adjustEnableRemoteConfigKey = FirebaseSettingData.NormalizeAdjustEnableRemoteConfigKey(settings.AdjustEnableRemoteConfigKey);
             _remoteConfigFetchTimeoutSeconds = settings.RemoteConfigFetchTimeoutSeconds > 0
                 ? settings.RemoteConfigFetchTimeoutSeconds : FirebaseSettingData.DefaultFetchTimeoutSeconds;
             _remoteConfigMinimumFetchIntervalSeconds = settings.RemoteConfigMinimumFetchIntervalSeconds > 0
@@ -48,6 +49,7 @@ namespace AMZNGoDSDK.Runtime
             _analyticsEnabled = enableAnalytics;
             _crashlyticsEnabled = enableCrashlytics;
             _remoteConfigEnabled = remoteConfigEnabled;
+            _adjustEnableRemoteConfigKey = FirebaseSettingData.AdjustEnableTestId;
         }
 
         public override void Initialize()

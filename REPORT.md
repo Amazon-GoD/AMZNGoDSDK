@@ -1,3 +1,27 @@
+# Configurable Adjust Remote Config key — 2026-09-29
+
+Added **SDK Settings → Firebase → Adjust Remote Config Key**, persisted through
+editor/runtime settings and JSON. The built-in startup flag uses the selected
+key for registration, reads and logs. Blank or missing settings retain
+`adjust_enable`; the editor validates 1–100 ASCII identifier characters, and
+runtime safely defaults invalid hand-edited JSON. Decisions are cached per
+key as `amzn_sdk.<key>`, preserving the previous default cache.
+
+Setup documentation and the changelog describe matching the parameter name
+in Firebase Console, retaining string groups `true` / `false`, and restarting
+the application after publishing a change.
+
+Validation: independent review approved without findings; `git diff --check`
+passed. Unity 2022.3.60f1 Roslyn compilation passed for Runtime, Firebase,
+Core and Editor with Firebase enabled, and Runtime, Core and Editor with
+Firebase disabled. Only the existing CS0168 warnings in YandexDiskUploader
+and SdkSettingsManager remain. Evidence: ignored `Temp~/AdjustEnableKey`.
+
+Unity Test Framework remains disabled. Live Editor UI and Remote Config
+fetch on a device were not checked. No push was performed.
+
+---
+
 # Automatic prohibited SDK cleanup — 2026-09-29
 
 ## Follow-up: five review fixes

@@ -12,6 +12,7 @@ namespace AMZNGoDSDK.Editor
         public bool EnableAnalytics = true;
         public bool EnableCrashlytics = true;
         public bool EnableRemoteConfig = true;
+        public string AdjustEnableRemoteConfigKey = Runtime.FirebaseSettingData.AdjustEnableTestId;
         public int RemoteConfigFetchTimeoutSeconds = DefaultFetchTimeoutSeconds;
         public int RemoteConfigMinimumFetchIntervalSeconds = DefaultMinimumFetchIntervalSeconds;
         public string ABTestConstantsPath = Runtime.FirebaseSettingData.DefaultABTestConstantsPath;

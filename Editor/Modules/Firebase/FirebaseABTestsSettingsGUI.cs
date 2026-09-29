@@ -16,12 +16,12 @@ namespace AMZNGoDSDK.Editor
                 "В коде задайте обработчики через RegisterABTestFeature и вызовите RunABTest. " +
                 "Для чтения группы без обработчиков используйте TryGetABTestGroup.", MessageType.Info);
             EditorGUILayout.HelpBox(
-                $"Встроенный флаг Adjust: {Runtime.FirebaseSettingData.AdjustEnableTestId}, строковые группы " +
+                $"Встроенный флаг Adjust: {Runtime.FirebaseSettingData.NormalizeAdjustEnableRemoteConfigKey(settings.AdjustEnableRemoteConfigKey)}, строковые группы " +
                 $"{Runtime.FirebaseSettingData.AdjustEnabledGroup} / {Runtime.FirebaseSettingData.AdjustDisabledGroup}. " +
                 "При включённых Adjust и Remote Config SDK проверяет его до запуска Adjust. " +
                 "Регистрация и обработчики встроены: добавлять A/B-тест в этот список не требуется. " +
                 "Опубликуйте значение в Firebase Console и полностью перезапустите приложение.\n" +
-                "Константы в AMZNGoDSDK.Runtime.FirebaseSettingData: AdjustEnableTestId, AdjustEnabledGroup, AdjustDisabledGroup.",
+                "Константы в AMZNGoDSDK.Runtime.FirebaseSettingData: AdjustEnableTestId — имя по умолчанию, AdjustEnabledGroup, AdjustDisabledGroup.",
                 MessageType.Info);
             EditorGUILayout.LabelField("Generated Constants File", EditorStyles.miniBoldLabel);
             using (new EditorGUILayout.HorizontalScope())

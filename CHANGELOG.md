@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Configure the built-in Adjust startup Remote Config key in SDK Settings → Firebase.
+  Existing configs retain `adjust_enable`; each custom key keeps its own offline decision cache.
 - Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.
   Pass them to MAX shows, analytics and ad revenue reports, while keeping
   ad formats independent of placement names. Empty or missing values retain
