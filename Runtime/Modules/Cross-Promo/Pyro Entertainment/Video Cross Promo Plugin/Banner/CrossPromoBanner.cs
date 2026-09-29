@@ -24,6 +24,23 @@ namespace AMZNGoDSDK.Runtime
         private CrossPromoModule _module;
         private int _currentBannerIndex;
         private int _lastShownIndex = -1;
+        private PromosConfigurationInfo _downloadConfig;
+        private List<PromoConfiguration> _bannerConfigurations = new();
+        private int _nextDownloadIndex;
+        private bool _explicitlyHidden;
+        private bool _crossPromoVisible;
+        private CanvasGroup _bannerCanvasGroup;
+        private float _originalAlpha;
+        private bool _originalInteractable;
+        private bool _originalBlocksRaycasts;
+        private bool _shouldUseAppLovinBanner;
+        private float _nextFillCheckTime;
+        private const float FillCheckIntervalSeconds = 0.25f;
+
+#if AMZN_APPLOVIN_ENABLED
+        private static CrossPromoBanner _appLovinBannerOwner;
+        private AppLovinModule _appLovinModule;
+#endif
 
         private void Awake()
         {
@@ -31,6 +48,17 @@ namespace AMZNGoDSDK.Runtime
             {
                 bannerGO = gameObject;
             }
+
+            // Не деактивируем bannerGO: он может содержать сам контроллер, которому
+            // нужно продолжать следить за cap, no-ads и готовностью MAX.
+            _bannerCanvasGroup = bannerGO.GetComponent<CanvasGroup>();
+            if (_bannerCanvasGroup == null)
+            {
+                _bannerCanvasGroup = bannerGO.AddComponent<CanvasGroup>();
+            }
+            _originalAlpha = _bannerCanvasGroup.alpha;
+            _originalInteractable = _bannerCanvasGroup.interactable;
+            _originalBlocksRaycasts = _bannerCanvasGroup.blocksRaycasts;
 
             if (adImage == null)
             {
@@ -50,28 +78,33 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoModule.OnBannerFuncsUpdated += OnModuleBannerFuncsUpdated;
         }
 
-        private void Start()
+        private void OnEnable()
         {
             BindToModule();
-            if (_module == null)
-            {
-                StartCoroutine(DelayedBind());
-            }
+            StartInitializationIfNeeded();
+            RefreshBannerUI();
         }
 
-        private IEnumerator DelayedBind()
+        private void Update()
         {
-            while (_module == null)
-            {
-                yield return null;
-                BindToModule();
-            }
+            BindToModule();
+            RefreshBannerUI(forceFillCheck: false);
+        }
+
+        private void OnDisable()
+        {
+            HideAppLovinBanner();
+            SetCrossPromoVisible(false);
+            StopInitialization();
         }
 
         private void OnDestroy()
         {
             CrossPromoModule.OnConfigLoaded -= OnModuleConfigLoaded;
             CrossPromoModule.OnBannerFuncsUpdated -= OnModuleBannerFuncsUpdated;
+            HideAppLovinBanner();
+            SetCrossPromoVisible(false);
+            StopInitialization();
         }
 
         private void BindToModule()
@@ -109,40 +142,70 @@ namespace AMZNGoDSDK.Runtime
             }
 
             _currentConfig = config;
+            StopInitialization();
+            StartInitializationIfNeeded();
+            RefreshBannerUI();
+        }
+
+        private void StartInitializationIfNeeded()
+        {
+            if (!isActiveAndEnabled || _initializationCoroutine != null)
+                return;
+
+            if (ReferenceEquals(_downloadConfig, _currentConfig)
+                && _nextDownloadIndex >= _bannerConfigurations.Count)
+                return;
+
+            _initializationCoroutine = StartCoroutine(Initialize(_currentConfig));
+        }
+
+        private void StopInitialization()
+        {
             if (_initializationCoroutine != null)
             {
                 StopCoroutine(_initializationCoroutine);
+                _initializationCoroutine = null;
             }
-
-            _initializationCoroutine = StartCoroutine(Initialize(config));
         }
 
         private void ApplyBannerFunctions(Action onClose, Func<bool> isNoAds)
         {
             this.onClose = onClose;
             this.isNoAds = isNoAds;
-            UpdateBannerUI();
+            RefreshBannerUI();
         }
 
         public IEnumerator Initialize(PromosConfigurationInfo config)
         {
-            bannerDataList.Clear();
-            _currentBannerIndex = 0;
-            _lastShownIndex = -1;
-
-            if (config?.Videos == null || config.Videos.Count == 0)
+            _currentConfig = config;
+            if (!ReferenceEquals(_downloadConfig, config))
             {
-                UpdateBannerUI();
-                yield break;
+                _downloadConfig = config;
+                StopRotation();
+                bannerDataList.Clear();
+                _currentBannerIndex = 0;
+                _lastShownIndex = -1;
+                _nextDownloadIndex = 0;
+                // Лимиты могут изменить Videos во время скачивания. Snapshot также
+                // позволяет продолжить прерванную загрузку после OnEnable.
+                _bannerConfigurations = config?.Videos != null
+                    ? new List<PromoConfiguration>(config.Videos)
+                    : new List<PromoConfiguration>();
             }
 
-            // Загрузка спрайтов уступает управление; за это время лимиты могут изменить пул.
-            foreach (var video in new List<PromoConfiguration>(config.Videos))
-                yield return StartCoroutine(DownloadBannerSprite(video));
+            while (_nextDownloadIndex < _bannerConfigurations.Count)
+            {
+                if (!isActiveAndEnabled)
+                    yield break;
 
+                // Вложенный IEnumerator останавливается вместе с основной корутиной.
+                yield return DownloadBannerSprite(_bannerConfigurations[_nextDownloadIndex]);
+                _nextDownloadIndex++;
+            }
+
+            _initializationCoroutine = null;
             StopRotation();
-            // UpdateBannerUI сам запустит ротацию, если баннер виден (и не куплено no-ads).
-            UpdateBannerUI();
+            RefreshBannerUI();
         }
 
         private void StartRotationIfNeeded()
@@ -150,6 +213,7 @@ namespace AMZNGoDSDK.Runtime
             if (_rotationCoroutine != null) return;
             if (bannerDataList.Count == 0) return;
             if (!isActiveAndEnabled) return;
+            if (!_crossPromoVisible) return;
             _rotationCoroutine = StartCoroutine(GifCor());
         }
 
@@ -175,7 +239,8 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             // Баннера не видно на экране — показ не шлём.
-            if (bannerGO == null || !bannerGO.activeInHierarchy)
+            if (!_crossPromoVisible || _explicitlyHidden || !isActiveAndEnabled
+                || bannerGO == null || !bannerGO.activeInHierarchy)
                 return;
 
             // Куплено отключение рекламы — показ не шлём.
@@ -233,11 +298,18 @@ namespace AMZNGoDSDK.Runtime
         {
             this.onClose = onClose;
             this.isNoAds = isNoAds;
-            UpdateBannerUI();
+            RefreshBannerUI();
         }
 
         public void OnBannerClick()
         {
+            RefreshBannerUI();
+            if (!_crossPromoVisible || !isActiveAndEnabled || _bannerCanvasGroup == null
+                || _bannerCanvasGroup.alpha <= 0f || !_bannerCanvasGroup.interactable)
+            {
+                return;
+            }
+
             if (_lastShownIndex < 0 || _lastShownIndex >= bannerDataList.Count)
             {
                 return;
@@ -280,20 +352,85 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        public void hide() => bannerGO.SetActive(false);
+        public void hide()
+        {
+            _explicitlyHidden = true;
+            RefreshBannerUI();
+        }
 
         public void UpdateBannerUI()
         {
-            if (bannerGO == null)
+            _explicitlyHidden = false;
+            if (bannerGO != null && !bannerGO.activeSelf)
+                bannerGO.SetActive(true);
+
+            RefreshBannerUI();
+        }
+
+        private void RefreshBannerUI(bool forceFillCheck = true)
+        {
+            if (!isActiveAndEnabled || _explicitlyHidden || bannerGO == null
+                || !bannerGO.activeInHierarchy || (isNoAds?.Invoke() ?? false))
             {
+                HideAppLovinBanner();
+                SetCrossPromoVisible(false);
                 return;
             }
 
-            bool show = isNoAds == null || !isNoAds();
-            bannerGO.SetActive(show);
+            if (forceFillCheck || Time.realtimeSinceStartup >= _nextFillCheckTime)
+            {
+                _shouldUseAppLovinBanner = _module != null && _module.ShouldUseAppLovinBanner;
+                _nextFillCheckTime = Time.realtimeSinceStartup + FillCheckIntervalSeconds;
+            }
 
-            // Скрытие баннера останавливает ротацию, показ — перезапускает. Раньше ротация
-            // крутилась всегда и слала показы даже за скрытым баннером.
+#if AMZN_APPLOVIN_ENABLED
+            var appLovinModule = SdkModuleRegistry.Get<AppLovinModule>();
+            if (_appLovinModule != appLovinModule)
+            {
+                HideAppLovinBanner();
+                _appLovinModule = appLovinModule;
+            }
+
+            // Последний cap может сработать ещё во время видео. Нативный баннер
+            // допускается только после закрытия CP/MAX fullscreen-рекламы.
+            if (_shouldUseAppLovinBanner && _module != null && !_module.IsVideoPromoVisible
+                && _appLovinModule != null && !_appLovinModule.IsShowingAd
+                && _appLovinModule.ShowBanner())
+            {
+                _appLovinBannerOwner = this;
+                SetCrossPromoVisible(false);
+                return;
+            }
+#endif
+
+            HideAppLovinBanner();
+            SetCrossPromoVisible(true);
+        }
+
+        private void HideAppLovinBanner()
+        {
+#if AMZN_APPLOVIN_ENABLED
+            // CP-only экземпляр и старый баннер сцены не должны скрывать MAX,
+            // запрос на который уже принадлежит другому контроллеру.
+            if (_appLovinBannerOwner != this)
+                return;
+
+            if (_appLovinModule != null)
+                _appLovinModule.HideBanner();
+            _appLovinBannerOwner = null;
+#endif
+        }
+
+        private void SetCrossPromoVisible(bool show)
+        {
+            _crossPromoVisible = show;
+            if (_bannerCanvasGroup != null)
+            {
+                _bannerCanvasGroup.alpha = show ? _originalAlpha : 0f;
+                _bannerCanvasGroup.interactable = show && _originalInteractable;
+                _bannerCanvasGroup.blocksRaycasts = show && _originalBlocksRaycasts;
+            }
+
             if (show)
                 StartRotationIfNeeded();
             else

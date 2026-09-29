@@ -24,6 +24,7 @@ namespace AMZNGoDSDK.Runtime
         private string _sdkKey;
         private string _interstitialAdUnitId;
         private string _rewardedAdUnitId;
+        private string _bannerAdUnitId;
         private string _interstitialAdPlacement = AppLovinSettingData.DefaultInterstitialAdPlacement;
         private string _rewardedAdPlacement = AppLovinSettingData.DefaultRewardedAdPlacement;
         private bool _verboseLogging;
@@ -32,6 +33,8 @@ namespace AMZNGoDSDK.Runtime
         private bool _callbacksSubscribed;
         private bool _isInterstitialShowing;
         private bool _isRewardedShowing;
+        private bool _bannerCreated;
+        private bool _isBannerShowing;
 
         private int _interstitialRetryAttempt;
         private int _rewardedRetryAttempt;
@@ -76,10 +79,19 @@ namespace AMZNGoDSDK.Runtime
         public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId,
             bool verboseLogging, string interstitialAdPlacement, string rewardedAdPlacement)
         {
+            Construct(enable, sdkKey, interstitialAdUnitId, rewardedAdUnitId, verboseLogging,
+                interstitialAdPlacement, rewardedAdPlacement, null);
+        }
+
+        public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId,
+            bool verboseLogging, string interstitialAdPlacement, string rewardedAdPlacement, string bannerAdUnitId)
+        {
+            DestroyBanner();
             Enabled = enable;
             _sdkKey = sdkKey;
             _interstitialAdUnitId = interstitialAdUnitId;
             _rewardedAdUnitId = rewardedAdUnitId;
+            _bannerAdUnitId = bannerAdUnitId;
             _interstitialAdPlacement = AppLovinSettingData.NormalizeAdPlacement(
                 interstitialAdPlacement, AppLovinSettingData.DefaultInterstitialAdPlacement);
             _rewardedAdPlacement = AppLovinSettingData.NormalizeAdPlacement(
@@ -87,7 +99,8 @@ namespace AMZNGoDSDK.Runtime
             _verboseLogging = verboseLogging;
 
             Debug.Log($"[AppLovinModule] Construct() called. Enabled={enable}, " +
-                      $"interstitial='{interstitialAdUnitId}', rewarded='{rewardedAdUnitId}', verbose={verboseLogging}");
+                      $"interstitial='{interstitialAdUnitId}', rewarded='{rewardedAdUnitId}', " +
+                      $"banner='{bannerAdUnitId}', verbose={verboseLogging}");
         }
 
         public override void Initialize()
@@ -95,7 +108,9 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled)
                 return;
 
-            if (string.IsNullOrWhiteSpace(_interstitialAdUnitId) && string.IsNullOrWhiteSpace(_rewardedAdUnitId))
+            if (string.IsNullOrWhiteSpace(_interstitialAdUnitId)
+                && string.IsNullOrWhiteSpace(_rewardedAdUnitId)
+                && string.IsNullOrWhiteSpace(_bannerAdUnitId))
             {
                 Debug.LogError("[AppLovinModule] Не задан ни один ad unit id — медиация выключена. " +
                                "Заполни поля в AMZN GoD > SDK Settings > AppLovin.");
@@ -119,11 +134,17 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Cleanup()
         {
+            DestroyBanner();
             UnsubscribeCallbacks();
             StopRetryCoroutines();
             _sdkInitialized = false;
             _isInterstitialShowing = false;
             _isRewardedShowing = false;
+        }
+
+        private void OnDisable()
+        {
+            HideBanner();
         }
 
         private void OnDestroy()
@@ -139,6 +160,53 @@ namespace AMZNGoDSDK.Runtime
         }
 
         #region Show
+
+        /// <summary>
+        /// Запрашивает показ баннера внизу экрана. true означает принятие запроса MAX,
+        /// загрузка первого объявления может завершиться позже.
+        /// </summary>
+        public bool ShowBanner()
+        {
+            if (!Enabled || !_sdkInitialized || !isActiveAndEnabled
+                || string.IsNullOrWhiteSpace(_bannerAdUnitId) || IsShowingAd)
+                return false;
+
+            if (_isBannerShowing)
+                return true;
+
+            if (!_bannerCreated)
+            {
+                MaxSdk.CreateBanner(_bannerAdUnitId,
+                    new MaxSdkBase.AdViewConfiguration(MaxSdkBase.AdViewPosition.BottomCenter));
+                _bannerCreated = true;
+            }
+
+            MaxSdk.ShowBanner(_bannerAdUnitId);
+            MaxSdk.StartBannerAutoRefresh(_bannerAdUnitId);
+            _isBannerShowing = true;
+            return true;
+        }
+
+        /// <summary>Скрывает баннер и приостанавливает запросы новых объявлений.</summary>
+        public void HideBanner()
+        {
+            if (!_bannerCreated || !_isBannerShowing)
+                return;
+
+            MaxSdk.HideBanner(_bannerAdUnitId);
+            MaxSdk.StopBannerAutoRefresh(_bannerAdUnitId);
+            _isBannerShowing = false;
+        }
+
+        private void DestroyBanner()
+        {
+            if (!_bannerCreated)
+                return;
+
+            HideBanner();
+            MaxSdk.DestroyBanner(_bannerAdUnitId);
+            _bannerCreated = false;
+        }
 
         /// <summary>
         /// Показывает interstitial. Возвращает false, если показывать нечего — тогда вызывающий
@@ -166,6 +234,7 @@ namespace AMZNGoDSDK.Runtime
             // и пара «запрос → ошибка» сойдётся. Отчёт после показа такую ошибку бы потерял.
             AppLovinAnalytics.ReportInterRequested(_interstitialAdPlacement);
 
+            HideBanner();
             _isInterstitialShowing = true;
             MaxSdk.ShowInterstitial(_interstitialAdUnitId, _interstitialAdPlacement);
             return true;
@@ -194,6 +263,7 @@ namespace AMZNGoDSDK.Runtime
 
             AppLovinAnalytics.ReportRewardRequested(_rewardedAdPlacement);
 
+            HideBanner();
             _isRewardedShowing = true;
             MaxSdk.ShowRewardedAd(_rewardedAdUnitId, _rewardedAdPlacement);
             return true;

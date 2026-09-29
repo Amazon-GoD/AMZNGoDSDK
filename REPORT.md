@@ -1,3 +1,58 @@
+# Dev Crew report
+
+**Date:** 2026-09-29
+**Task:** Switch the cross-promo banner to AppLovin MAX when all JSON interstitial/rewarded caps are exhausted.
+
+## What was done
+
+- ✅ Reused the existing `HasFill` cap decision; an empty or unloaded JSON config does not trigger banner switching.
+- ✅ Added bottom-center MAX banners and `BannerAdUnitId` settings; cross-promo remains when the ID is empty or MAX is not ready.
+- ✅ Added 0.25-second cap checks and handling for no-ads, explicit hide, fullscreen ads, disable/destroy and scene changes; analytics and cap counters are unchanged.
+- ✅ Worked in isolated `tmp/crosspromo-banner-caps`, created from `safety` at `4526aa3`; no merge or push.
+
+## Architecture
+
+`CrossPromoModule` exposes the existing cap decision to `CrossPromoBanner`, which selects cross-promo or MAX and controls visibility.
+`AppLovinModule` owns the native banner lifecycle and pauses refresh while hidden.
+Editor settings pass the new banner ad unit through the runtime configuration and SDK core; MAX calls remain behind `AMZN_APPLOVIN_ENABLED`.
+
+## Files created/modified
+
+- `Editor/SdkModulesSettings/ModulesSettings/AppLovinSettingData.cs` — editor banner ad unit field.
+- `Editor/SdkModulesSettings/SdkSettingsManager.cs` — banner setting conversion in both directions.
+- `Editor/Windows/SDKSettingsWindow.cs` — Banner Ad Unit input and help text.
+- `Runtime/Core/AmznGoDSDKCore.cs` — passes the banner setting to AppLovin.
+- `Runtime/DataLoader/ModulesSettings/AppLovinSettingData.cs` — runtime banner ad unit field.
+- `Runtime/Modules/AppLovin/AppLovinModule.cs` — native banner creation, show/hide, refresh and cleanup.
+- `Runtime/Modules/Cross-Promo/CrossPromoModule.cs` — shared cap decision for banners.
+- `Runtime/Modules/Cross-Promo/Pyro Entertainment/Video Cross Promo Plugin/Banner/CrossPromoBanner.cs` — switching, visibility and lifecycle handling.
+
+## Review results
+
+Approved after 1 review iteration; final issue counts: critical 0, high 0, medium 0, low 0.
+`git -c core.whitespace=cr-at-eol diff --check` passed.
+
+## Tests
+
+Testing disabled — skipped (Unity Test Framework/tester, per AGENTS.md).
+Unity 2022.3.60f1 Roslyn compilation using Bee response files and isolated worktree sources passed: Editor with MAX 5 assemblies, without MAX 4; Android Player with MAX 4, without MAX 3. All exited 0.
+Only existing warnings remained: obsolete `SetSdkKey`, unused `_firstWarmupTriggered`, and editor variables `we`/`e`.
+Compilation evidence is under ignored `Temp~/BannerCaps`; no device/MAX rendering test was run.
+
+## Known limitations
+
+A live Banner Ad Unit ID has not been configured; it must be supplied before MAX banners can appear.
+`ShowBanner()` returning true means MAX accepted the request; loading or no-fill can leave a gap after cross-promo is hidden.
+Device behavior, including native layout, scene transitions and lifecycle scenarios, still needs manual validation.
+
+## How to use
+
+Enable AppLovin and set `AMZN GoD > SDK Settings > AppLovin > Banner Ad Unit`, then save settings.
+On a device, exhaust the last JSON cap through an interstitial and through a rewarded ad; confirm MAX appears after fullscreen closes, and also on restart with persisted caps.
+Check no-ads, `hide()`/`UpdateBannerUI()`, disable/enable and scene changes; confirm empty JSON, missing ID or unavailable MAX retain the cross-promo path.
+
+---
+
 # Automatic prohibited SDK cleanup — 2026-09-29
 
 ## Follow-up: five review fixes

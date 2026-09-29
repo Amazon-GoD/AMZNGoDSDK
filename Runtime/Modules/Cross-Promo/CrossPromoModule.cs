@@ -96,6 +96,10 @@ namespace AMZNGoDSDK.Runtime
         public bool HasFill =>
             _configFetchReturnedVideos && (_crossPromoConfig?.HasAvailableVideos() ?? false);
 
+        // Баннер наследует тот же cap/master-флаг, что и interstitial/rewarded.
+        // Отсутствие загруженного конфига не означает, что его cap уже исчерпан.
+        internal bool ShouldUseAppLovinBanner => Enabled && _configFetchReturnedVideos && !HasFill;
+
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
 

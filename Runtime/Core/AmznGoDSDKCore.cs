@@ -153,7 +153,8 @@ namespace AMZNGoDSDK.Runtime
                 appLovinSettings.RewardedAdUnitId,
                 appLovinSettings.VerboseLogging,
                 appLovinSettings.InterstitialAdPlacement,
-                appLovinSettings.RewardedAdPlacement);
+                appLovinSettings.RewardedAdPlacement,
+                appLovinSettings.BannerAdUnitId);
 #endif
 
             #endregion
