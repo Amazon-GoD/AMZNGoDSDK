@@ -22,6 +22,8 @@ namespace AMZNGoDSDK.Editor
         private static readonly Regex Quoted = new Regex(@"['""]([^'""\r\n]+)['""]");
         private static readonly Regex Dependency = new Regex(
             @"^\s*(?:implementation|api|compile|compileOnly|runtimeOnly|runtime|[A-Za-z_]\w*(?:Implementation|Api|CompileOnly|RuntimeOnly))\b");
+        private static readonly Regex Exclusion = new Regex(
+            @"\Gexclude\b\s*(?:\(\s*)?(?:(?:group|module)\s*:\s*['""][^'""\r\n]+['""]\s*(?:,\s*)?)+\)?");
         private static readonly Regex Closure = new Regex(@"(?m)^[ \t]*(?:applovin|safedk)\s*\{");
         private static readonly Regex PluginLine = new Regex(
             @"^\s*(?:apply\s*(?:\(\s*)?plugin\s*:\s*['""](?:applovin-quality-service|com\.applovin\.quality|safedk|com\.safedk)['""]\s*\)?|" +
@@ -170,17 +172,20 @@ namespace AMZNGoDSDK.Editor
             Match match;
             while ((match = Closure.Match(MaskComments(content))).Success)
             {
-                int opening = content.IndexOf('{', match.Index);
+                string code = MaskComments(content);
+                int opening = code.IndexOf('{', match.Index);
                 int closing = FindClosingBrace(content, opening, file);
                 int end = EndOfStatement(content, closing + 1, file);
-                content = content.Remove(match.Index, end - match.Index);
+                var result = content.ToCharArray();
+                BlankCode(result, code, match.Index, end);
+                content = new string(result);
             }
             return content;
         }
 
         private static string CleanDeclarations(string content, string file, HashSet<string> removedNames, ref int count)
         {
-            var output = new StringBuilder();
+            var output = content.ToCharArray();
             var lines = Regex.Matches(content, @"[^\r\n]*(?:\r\n|\n|\r|$)");
             int skipUntil = 0;
             string commentsMasked = MaskComments(content);
@@ -188,23 +193,57 @@ namespace AMZNGoDSDK.Editor
             {
                 if (line.Length == 0 || line.Index < skipUntil) continue;
                 string code = commentsMasked.Substring(line.Index, line.Length).TrimEnd('\r', '\n');
-                if (PluginLine.IsMatch(code)) { count++; continue; }
-                if (Dependency.IsMatch(code) && HasForbiddenReference(code, removedNames))
+                if (PluginLine.IsMatch(code))
                 {
-                    int brace = code.IndexOf('{');
-                    if (!IsSingleDependency(brace >= 0 ? code.Substring(0, brace) : code))
-                        throw Failure("Неподдерживаемое объявление запрещённой зависимости: " + file);
-                    if (brace >= 0)
-                    {
-                        int closing = FindClosingBrace(content, line.Index + brace, file);
-                        skipUntil = EndOfStatement(content, closing + 1, file);
-                    }
+                    BlankCode(output, commentsMasked, line.Index, line.Index + line.Length);
                     count++;
                     continue;
                 }
-                output.Append(line.Value);
+                Match dependency = Dependency.Match(code);
+                if (!dependency.Success) continue;
+                int headEnd = DependencyHeadEnd(commentsMasked, line.Index + dependency.Length);
+                string head = commentsMasked.Substring(line.Index, headEnd - line.Index);
+                if (HasForbiddenReference(head, removedNames))
+                {
+                    if (!IsSingleDependency(head))
+                        throw Failure("Неподдерживаемое объявление запрещённой зависимости: " + file);
+                    int brace = headEnd;
+                    while (brace < commentsMasked.Length && char.IsWhiteSpace(commentsMasked[brace])) brace++;
+                    if (brace < commentsMasked.Length && commentsMasked[brace] == '{')
+                    {
+                        int closing = FindClosingBrace(content, brace, file);
+                        skipUntil = EndOfStatement(content, closing + 1, file);
+                    }
+                    else skipUntil = EndOfStatement(content, headEnd, file);
+                    BlankCode(output, commentsMasked, line.Index, skipUntil);
+                    count++;
+                }
             }
-            return output.ToString();
+            return new string(output);
+        }
+
+        // A dependency's identity ends before its configuration closure. Parentheses and
+        // comma continuations keep multiline Maven maps together as one expression.
+        private static int DependencyHeadEnd(string code, int offset)
+        {
+            int depth = 0;
+            char previous = '\0';
+            for (int i = offset; i < code.Length; i++)
+            {
+                char c = code[i];
+                if (c == '\'' || c == '"')
+                {
+                    i = QuotedEnd(code, i);
+                    previous = '\'';
+                    continue;
+                }
+                if (c == '(' || c == '[') depth++;
+                if (c == ')' || c == ']') depth--;
+                if (depth == 0 && (c == '{' || c == ';' ||
+                    ((c == '\r' || c == '\n') && previous != ',' && previous != '\\'))) return i;
+                if (!char.IsWhiteSpace(c)) previous = c;
+            }
+            return code.Length;
         }
 
         private static bool IsSingleDependency(string code)
@@ -220,32 +259,94 @@ namespace AMZNGoDSDK.Editor
 
         private static bool HasForbiddenReference(string code, HashSet<string> removedNames)
         {
+            // Maven coordinates are atomic: a module name from a different group must
+            // never be treated as the filename of a prohibited local archive.
             foreach (Match quoted in Quoted.Matches(code))
             {
                 string value = quoted.Groups[1].Value;
                 string[] coordinate = value.Split(':');
                 if (coordinate.Length >= 2 && ForbiddenAdNetworks.MatchMavenCoordinate(coordinate[0], coordinate[1]) != null)
                     return true;
-                if (removedNames.Contains(value) || IsForbiddenLibraryName(value)) return true;
             }
             var group = Regex.Match(code, @"\bgroup\s*:\s*['""]([^'""]+)['""]");
             var module = Regex.Match(code, @"\bname\s*:\s*['""]([^'""]+)['""]");
-            return group.Success && module.Success &&
-                   ForbiddenAdNetworks.MatchMavenCoordinate(group.Groups[1].Value, module.Groups[1].Value) != null;
+            if (group.Success && module.Success &&
+                ForbiddenAdNetworks.MatchMavenCoordinate(group.Groups[1].Value, module.Groups[1].Value) != null) return true;
+
+            // EDM also emits flatDir notation, implementation(name: 'archive', ext: 'aar').
+            if (!group.Success && module.Success && Regex.IsMatch(code, @"\bext\s*:\s*['""](?:aar|jar)['""]", RegexOptions.IgnoreCase)
+                && IsForbiddenLocalReference(module.Groups[1].Value, removedNames)) return true;
+            foreach (Match files in Regex.Matches(code, @"\bfiles\s*\(([^)]*)\)"))
+                foreach (Match quoted in Quoted.Matches(files.Groups[1].Value))
+                    if (IsForbiddenLocalReference(quoted.Groups[1].Value, removedNames)) return true;
+            return false;
         }
+
+        private static bool IsForbiddenLocalReference(string value, HashSet<string> removedNames) =>
+            removedNames.Contains(value) || IsForbiddenLibraryName(value);
 
         private static void AuditRemainingDeclarations(string content, string file, HashSet<string> removedNames)
         {
-            foreach (string line in MaskComments(content).Split('\n'))
+            string code = MaskExclusions(MaskComments(content));
+            if (QualityToken.IsMatch(code)) throw Failure("Неподдерживаемое объявление Quality Service / SafeDK в " + file +
+                ". Уберите плагин и его конфигурацию из Gradle template.");
+            var remainder = code.ToCharArray();
+            int skipUntil = 0;
+            foreach (Match line in Regex.Matches(code, @"[^\r\n]*(?:\r\n|\n|\r|$)"))
             {
-                if (QualityToken.IsMatch(line)) throw Failure("Неподдерживаемое объявление Quality Service / SafeDK в " + file +
-                    ". Уберите плагин и его конфигурацию из Gradle template.");
-                // Existing user/resolver exclusions remain valid.
-                if (Regex.IsMatch(line, @"^\s*exclude\b")) continue;
-                if (HasForbiddenReference(line, removedNames))
-                    throw Failure("Не удалось безопасно удалить объявление запрещённой зависимости в " + file +
-                        ". Вынесите зависимость в отдельную стандартную Gradle-инструкцию.");
+                if (line.Length == 0 || line.Index < skipUntil) continue;
+                Match dependency = Dependency.Match(line.Value);
+                if (!dependency.Success) continue;
+                int end = DependencyHeadEnd(code, line.Index + dependency.Length);
+                if (HasForbiddenReference(code.Substring(line.Index, end - line.Index), removedNames))
+                    throw UnsupportedDependency(file);
+                BlankCode(remainder, code, line.Index, end);
+                skipUntil = end;
             }
+            foreach (string line in new string(remainder).Split('\n'))
+            {
+                if (HasForbiddenReference(line, removedNames))
+                    throw UnsupportedDependency(file);
+            }
+        }
+
+        private static BuildFailedException UnsupportedDependency(string file) =>
+            Failure("Не удалось безопасно удалить объявление запрещённой зависимости в " + file +
+                ". Вынесите зависимость в отдельную стандартную Gradle-инструкцию.");
+
+        // Exclusions remove transitive dependencies; they are not imports. Mask only
+        // explicit group/module arguments, leaving other statements available to audit.
+        private static string MaskExclusions(string code)
+        {
+            var result = code.ToCharArray();
+            for (int i = 0; i < code.Length; i++)
+            {
+                if (code[i] == '\'' || code[i] == '"') { i = QuotedEnd(code, i); continue; }
+                if (code[i] != 'e' || (i > 0 && (char.IsLetterOrDigit(code[i - 1]) || code[i - 1] == '_'))) continue;
+                Match match = Exclusion.Match(code, i);
+                if (!match.Success) continue;
+                BlankCode(result, code, i, i + match.Length);
+                i += match.Length - 1;
+            }
+            return new string(result);
+        }
+
+        private static int QuotedEnd(string code, int opening)
+        {
+            for (int i = opening + 1; i < code.Length; i++)
+            {
+                if (code[i] == '\\') { i++; continue; }
+                if (code[i] == code[opening]) return i;
+            }
+            return code.Length - 1;
+        }
+
+        // Keep complete comment tokens, including a block comment that starts on a
+        // removed statement and ends on a later line. Offsets and line endings stay stable.
+        private static void BlankCode(char[] result, string commentsMasked, int start, int end)
+        {
+            for (int i = start; i < end; i++)
+                if (!char.IsWhiteSpace(commentsMasked[i])) result[i] = ' ';
         }
 
         internal static bool IsRemovableLocalLibrary(string path)
@@ -363,11 +464,13 @@ namespace AMZNGoDSDK.Editor
 
         private static int EndOfStatement(string content, int offset, string file)
         {
-            int end = content.IndexOf('\n', offset);
+            int end = content.IndexOfAny(new[] { '\r', '\n' }, offset);
             if (end < 0) end = content.Length;
-            string suffix = MaskComments(content.Substring(offset, end - offset)).Trim();
+            string suffix = MaskComments(content).Substring(offset, end - offset).Trim();
             if (suffix.Length > 0 && suffix != ";") throw Failure("Дополнительный код после Gradle-блока: " + file);
-            return end < content.Length ? end + 1 : end;
+            if (end < content.Length && content[end] == '\r') end++;
+            if (end < content.Length && content[end] == '\n') end++;
+            return end;
         }
 
         private static void WritePreservingEncoding(string file, string content)

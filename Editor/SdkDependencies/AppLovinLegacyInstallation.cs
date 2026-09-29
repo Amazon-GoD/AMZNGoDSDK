@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using UnityEditor;
@@ -15,13 +16,20 @@ namespace AMZNGoDSDK.Editor
         private readonly HashSet<string> _delete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _backup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _existed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, byte[]> _replace = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> AdapterPins = new HashSet<string>();
         internal string BackupPath { get; private set; }
 
         internal static AppLovinLegacyInstallation CaptureModuleState() => new AppLovinLegacyInstallation();
 
-        internal static bool HasProhibitedAdapters => ProhibitedAdapterFiles().Any(path =>
-            !path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) && IsAdapterCode(path));
+        internal static bool HasProhibitedAdapters
+        {
+            get
+            {
+                var plan = InspectProhibitedAdapters();
+                return plan._delete.Count > 0 || plan._replace.Count > 0;
+            }
+        }
 
         private static IEnumerable<string> ProhibitedAdapterFiles()
         {
@@ -37,37 +45,90 @@ namespace AMZNGoDSDK.Editor
             return Regex.IsMatch(path, @"\.(cs|java|kt|dll|aar|jar|so|a|m|mm|h|asmdef|xml|gradle|androidlib)$", RegexOptions.IgnoreCase);
         }
 
-        /// <summary>Only exported SDK files and unambiguous dependency declarations are removed.</summary>
+        /// <summary>Only Android files/nodes are removed; export labels never grant ownership of iOS/shared content.</summary>
         internal static AppLovinLegacyInstallation InspectProhibitedAdapters()
         {
             var plan = new AppLovinLegacyInstallation();
             foreach (string path in ProhibitedAdapterFiles())
             {
                 FirebaseUnityPackageUtility.CheckedPath(path);
-                if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || Preserve(path)) continue;
-                bool recognized = IsSdkFile(path);
-                if (!recognized && path.EndsWith("Dependencies.xml", StringComparison.OrdinalIgnoreCase))
+                if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || Preserve(path) || IsIosPath(path)) continue;
+                // Always parse dependency XML, including export-labelled files. It can
+                // contain CocoaPods and unrelated Android dependencies in the same file.
+                if (path.EndsWith("Dependencies.xml", StringComparison.OrdinalIgnoreCase))
                 {
-                    var xml = new XmlDocument { XmlResolver = null };
-                    using (var reader = XmlReader.Create(path, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit }))
-                        xml.Load(reader);
-                    var packages = xml.SelectNodes("/dependencies/androidPackages/androidPackage").Cast<XmlNode>().ToArray();
-                    recognized = packages.Length > 0 && packages.All(node =>
+                    byte[] replacement = RemoveProhibitedAndroidNodes(File.ReadAllBytes(path));
+                    if (replacement != null)
                     {
-                        string[] coordinate = (node.Attributes?["spec"]?.Value ?? "").Split(':');
-                        return coordinate.Length >= 2 && ForbiddenAdNetworks.MatchMavenCoordinate(coordinate[0], coordinate[1]) != null;
-                    });
+                        plan._replace.Add(path, replacement);
+                        plan._backup.Add(path);
+                        plan._backup.Add(path + ".meta");
+                    }
+                    continue;
                 }
-                if (recognized)
+                if (IsSdkFile(path))
                 {
-                    plan._delete.Add(path);
-                    plan._delete.Add(path + ".meta");
+                    // C#, asmdefs, editor helpers and resources can be shared with iOS.
+                    // A vendor export label identifies ownership, not the target platform.
+                    if (IsAndroidFile(path))
+                    {
+                        plan._delete.Add(path);
+                        plan._delete.Add(path + ".meta");
+                    }
                 }
                 else if (IsAdapterCode(path))
                     throw new IOException("Автоочистка сохраняет неизвестный файл запрещённого legacy-адаптера: " +
                         path + ". Удалите адаптер через Integration Manager либо проверьте файл вручную.");
             }
             return plan;
+        }
+
+        private static bool IsIosPath(string path)
+        {
+            return Regex.IsMatch(path, @"/(iOS|tvOS)/|\.(framework|xcframework|bundle)(/|$)|\.(m|mm|h|a|dylib)$",
+                RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsAndroidFile(string path)
+        {
+            return Regex.IsMatch(path, @"\.(aar|jar|java|kt)$", RegexOptions.IgnoreCase) ||
+                path.IndexOf("/Android/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                Regex.IsMatch(path, @"\.(so|gradle)$", RegexOptions.IgnoreCase);
+        }
+
+        private static byte[] RemoveProhibitedAndroidNodes(byte[] bytes)
+        {
+            string original;
+            Encoding encoding;
+            using (var stream = new MemoryStream(bytes))
+            using (var reader = new StreamReader(stream, new UTF8Encoding(false), true))
+            {
+                original = reader.ReadToEnd();
+                encoding = reader.CurrentEncoding;
+            }
+            var xml = new XmlDocument { XmlResolver = null, PreserveWhitespace = true };
+            using (var reader = XmlReader.Create(new StringReader(original), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit }))
+                xml.Load(reader);
+            var prohibited = xml.SelectNodes("/dependencies/androidPackages/androidPackage").Cast<XmlNode>().Where(node =>
+            {
+                string[] coordinate = (node.Attributes?["spec"]?.Value ?? "").Split(':');
+                return coordinate.Length >= 2 && ForbiddenAdNetworks.MatchMavenCoordinate(coordinate[0], coordinate[1]) != null;
+            }).ToArray();
+            if (prohibited.Length == 0) return null;
+            foreach (var node in prohibited) node.ParentNode.RemoveChild(node);
+            using (var output = new MemoryStream())
+            {
+                var writerSettings = new XmlWriterSettings
+                {
+                    Encoding = encoding,
+                    Indent = false,
+                    OmitXmlDeclaration = !xml.ChildNodes.Cast<XmlNode>().Any(node => node is XmlDeclaration),
+                    NewLineChars = original.Contains("\r\n") ? "\r\n" : original.Contains("\n") ? "\n" : "\r",
+                    NewLineHandling = NewLineHandling.Replace,
+                };
+                using (var writer = XmlWriter.Create(output, writerSettings)) xml.Save(writer);
+                return output.ToArray();
+            }
         }
 
         internal static bool HasCore => Files().Any(path => !Preserve(path) && IsCorePath(path) &&
@@ -230,6 +291,11 @@ namespace AMZNGoDSDK.Editor
 
         internal void RemoveLegacy()
         {
+            foreach (var replacement in _replace)
+            {
+                FirebaseUnityPackageUtility.CheckedPath(replacement.Key);
+                File.WriteAllBytes(replacement.Key, replacement.Value);
+            }
             foreach (string path in _delete)
             {
                 FirebaseUnityPackageUtility.CheckedPath(path);

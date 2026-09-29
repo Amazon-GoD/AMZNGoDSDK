@@ -1,5 +1,29 @@
 # Automatic prohibited SDK cleanup — 2026-09-29
 
+## Follow-up: five review fixes
+
+- Split APK builds verify every APK/AAB listed in the current BuildReport.
+  Export mode is captured before building; a directory alone no longer skips
+  verification. Stale files in that directory are not selected.
+- Gradle dependency identity is parsed before its configuration closure.
+  Explicit exclusions are preserved, Maven maps retain group/name identity,
+  and statement removal preserves complete comment tokens and line endings.
+- Prohibited MAX package removal is scoped to Android. Legacy cleanup edits
+  only prohibited Android XML nodes, preserving iOS packages, CocoaPods,
+  shared files and metadata, including export-labelled legacy installations.
+
+Validation: 23 artifact-selection probes, 32 Gradle transformation probes and
+24 iOS-preservation/rollback assertions passed against the production code.
+Source-template byte-exact backups and repeated cleanup passed; the cleaned
+template parsed successfully with Groovy 3.0.10. Editor code compiled with
+and without Android symbols against Unity 2022.3.60f1 (only the two existing
+unused-variable warnings). Unity Test Framework remains disabled; a full
+split-APK build and live iOS UPM operations were not run for this follow-up.
+
+Diagnostics are under ignored `Temp~/AmazonSdkCleanup/ArtifactGuardProbe`,
+`Temp~/GradleReviewProbes.cs`, `Temp~/GradleReviewInputs-*` and
+`Temp~/IosPreservationCheck`. Changes are intended for a local commit only.
+
 ## Follow-up: clean and continue in Build PreProcess
 
 Every Android build with the SDK enabled now synchronously cleans existing

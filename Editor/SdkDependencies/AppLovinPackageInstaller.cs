@@ -51,6 +51,7 @@ namespace AMZNGoDSDK.Editor
         {
             return ObsoleteAdapterPackageIds.Contains(packageId) ||
                 packageId.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) &&
+                packageId.EndsWith(".android", StringComparison.Ordinal) &&
                 ForbiddenAdNetworks.MatchByGroup(packageId) != null;
         }
 
@@ -594,7 +595,7 @@ namespace AMZNGoDSDK.Editor
                     if (MustRemoveAdapter(adapter.name) && adapter.source == PackageSource.Embedded)
                         throw new IOException("Устаревший адаптер установлен как embedded package: " + adapter.name + ". Удалите его явно перед обновлением MAX.");
                     var forbidden = ForbiddenAdNetworks.MatchByGroup(adapter.name);
-                    if (forbidden != null)
+                    if (MustRemoveAdapter(adapter.name) && forbidden != null)
                         throw new IOException("Установлен запрещённый адаптер " + forbidden.DisplayName + ". Удалите его явно перед установкой.");
                     if (replace && PinnedVersions.ContainsKey(adapter.name) && adapter.source != PackageSource.Registry)
                         throw new IOException("Закреплённый адаптер имеет нестандартный источник: " + adapter.packageId + ". Переведите его в registry UPM перед заменой.");
@@ -1121,7 +1122,7 @@ namespace AMZNGoDSDK.Editor
             // Последняя защита: сюда не должен попадать запрещённый пакет ни при каких правках
             // вызывающего кода — иначе установщик тихо соберёт то, что потом не соберётся.
             var forbidden = ForbiddenAdNetworks.MatchByGroup(packageId);
-            if (forbidden != null)
+            if (MustRemoveAdapter(packageId) && forbidden != null)
             {
                 throw new IOException($"Отказ: «{forbidden.DisplayName}» в стоп-листе ({packageId}).");
             }

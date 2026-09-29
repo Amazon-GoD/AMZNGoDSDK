@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Verify every split APK from the current Android build report; distinguish
+  Gradle export from a directory containing completed APKs.
+- Preserve allowed Gradle dependencies with prohibited transitive exclusions,
+  Maven group identity in map notation and multiline comment boundaries.
+- Restrict prohibited MAX package cleanup to Android and preserve iOS packages,
+  CocoaPods declarations and shared legacy files during Android cleanup.
+
 ### Changed
 
 - Automatically remove prohibited Android SDK dependencies and known carriers
