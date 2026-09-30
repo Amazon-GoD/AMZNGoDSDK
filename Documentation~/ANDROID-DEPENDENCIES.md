@@ -1,4 +1,4 @@
-# Android dependencies — 2026-09-23
+# Android dependencies — 2026-09-30
 
 Unity remains **2022.3 LTS** (development project: 2022.3.60f1). The updated
 mediation requires **Android API 24** on the device. Compilation uses API 36;
@@ -54,11 +54,13 @@ Xcode 26.2; iOS builds are outside this Android verification.
 
 ## Pinned MAX adapter set
 
-All 15 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
+All 16 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
 UPM versions are read from the AppLovin registry rather than inferred from
 native version numbers. Replacing MAX updates the installed adapters and
 preserves their network selection. Automatic initial setup installs the
-full allowed set. Forbidden networks remain excluded.
+full allowed set, including mandatory Google AdMob. Set **AppLovin MAX →
+AdMob Android App ID** in SDK Settings before an Android build; a missing or
+invalid effective MAX App ID blocks the build. Forbidden networks remain excluded.
 
 **HyprMX and Maio are removed:** MAX 8.6.6 marks these networks obsolete and
 automatically removes their packages. They are excluded from installation and
@@ -72,6 +74,7 @@ networks keep their settings. This follows the vendor's
 | Pangle / ByteDance | 803000401.0.0 | 8.3.0.4.1 |
 | Chartboost | 9140101.0.0 | 9.14.1.1 |
 | Meta | 6220000.0.0 | 6.22.0.0 |
+| Google AdMob | 25050000.0.0 | 25.5.0.0 |
 | InMobi | 11040103.0.0 | 11.4.1.3 |
 | LINE | 300001010.1.0 | 3000.1.1.1 |
 | Mintegral | 17018100.0.0 | 17.1.81.0 |

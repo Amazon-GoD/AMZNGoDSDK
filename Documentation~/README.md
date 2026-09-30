@@ -5,23 +5,22 @@ Cross-Promo and In-App Purchases — in Amazon Appstore projects.
 
 ## Requirements
 
-- Unity **2022.3 LTS** or newer.
-- Android build support (the SDK targets Amazon Appstore devices).
-- [External Dependency Manager for Unity (EDM4U)](https://github.com/googlesamples/unity-jar-resolver)
-  installed in the consumer project — it resolves the Android/iOS dependencies
-  that the SDK generates. Install it via UPM git URL:
-  `https://github.com/googlesamples/unity-jar-resolver.git?path=upm`.
+- Unity **2022.3 LTS** or newer and its Android Build Support module.
+- Android **API 24** or newer when AppLovin MAX is enabled.
+- Enable the required modules and save **AMZN GoD → SDK Settings**. The SDK
+  automatically prepares EDM4U, MAX and its allowed Android adapters,
+  Firebase for the enabled module, and the Android build tools. First setup
+  needs an internet connection; progress and retry are available in SDK
+  Settings. Wait for dependency preparation before building.
+- Firebase and MAX are installed as external dependencies rather than
+  embedded in this SDK package. See [Android dependencies](ANDROID-DEPENDENCIES.md)
+  for pinned versions and toolchain requirements.
+- Configure **AppLovin MAX → AdMob Android App ID** in SDK Settings before
+  an Android build with MAX; a missing or invalid effective App ID blocks it.
 - `com.unity.ugui`, `com.unity.textmeshpro` and the required built-in engine
   modules (`androidjni`, `imageconversion`, `unitywebrequest`,
-  `unitywebrequesttexture`, `jsonserialize`, `video`) are pulled in
-  automatically as package
-  dependencies.
-- Firebase module only: the consumer project must contain the Firebase Unity
-  SDK (Analytics/Crashlytics) — it is not bundled with this package. Install
-  it **before** enabling the module: without it the SDK refuses to set the
-  define (console warning `dependencies are missing — skipping define`), and
-  forcing `AMZN_FIREBASE_ENABLED` manually fails compilation with
-  `CS0246: 'Firebase' could not be found`.
+  `unitywebrequesttexture`, `jsonserialize`, `video`) are installed as
+  package dependencies.
 
 ## Installation
 
@@ -31,12 +30,14 @@ Add the package to `Packages/manifest.json` (or through
 ```json
 {
   "dependencies": {
-    "com.amzngod.amzngodsdk": "https://github.com/Amazon-GoD/AMZNGoDSDK.git#Releases"
+    "com.amzngod.amzngodsdk": "https://github.com/Amazon-GoD/AMZNGoDSDK.git#beta"
   }
 }
 ```
 
-- `#Releases` — always the latest release.
+- `#beta` — the latest beta package; this snapshot is **1.0.8-beta.1**.
+- `#v1.0.8-beta.1` — pin this exact beta version.
+- `#Releases` — the stable release channel.
 - `#vX.Y.Z` (e.g. `#v1.0.0`) — pin an exact release version.
 
 The repository is private: access requires GitHub credentials (SSH key or PAT)

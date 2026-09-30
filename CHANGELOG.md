@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8-beta.1] - 2026-09-30
+
 ### Fixed
 
 - Use `placement: "banner"` for AppMetrica cross-promo banner clicks, matching
@@ -40,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back up changed templates; defer package synchronization until after builds.
 
 - Retain Unity 2022.3 and update Android dependencies for API 24: MAX Unity
-  8.6.6 / Android 13.6.4 with 15 allowed adapters pinned, Firebase 13.17.0,
+  8.6.6 / Android 13.6.4 with 16 allowed adapters pinned, Firebase 13.17.0,
   Adjust 5.8.0, AppMetrica Unity 6.10.0 / Android 8.5.1 and EDM4U 1.2.189.
 - Automatically prepare dependencies of enabled modules and the Android build
   tools. Use AGP 8.13.2, Gradle 8.13, a separate JDK 17 and compileSdk 36 while
@@ -51,12 +53,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatically install the pinned Google AdMob Android MAX adapter with the
+  required mediation set. Configure its Android App ID in SDK Settings;
+  synchronize it to MAX on save, reload and before builds. Missing or invalid
+  Android App IDs stop enabled AppLovin Android builds.
+- Switch the cross-promo banner to the configured MAX Banner Ad Unit when a
+  loaded cross-promo configuration exhausts its caps. Preserve visibility,
+  no-ads and SDK initialization guards.
+- Add the default-off `Debug Force Cross Promo Caps Exhausted` toggle to the
+  SDK component and its runtime property for QA of the normal MAX fallback
+  paths. Disabling it restores actual cap checks without changing stored caps.
+
 - Configure the built-in Adjust startup Remote Config key in SDK Settings → Firebase.
   Existing configs retain `adjust_enable`; each custom key keeps its own offline decision cache.
 - Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.
   Pass them to MAX shows; SDK analytics and revenue reports retain canonical
   placement values. Empty or missing settings retain
   the existing `interstitial` and `rewarded` defaults.
+
+### Upgrade notes
+
+- Android devices require API 24 when MAX is enabled. Dependency preparation
+  uses a separate JDK 17, Gradle 8.13, AGP 8.13.2 and compileSdk 36.
+- Firebase 13.17.0 requires iOS/tvOS 15 and Xcode 26.2 for Apple builds.
 
 ## [1.0.7] - 2026-09-22
 
