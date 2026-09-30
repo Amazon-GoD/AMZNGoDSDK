@@ -85,8 +85,16 @@ namespace AMZNGoDSDK.Editor
 
         private static bool IsIosPath(string path)
         {
+            if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)) path = path.Substring(0, path.Length - 5);
             return Regex.IsMatch(path, @"/(iOS|tvOS)/|\.(framework|xcframework|bundle)(/|$)|\.(m|mm|h|a|dylib)$",
                 RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsIosOnlyPath(string path)
+        {
+            if (path.IndexOf("/Android/", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            // Managed code, Android binaries and dependency XML can be shared across platforms.
+            return IsIosPath(path) && !Regex.IsMatch(path, @"\.(cs|dll|asmdef|asmref|aar|jar|so|java|kt|gradle|xml)(\.meta)?$", RegexOptions.IgnoreCase);
         }
 
         private static bool IsAndroidFile(string path)
@@ -131,7 +139,7 @@ namespace AMZNGoDSDK.Editor
             }
         }
 
-        internal static bool HasCore => Files().Any(path => !Preserve(path) && IsCorePath(path) &&
+        internal static bool HasCore => Files().Any(path => !Preserve(path) && !IsIosOnlyPath(path) && IsCorePath(path) &&
             (IsSdkFile(path) || Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|asmdef)$", RegexOptions.IgnoreCase)));
 
         internal static string Description
@@ -202,6 +210,7 @@ namespace AMZNGoDSDK.Editor
                  Regex.IsMatch(Path.GetFileName(path), @"^MaxSdk.*\.asmdef$")));
             foreach (string path in marked.Concat(signatures).Distinct())
             {
+                if (IsIosOnlyPath(path)) continue;
                 FirebaseUnityPackageUtility.CheckedPath(path);
                 if (!path.StartsWith(Root + "/", StringComparison.Ordinal) && !settings.Contains(path) && !Preserve(path) && File.Exists(path))
                     throw new IOException("Обнаружен перемещённый legacy MAX: " + path + ". Перенесите SDK в Assets/MaxSdk перед заменой.");
@@ -236,8 +245,7 @@ namespace AMZNGoDSDK.Editor
                     string id = "com.applovin.mediation.adapters." + network + ".android";
                     if (replace && AppLovinPackageInstaller.Pins.ContainsKey(id))
                     {
-                        if (xml.SelectNodes("/dependencies/iosPods/iosPod").Count != 0)
-                            throw new IOException("Legacy " + match.Groups[1].Value + " содержит iOS-зависимости. Переведите этот адаптер в UPM перед заменой, чтобы сохранить обе платформы.");
+                        // SDK is Android-only; CocoaPods declarations do not block adapter replacement.
                         plan.AdapterPins.Add(id);
                         pinnedRoots.Add(Root + "/Mediation/" + dependency.Substring((Root + "/Mediation/").Length).Split('/')[0] + "/");
                         plan._delete.Add(dependency);
@@ -259,8 +267,8 @@ namespace AMZNGoDSDK.Editor
                     plan._delete.Add(path);
                     if (!path.EndsWith(".meta", StringComparison.Ordinal)) plan._delete.Add(path + ".meta");
                 }
-                else if (Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|m|mm|asmdef)$", RegexOptions.IgnoreCase) ||
-                         path.EndsWith(".cs", StringComparison.Ordinal) && Regex.IsMatch(File.ReadAllText(path), @"\b(class|namespace|struct|enum|interface)\s+(Max[A-Z]|AppLovin)"))
+                else if (!IsIosOnlyPath(path) && (Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|m|mm|asmdef)$", RegexOptions.IgnoreCase) ||
+                         path.EndsWith(".cs", StringComparison.Ordinal) && Regex.IsMatch(File.ReadAllText(path), @"\b(class|namespace|struct|enum|interface)\s+(Max[A-Z]|AppLovin)")))
                     throw new IOException("Неизвестный код legacy MAX: " + path + ". Проверьте его вручную перед заменой.");
             }
             return plan;

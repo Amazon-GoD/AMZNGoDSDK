@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow Android-only MAX replacement when legacy adapters declare iOS CocoaPods
+  or leave iOS native files. Update only Android UPM adapters, preserving
+  settings and the existing backup/restore flow.
 - Use `placement: "banner"` for AppMetrica cross-promo banner clicks, matching
   the backend. Keep the `crosspromo_banner_click` event name unchanged.
 - Track MAX banner clicks, impressions and revenue across analytics channels;

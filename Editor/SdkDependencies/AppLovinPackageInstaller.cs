@@ -359,7 +359,7 @@ namespace AMZNGoDSDK.Editor
             }
             if (!EditorUtility.DisplayDialog("Заменить AppLovin MAX",
                     InstalledStatus + " → " + PackageSpec(MaxPluginPackageId) + ".\n\n" +
-                    "Поддерживаемые адаптеры обновятся до закреплённых версий. " + ObsoleteAdaptersNotice + "\n\n" +
+                    "Поддерживаемые Android-адаптеры обновятся до закреплённых версий. " + ObsoleteAdaptersNotice + "\n\n" +
                     "Legacy-файлы SDK будут заменены пакетом UPM. Resources, настройки и SDK keys сохраняются. " +
                     "Резервная копия: Library/AmznGoDSDK/AppLovin.", "Заменить", "Отмена")) return;
             _ = RunOperationAsync(true, false);
@@ -588,7 +588,9 @@ namespace AMZNGoDSDK.Editor
                 var installedCore = installed.FirstOrDefault(package => package.name == MaxPluginPackageId);
                 if (replace && installedCore != null && installedCore.source == PackageSource.Embedded)
                     throw new IOException("MAX установлен как embedded package. Сначала перенесите его из Packages в обычный UPM пакет.");
-                var adapters = installed.Where(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal)).ToArray();
+                // Replacement and validation manage only Android adapters.
+                var adapters = installed.Where(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) &&
+                    package.name.EndsWith(".android", StringComparison.Ordinal)).ToArray();
                 var obsolete = ReadManifestDependencies(File.ReadAllText(ManifestPath)).Keys
                     .Where(MustRemoveAdapter).ToArray();
                 foreach (var adapter in adapters)
@@ -674,7 +676,8 @@ namespace AMZNGoDSDK.Editor
                 foreach (var package in expected)
                     if (!check.Result.Any(item => item.name == package.Key && (package.Value == null || item.version == package.Value)))
                         throw new IOException("UPM не подтвердил пакет " + package.Key + (package.Value == null ? "" : "@" + package.Value));
-                if (replace && check.Result.Any(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) && !expected.ContainsKey(package.name)))
+                if (replace && check.Result.Any(package => package.name.StartsWith("com.applovin.mediation.adapters.", StringComparison.Ordinal) &&
+                    package.name.EndsWith(".android", StringComparison.Ordinal) && !expected.ContainsKey(package.name)))
                     throw new IOException("UPM изменил состав адаптеров. Замена отменена.");
                 SessionState.EraseString(PendingKey);
                 SetStatus("AppLovin: " + (adaptersOnly ? "адаптеры установлены" : PackageSpec(MaxPluginPackageId) + " установлен") + ". Резервная копия: " + backup);
