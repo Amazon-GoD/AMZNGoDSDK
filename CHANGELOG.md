@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use `placement: "banner"` for AppMetrica cross-promo banner clicks, matching
+  the backend. Keep the `crosspromo_banner_click` event name unchanged.
+- Track MAX banner clicks, impressions and revenue across analytics channels;
+  use revenue callbacks for impressions and retain late callbacks after hide.
+- Include explicit `ad_format` in advertising events and native revenue metadata,
+  so custom MAX placement names cannot obscure interstitial/rewarded/banner.
+  Preserve legacy analytics overloads and unknown-placement payload behavior.
+  Backend receivers must accept the new optional field and older queued events.
 - Send cross-promo banner impressions and clicks to the backend with
   `placement: "banner"`. Start backend click tracking before redirect, with
   up to 1.5 seconds of waiting and tracking hosted on the persistent module.

@@ -20,6 +20,7 @@ namespace AMZNGoDSDK.Runtime
     {
         // Бэкофф ретраев из документации MAX: 2^n секунд с потолком 2^6 = 64с.
         private const int MaxRetryExponent = 6;
+        private const string BannerPlacement = AdAnalyticsFormat.Banner;
 
         private string _sdkKey;
         private string _interstitialAdUnitId;
@@ -178,6 +179,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 MaxSdk.CreateBanner(_bannerAdUnitId,
                     new MaxSdkBase.AdViewConfiguration(MaxSdkBase.AdViewPosition.BottomCenter));
+                MaxSdk.SetBannerPlacement(_bannerAdUnitId, BannerPlacement);
                 _bannerCreated = true;
             }
 
@@ -222,7 +224,7 @@ namespace AMZNGoDSDK.Runtime
                 // Отказ репортим только при включённом модуле: у выключенного роутер сюда даже
                 // не заходит, и событие означало бы несуществующий запрос к медиации.
                 if (Enabled)
-                    AppLovinAnalytics.ReportNoFill(_interstitialAdPlacement, _sdkInitialized);
+                    AppLovinAnalytics.ReportNoFill(_interstitialAdPlacement, _sdkInitialized, AdAnalyticsFormat.Interstitial);
 
                 return false;
             }
@@ -251,7 +253,7 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"[AppLovinModule] ShowRewarded: нет готового ad'а (Enabled={Enabled}, initialized={_sdkInitialized}).");
 
                 if (Enabled)
-                    AppLovinAnalytics.ReportNoFill(_rewardedAdPlacement, _sdkInitialized);
+                    AppLovinAnalytics.ReportNoFill(_rewardedAdPlacement, _sdkInitialized, AdAnalyticsFormat.Rewarded);
 
                 return false;
             }
@@ -300,6 +302,10 @@ namespace AMZNGoDSDK.Runtime
             MaxSdkCallbacks.Rewarded.OnAdHiddenEvent += OnRewardedHidden;
             MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent += OnRewardedRevenuePaid;
 
+            MaxSdkCallbacks.Banner.OnAdLoadFailedEvent += OnBannerLoadFailed;
+            MaxSdkCallbacks.Banner.OnAdClickedEvent += OnBannerClicked;
+            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent += OnBannerRevenuePaid;
+
             _callbacksSubscribed = true;
         }
 
@@ -326,6 +332,10 @@ namespace AMZNGoDSDK.Runtime
             MaxSdkCallbacks.Rewarded.OnAdReceivedRewardEvent -= OnRewardedReceivedReward;
             MaxSdkCallbacks.Rewarded.OnAdHiddenEvent -= OnRewardedHidden;
             MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent -= OnRewardedRevenuePaid;
+
+            MaxSdkCallbacks.Banner.OnAdLoadFailedEvent -= OnBannerLoadFailed;
+            MaxSdkCallbacks.Banner.OnAdClickedEvent -= OnBannerClicked;
+            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent -= OnBannerRevenuePaid;
 
             _callbacksSubscribed = false;
         }
@@ -368,7 +378,7 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         private void OnInterstitialRevenuePaid(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportAdRevenue(_interstitialAdPlacement, adInfo, isRewarded: false);
+            AppLovinAnalytics.ReportAdRevenue(_interstitialAdPlacement, adInfo, AdAnalyticsFormat.Interstitial);
         }
 
         private void OnInterstitialDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
@@ -414,7 +424,7 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnRewardedRevenuePaid(string adUnitId, MaxSdkBase.AdInfo adInfo)
         {
-            AppLovinAnalytics.ReportAdRevenue(_rewardedAdPlacement, adInfo, isRewarded: true);
+            AppLovinAnalytics.ReportAdRevenue(_rewardedAdPlacement, adInfo, AdAnalyticsFormat.Rewarded);
         }
 
         private void OnRewardedDisplayFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
@@ -450,6 +460,30 @@ namespace AMZNGoDSDK.Runtime
             _rewardEarned = false;
             InvokeOnce(ref _rewardedOnClose);
             LoadRewarded();
+        }
+
+        private bool IsOwnBanner(string adUnitId) =>
+            !string.IsNullOrWhiteSpace(_bannerAdUnitId)
+            && string.Equals(adUnitId, _bannerAdUnitId, StringComparison.Ordinal);
+
+        private void OnBannerLoadFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
+        {
+            if (!IsOwnBanner(adUnitId)) return;
+            AppLovinAnalytics.ReportBannerLoadFailed(BannerPlacement, adUnitId, errorInfo);
+        }
+
+        private void OnBannerClicked(string adUnitId, MaxSdkBase.AdInfo adInfo)
+        {
+            if (!IsOwnBanner(adUnitId)) return;
+            AppLovinAnalytics.ReportBannerClicked(BannerPlacement, adInfo);
+        }
+
+        private void OnBannerRevenuePaid(string adUnitId, MaxSdkBase.AdInfo adInfo)
+        {
+            if (!IsOwnBanner(adUnitId)) return;
+            // A refresh is a new impression. Do not gate on current visibility:
+            // revenue for an already displayed ad may arrive after HideBanner.
+            AppLovinAnalytics.ReportBannerRevenuePaid(BannerPlacement, adInfo);
         }
 
         /// <summary>

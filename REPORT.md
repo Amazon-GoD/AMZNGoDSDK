@@ -1,3 +1,50 @@
+# Advertising placement consistency — 2026-09-30
+
+Implemented on `tmp/placement-event-consistency`, created from local `safety`.
+
+- Cross-promo banner clicks now use `placement="banner"` in AppMetrica and
+  backend events. The event name is unchanged.
+- Added the shared `AdAnalyticsFormat` constants and optional `ad_format` to
+  advertising custom events, backend CP/mediation payloads and native MAX
+  revenue metadata. Configured MAX placement names retain their values.
+- Existing public tracking signatures remain; new overloads accept explicit
+  format independently of placement. Legacy CP calls infer only exact known
+  formats. Legacy mediation calls omit the format. Unknown formats are omitted,
+  and existing unknown-placement serialization rules are preserved.
+- Added MAX banner click, load-error and revenue callbacks with matching
+  subscribe/unsubscribe and ad-unit filtering. `SetBannerPlacement` sets
+  `banner` immediately after creation. Revenue callbacks produce banner
+  displayed events and native/backend revenue, including refreshes and late
+  revenue after hide. Loading/showing/hiding does not synthesize impressions.
+- Updated the SDK documentation and changelog with the payload contract and
+  backend compatibility requirement.
+
+Two independent static reviews approved the AppLovin implementation and the
+shared/backend/CrossPromo implementation without blockers. Unity 2022.3.60f1
+Roslyn compilation passed **44/44 module builds** across eight configurations:
+Editor Android / Android Player × Analytics on/off × AppLovin on/off. The
+shared Runtime assembly and dependent modules were rebuilt with fresh
+references. Remaining compiler diagnostics were existing CS0168/CS0414 and
+the obsolete `MaxSdk.SetSdkKey` CS0618 warning.
+
+Evidence is in ignored `Temp~/PlacementConsistencyValidation/Summary.log`,
+response files, compiler logs and source hashes. Original line endings were
+restored on unchanged lines after compilation; normalized source content was
+checked to remain identical. The only later source adjustment moved an XML
+documentation comment to its intended method. Whitespace checks passed.
+Unity tests are disabled by AGENTS.md and were not run. No device/Editor play
+or live analytics-delivery validation was performed.
+
+The backend implementation is outside this repository. It must accept optional
+`ad_format` on both CP and mediation events and continue accepting older queued
+payloads without it; server acceptance has not been verified here. Existing
+first-open attribution behavior and Adjust tracking URLs are unchanged.
+
+The completed tmp branch is intended for a local fast-forward merge into
+`safety`. No push or changes to `main` are part of this task.
+
+---
+
 # Integration of agent tmp branches — 2026-09-29
 
 Audited all 29 existing local `tmp/*` branches against `safety` at `8423620`.

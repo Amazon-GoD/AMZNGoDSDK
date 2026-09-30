@@ -221,24 +221,30 @@ namespace AMZNGoDSDK.Runtime
 
         public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
 
-        public void TrackImpression(string paidAppId, string placement)
+        public void TrackImpression(string paidAppId, string placement) =>
+            TrackImpression(paidAppId, placement, AdAnalyticsFormat.KnownOrNull(placement));
+
+        public void TrackImpression(string paidAppId, string placement, string adFormat)
         {
             // ts фиксируем СРАЗУ, в момент показа: если device_id ещё резолвится, отправка
             // подождёт его пару кадров, но время события останется настоящим, а не поздним.
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
-            StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts, placement));
+            StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts, placement, adFormat));
         }
 
         public void TrackClick(string paidAppId) => TrackClick(paidAppId, null);
 
-        public void TrackClick(string paidAppId, string placement)
+        public void TrackClick(string paidAppId, string placement) =>
+            TrackClick(paidAppId, placement, AdAnalyticsFormat.KnownOrNull(placement));
+
+        public void TrackClick(string paidAppId, string placement, string adFormat)
         {
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
-            StartCoroutine(TrackCrossPromoEvent("cp_click", paidAppId, ts, placement));
+            StartCoroutine(TrackCrossPromoEvent("cp_click", paidAppId, ts, placement, adFormat));
         }
 
         /// <summary>
@@ -247,12 +253,15 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public IEnumerator TrackClickRoutine(string paidAppId) => TrackClickRoutine(paidAppId, null);
 
-        public IEnumerator TrackClickRoutine(string paidAppId, string placement)
+        public IEnumerator TrackClickRoutine(string paidAppId, string placement) =>
+            TrackClickRoutine(paidAppId, placement, AdAnalyticsFormat.KnownOrNull(placement));
+
+        public IEnumerator TrackClickRoutine(string paidAppId, string placement, string adFormat)
         {
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 yield break;
-            yield return TrackCrossPromoEvent("cp_click", paidAppId, ts, placement);
+            yield return TrackCrossPromoEvent("cp_click", paidAppId, ts, placement, adFormat);
         }
 
         /// <summary>
@@ -267,7 +276,11 @@ namespace AMZNGoDSDK.Runtime
         /// раз на показ, и это единственное событие, где есть выручка. Отправка по
         /// <c>OnAdDisplayedEvent</c> дала бы показ без денег и второй запрос ради revenue.</para>
         /// </summary>
-        public void TrackMediationImpression(string network, string adUnit, string placement, double revenue, string precision)
+        public void TrackMediationImpression(string network, string adUnit, string placement, double revenue, string precision) =>
+            TrackMediationImpression(network, adUnit, placement, revenue, precision, null);
+
+        /// <summary>Explicit format must be independent of the configurable MAX placement.</summary>
+        public void TrackMediationImpression(string network, string adUnit, string placement, double revenue, string precision, string adFormat)
         {
             // ts фиксируем сразу, как в TrackImpression: ожидание резолва device_id не должно
             // сдвигать время события.
@@ -275,7 +288,7 @@ namespace AMZNGoDSDK.Runtime
             if (ts < MinTimestampMs)
                 return;
 
-            StartCoroutine(TrackMediationEvent("mediation_impression", network, adUnit, placement, revenue, precision, ts));
+            StartCoroutine(TrackMediationEvent("mediation_impression", network, adUnit, placement, revenue, precision, ts, adFormat));
         }
 
         /// <summary>
@@ -286,17 +299,20 @@ namespace AMZNGoDSDK.Runtime
         /// показом и бэкенду не приходилось разбирать два формата.
         /// </para>
         /// </summary>
-        public void TrackMediationClick(string network, string adUnit, string placement)
+        public void TrackMediationClick(string network, string adUnit, string placement) =>
+            TrackMediationClick(network, adUnit, placement, null);
+
+        public void TrackMediationClick(string network, string adUnit, string placement, string adFormat)
         {
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
 
-            StartCoroutine(TrackMediationEvent("mediation_click", network, adUnit, placement, 0d, null, ts));
+            StartCoroutine(TrackMediationEvent("mediation_click", network, adUnit, placement, 0d, null, ts, adFormat));
         }
 
         private IEnumerator TrackMediationEvent(
-            string eventName, string network, string adUnit, string placement, double revenue, string precision, long ts)
+            string eventName, string network, string adUnit, string placement, double revenue, string precision, long ts, string adFormat)
         {
             // Как и в кросс-промо: не теряем событие из первых секунд сессии, ждём резолва
             // device_id ограниченное время вместо раннего выхода.
@@ -311,12 +327,12 @@ namespace AMZNGoDSDK.Runtime
                       $"device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
             string json = BuildMediationEventJson(
-                eventName, network, adUnit, placement, revenue, precision, AppId, deviceIdHash, ts, eventId);
+                eventName, network, adUnit, placement, revenue, precision, AppId, deviceIdHash, ts, eventId, adFormat);
 
             yield return SendEventWithRetry(json, eventId);
         }
 
-        private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts, string placement)
+        private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts, string placement, string adFormat)
         {
             // Раньше здесь был ранний return при !IsReady — событие пропадало навсегда,
             // хотя device_id резолвился буквально десятки миллисекунд спустя. Теперь ждём
@@ -334,7 +350,7 @@ namespace AMZNGoDSDK.Runtime
             string eventId = NewEventId();
             Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, placement={placement}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
-            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId, placement);
+            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId, placement, adFormat);
             yield return SendEventWithRetry(json, eventId);
         }
 
@@ -787,7 +803,7 @@ namespace AMZNGoDSDK.Runtime
         }
 
         private static string BuildCrossPromoEventJson(
-            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement)
+            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement, string adFormat)
         {
             // Старые вызовы без плейсмента сохраняют прежний payload. Очередь хранит
             // готовый JSON, поэтому плейсмент баннера сохранится и при повторной отправке.
@@ -802,6 +818,7 @@ namespace AMZNGoDSDK.Runtime
                    $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
                    placementField +
+                   BuildAdFormatJsonField(adFormat) +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -813,7 +830,7 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         private static string BuildMediationEventJson(
             string eventName, string network, string adUnit, string placement, double revenue, string precision,
-            string appId, string deviceIdHash, long ts, string eventId)
+            string appId, string deviceIdHash, long ts, string eventId, string adFormat)
         {
             // Форматируем до интерполяции — как в BuildAttributionJson: InvariantCulture
             // обязателен, локаль с запятой в разделителе сломала бы JSON.
@@ -827,10 +844,17 @@ namespace AMZNGoDSDK.Runtime
                    $"\"network\":\"{EscapeJson(network ?? string.Empty)}\"," +
                    $"\"ad_unit\":\"{EscapeJson(adUnit ?? string.Empty)}\"," +
                    $"\"placement\":\"{EscapeJson(placement ?? string.Empty)}\"," +
+                   BuildAdFormatJsonField(adFormat) +
                    $"\"revenue\":{revenueText}," +
                    $"\"revenue_precision\":\"{EscapeJson(precision ?? string.Empty)}\"," +
                    $"\"ts\":{ts}" +
                    "}";
+        }
+
+        private static string BuildAdFormatJsonField(string adFormat)
+        {
+            string knownFormat = AdAnalyticsFormat.KnownOrNull(adFormat);
+            return knownFormat == null ? string.Empty : $"\"ad_format\":\"{knownFormat}\",";
         }
 
         private static string BuildIapLinkJson(
