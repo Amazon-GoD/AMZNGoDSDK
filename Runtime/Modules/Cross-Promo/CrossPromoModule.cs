@@ -55,6 +55,25 @@ namespace AMZNGoDSDK.Runtime
         private const string InterstitialPlacement = "interstitial";
         private const string RewardedPlacement = "rewarded";
 
+        /// <summary>Debug override маршрутизации; не меняет cap, конфиг или PlayerPrefs.</summary>
+        public bool DebugForceCapsExhausted { get; set; }
+
+        private bool IsSimulatingExhaustedCaps
+        {
+            get
+            {
+#if AMZN_APPLOVIN_ENABLED
+                if (!Enabled || !DebugForceCapsExhausted)
+                    return false;
+
+                var mediation = SdkModuleRegistry.Get<AppLovinModule>();
+                return mediation != null && mediation.Enabled;
+#else
+                return false;
+#endif
+            }
+        }
+
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
         /// <summary>True when a video is ready to play. For the UnityVideoPlayer backend this
@@ -94,7 +113,7 @@ namespace AMZNGoDSDK.Runtime
         /// </para>
         /// </summary>
         public bool HasFill =>
-            _configFetchReturnedVideos && (_crossPromoConfig?.HasAvailableVideos() ?? false);
+            _configFetchReturnedVideos && !IsSimulatingExhaustedCaps && (_crossPromoConfig?.HasAvailableVideos() ?? false);
 
         // Баннер наследует тот же cap/master-флаг, что и interstitial/rewarded.
         // Отсутствие загруженного конфига не означает, что его cap уже исчерпан.

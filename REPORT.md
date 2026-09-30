@@ -1,3 +1,27 @@
+# Cross-promo cap exhaustion debug flag — 2026-09-30
+
+Implemented on `tmp/cp-force-caps-debug`, created from `safety` at `8553fb0`.
+The existing `AmznGoDSDKCore` component now exposes the serialized, default-off
+`Debug Force Cross Promo Caps Exhausted` toggle and matching runtime property.
+Startup, the property setter and Play Mode Inspector changes forward it to CP.
+
+The override makes CP availability false only after a nonempty configuration
+fetch and while CP and AppLovin are enabled. Existing fullscreen routing and
+the banner's 0.25-second check then use their normal MAX paths. JSON, creative
+pools and PlayerPrefs are unchanged by the flag; disabling it restores actual
+cap checks. The explicit opt-in works in ordinary QA APKs as well as the Editor.
+Banner IDs, MAX initialization, no-ads, visibility and fullscreen guards remain.
+Usage is documented in `Runtime/Modules/Cross-Promo/README.md`.
+
+Independent static review approved without findings. Unity 2022.3.60f1 Roslyn
+passed 24 fresh assembly builds across Android Editor/Player and MAX on/off,
+plus a Core compilation with the CP define/reference excluded. Source hashes
+remained unchanged during the full builds. Whitespace verification passed.
+Evidence: ignored `Temp~/CrossPromoForceCapsValidation/`. Unity tests are disabled
+by AGENTS.md; no live Editor or device MAX banner delivery was verified.
+
+---
+
 # AdMob Android App ID in SDK Settings — 2026-09-30
 
 Added `AdMob Android App ID` after SDK Key in the AppLovin MAX section of

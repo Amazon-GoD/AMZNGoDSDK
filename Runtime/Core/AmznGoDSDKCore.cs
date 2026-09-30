@@ -36,10 +36,37 @@ namespace AMZNGoDSDK.Runtime
         private AppLovinModule _appLovinModule;
 #endif
 
+        [Header("Debug")]
+        [SerializeField, Tooltip("Симулирует исчерпание капов CP после загрузки конфига. " +
+            "Переключает рекламу на AppLovin, не изменяя реальные счётчики. По умолчанию выключено.")]
+        private bool _debugForceCrossPromoCapsExhausted;
+
+        /// <summary>Обратимая симуляция исчерпания капов CP для проверки медиации MAX.</summary>
+        public bool DebugForceCrossPromoCapsExhausted
+        {
+            get => _debugForceCrossPromoCapsExhausted;
+            set
+            {
+                _debugForceCrossPromoCapsExhausted = value;
+#if AMZN_CROSSPROMO_ENABLED
+                if (_crossPromoModule != null)
+                    _crossPromoModule.DebugForceCapsExhausted = value;
+#endif
+            }
+        }
+
         public bool Enabled { get; private set; }
         public bool IsInitialized { get; private set; }
 
         public event Action OnInitializationComplete;
+
+#if UNITY_EDITOR && AMZN_CROSSPROMO_ENABLED
+        private void OnValidate()
+        {
+            if (Application.isPlaying)
+                DebugForceCrossPromoCapsExhausted = _debugForceCrossPromoCapsExhausted;
+        }
+#endif
 
         #region Awake
         protected override void OnAwake()
@@ -118,6 +145,7 @@ namespace AMZNGoDSDK.Runtime
 
 #if AMZN_CROSSPROMO_ENABLED
             _crossPromoModule.Construct(crossPromoSettings);
+            _crossPromoModule.DebugForceCapsExhausted = _debugForceCrossPromoCapsExhausted;
 #endif
             
 #if AMZN_APPMETRICA_ENABLED
