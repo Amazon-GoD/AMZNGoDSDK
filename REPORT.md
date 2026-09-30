@@ -492,3 +492,52 @@ legacy 2.19.1 release because Media3 needs a separate playback-bridge migration.
 UniWebView remains at the embedded licensed 6.1.0 distribution. Local SDK
 modules did not need external dependency changes. Existing module toggles,
 network exclusions and safe-branch restrictions are preserved.
+
+---
+
+# Dev Crew report
+
+**Date:** 2026-09-30
+**Task:** Remove repeated file and package checks from SDK Settings rendering.
+
+## What was done
+
+- ✅ Moved installation checks and adapter text preparation out of `OnGUI` into a window-local snapshot.
+- ✅ Added event-driven refresh with a 2.1-second debounce beyond the installers' 2-second cache TTL; no idle rescanning.
+- ✅ Replaced window dependency requests with registered-package inspection; preserved unsaved settings and dependency Retry.
+- ✅ Architecture and code review approved; full editor assembly compilation and whitespace checks passed.
+- ✅ Implemented on `tmp/sdk-settings-performance`, incorporating current `safety` (`b1ef107`).
+
+## Architecture
+
+`SDKSettingsWindow` renders cached package state and updates it after focus, project/package changes, saves and installer completion.
+`DependencyInstaller.GetRegisteredDependenciesInstallInfo` reads `PackageInfo.GetAllRegisteredPackages` and reuses existing compatibility checks.
+The window status path makes no `Client.List` request; installation and build checks retain their existing behavior.
+
+## Files created/modified
+
+- `Editor/Windows/SDKSettingsWindow.cs` — snapshot lifecycle, debounced refresh and cached adapter labels.
+- `Editor/SdkDependencies/DependencyInstaller.cs` — read-only registered dependency status helper.
+- `REPORT.md` — appended this validation record; previous reports preserved.
+
+## Review results
+
+Approved after 1 formal review iteration; critical/high/medium/low issues: 0/0/0/0.
+Architect approved the implementation; final reviewer returned `approved=true`, `issues=[]`.
+
+## Tests
+
+Testing disabled — skipped (project `AGENTS.md`; no Tester agent).
+Full `AMZNGoDSDK.Editor` compilation with Unity 2022.3.60f1 Roslyn passed (exit 0); source hashes remained stable and `git diff --check` passed.
+Only baseline CS0168 warnings remain: `YandexDiskUploader.cs:200`, `SdkSettingsManager.cs:54`.
+Evidence: original SDK `Temp~/SdkSettingsPerformanceValidation/{baseline-compile.log,final-compile.log,editor-compile.rsp,source-hashes.txt}`.
+
+## Known limitations
+
+Live Unity UI responsiveness and profiler timings were not measured; no quantified window speedup is claimed.
+Package status refresh deliberately waits about 2.1 seconds after changes and pauses while the editor or installers are busy.
+
+## How to use
+
+Open `AMZN GoD > SDK Settings` in Unity; package statuses refresh automatically after relevant changes.
+Save settings as usual; use the existing dependency check/retry button for installation recovery.

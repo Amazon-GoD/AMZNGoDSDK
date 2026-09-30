@@ -121,6 +121,12 @@ namespace AMZNGoDSDK.Editor
         
         #region Status
 
+        internal static Dictionary<string, bool> GetRegisteredDependenciesInstallInfo()
+        {
+            var packages = PackageInfo.GetAllRegisteredPackages().ToDictionary(package => package.name, package => package);
+            return Dependencies.ToDictionary(dependency => dependency.Key, dependency => IsCompatible(packages, dependency.Key));
+        }
+
         public static async Task<bool> AllDependenciesAreInstalled()
         {
             var installedPackages = await GetInstalledPackagesAsync();
