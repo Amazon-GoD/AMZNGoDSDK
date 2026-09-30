@@ -1,3 +1,49 @@
+# Dev Crew report
+
+**Date:** 2026-09-30
+**Task:** Install Google AdMob with the mandatory adapters when the AppLovin module is enabled.
+
+## What was done
+
+- ✅ Added pinned Google AdMob Android adapter `25050000.0.0` to the required MAX set; Google Ad Manager stays excluded.
+- ✅ Added Android App ID validation and setup instructions; changes prepared on `tmp/applovin-required-admob`, created from `safety`.
+
+## Architecture
+
+The existing AppLovin installer includes AdMob through the shared allowed-adapter policy and pinned package list.
+Android preflight reads MAX settings through reflection and stops enabled SDK/AppLovin Android builds when the raw App ID is missing or malformed, without logging its value.
+
+## Files created/modified
+
+- `Editor/SdkDependencies/AppLovinPackageInstaller.cs` — pinned AdMob package.
+- `Editor/SdkModulesSettings/ForbiddenAdNetworks.cs` — permits AdMob while retaining the Ad Manager ban.
+- `Editor/SdkModulesSettings/AndroidBuildPreflight.cs` — validates MAX Android AdMob App ID.
+- `README.md` — automatic installation and App ID setup instructions.
+- `REPORT.md` — this entry, preserving previous reports.
+
+## Review results
+
+Approved after 1 review iteration; critical 0, high 0, medium 0, low 0.
+Whitespace verification passed; no push or changes to `main` were performed.
+
+## Tests
+
+Testing disabled — skipped (tester/Unity Test Framework, per AGENTS.md).
+Unity 2022.3.60f1 Roslyn compilation passed 13/13 fresh assembly builds with AppLovin on/off; source hashes remained unchanged. Only existing CS0168/CS0414/CS0618 warnings remained.
+Evidence: ignored `Temp~/AdMobRequiredValidation/Summary.log` and adjacent compiler logs, response files and source hashes.
+
+## Known limitations
+
+No live UPM installation, Unity Editor build, Android APK or device ad-serving validation was run for this change.
+The local MAX Android App ID is blank; supply your own valid ID before building.
+
+## How to use
+
+Enable AppLovin in `AMZN GoD > SDK Settings`, save settings and wait for automatic dependency preparation.
+Set your Android AdMob App ID in `AppLovin > Integration Manager > Google Bidding and Google AdMob > App ID (Android)`, then build.
+
+---
+
 # Canonical advertising placement — 2026-09-30
 
 The user clarified that `placement` itself identifies the advertising location:

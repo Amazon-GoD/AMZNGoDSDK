@@ -1,6 +1,9 @@
 #if UNITY_ANDROID
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -53,7 +56,7 @@ namespace AMZNGoDSDK.Editor
             CheckTargetSdk(errors);
             EnsureMinSdk(settings);
             CheckInternetPermission(warnings);
-            CheckAppLovinConfiguration(settings, warnings);
+            CheckAppLovinConfiguration(settings, errors, warnings);
 
             foreach (var warning in warnings)
                 Debug.LogWarning($"{LogTag} {warning}");
@@ -126,13 +129,15 @@ namespace AMZNGoDSDK.Editor
         }
 
         /// <summary>
-        /// Не ошибка сборки, но гарантированная тишина в рантайме: модуль сам себя выключает,
-        /// и после выжигания капов кросс-промо показывать становится нечем.
+        /// Проверяет обязательный Android App ID AdMob и предупреждает об отсутствии ad unit id.
+        /// Без ad unit id модуль сам себя выключает на старте.
         /// </summary>
-        private static void CheckAppLovinConfiguration(Runtime.SdkSettingsData settings, List<string> warnings)
+        private static void CheckAppLovinConfiguration(Runtime.SdkSettingsData settings, List<string> errors, List<string> warnings)
         {
             if (settings.AppLovin == null || !settings.AppLovin.Enabled)
                 return;
+
+            CheckAdMobAndroidAppId(errors);
 
             bool noAdUnits = string.IsNullOrWhiteSpace(settings.AppLovin.InterstitialAdUnitId)
                              && string.IsNullOrWhiteSpace(settings.AppLovin.RewardedAdUnitId);
@@ -144,6 +149,42 @@ namespace AMZNGoDSDK.Editor
                     "сам себя, и после исчерпания капов кросс-промо реклама показываться не будет. " +
                     "AMZN GoD → SDK Settings → AppLovin.");
             }
+        }
+
+        /// <summary>Читает App ID из MAX без зависимости от установленной сборки плагина.</summary>
+        private static void CheckAdMobAndroidAppId(List<string> errors)
+        {
+            const string error = "Модуль AppLovin требует собственный Android App ID AdMob в формате " +
+                "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX без пробелов. Проверьте установленный пакет MAX " +
+                "и укажите App ID в AppLovin → Integration Manager → Google Bidding and Google AdMob → App ID (Android).";
+            try
+            {
+                Type settingsType = null;
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    settingsType = assembly.GetType("AppLovinSettings", false);
+                    if (settingsType != null) break;
+                }
+
+                if (settingsType == null)
+                    throw new InvalidOperationException();
+
+                var instanceProperty = settingsType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                var instance = instanceProperty?.GetValue(null) as ScriptableObject;
+                var appIdProperty = settingsType.GetProperty("AdMobAndroidAppId", BindingFlags.Public | BindingFlags.Instance);
+                if (instance == null || appIdProperty == null || appIdProperty.PropertyType != typeof(string) || !appIdProperty.CanRead)
+                    throw new InvalidOperationException();
+
+                var appId = appIdProperty.GetValue(instance) as string;
+                if (!string.IsNullOrEmpty(appId) && Regex.IsMatch(appId, @"\Aca-app-pub-[0-9]{16}~[0-9]{10}\z"))
+                    return;
+            }
+            catch (Exception)
+            {
+                // Vendor exceptions may contain credentials. Never include their text in logs.
+            }
+
+            errors.Add(error);
         }
     }
 }

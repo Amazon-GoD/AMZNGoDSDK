@@ -203,6 +203,7 @@ namespace AMZNGoDSDK.Editor
             { "com.applovin.mediation.adapters.bytedance.android", "803000401.0.0" },
             { "com.applovin.mediation.adapters.chartboost.android", "9140101.0.0" },
             { "com.applovin.mediation.adapters.facebook.android", "6220000.0.0" },
+            { "com.applovin.mediation.adapters.google.android", "25050000.0.0" },
             { "com.applovin.mediation.adapters.inmobi.android", "11040103.0.0" },
             { "com.applovin.mediation.adapters.line.android", "300001010.1.0" },
             { "com.applovin.mediation.adapters.mintegral.android", "17018100.0.0" },
