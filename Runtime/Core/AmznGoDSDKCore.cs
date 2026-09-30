@@ -485,10 +485,8 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_ANALYTICS_ENABLED
         public void TrackAnalyticsImpression(string paidAppId) => TrackAnalyticsImpression(paidAppId, null);
         public void TrackAnalyticsImpression(string paidAppId, string placement) => _analyticsModule?.TrackImpression(paidAppId, placement);
-        public void TrackAnalyticsImpression(string paidAppId, string placement, string adFormat) => _analyticsModule?.TrackImpression(paidAppId, placement, adFormat);
         public void TrackAnalyticsClick(string paidAppId) => TrackAnalyticsClick(paidAppId, null);
         public void TrackAnalyticsClick(string paidAppId, string placement) => _analyticsModule?.TrackClick(paidAppId, placement);
-        public void TrackAnalyticsClick(string paidAppId, string placement, string adFormat) => _analyticsModule?.TrackClick(paidAppId, placement, adFormat);
 
         /// <summary>Показ рекламы из медиации (mediation_impression). Зовётся из AppLovinAnalytics
         /// по OnAdRevenuePaidEvent — там же, где известна выручка показа.</summary>
@@ -496,16 +494,9 @@ namespace AMZNGoDSDK.Runtime
             string network, string adUnit, string placement, double revenue, string precision) =>
             _analyticsModule?.TrackMediationImpression(network, adUnit, placement, revenue, precision);
 
-        public void TrackAnalyticsMediationImpression(
-            string network, string adUnit, string placement, double revenue, string precision, string adFormat) =>
-            _analyticsModule?.TrackMediationImpression(network, adUnit, placement, revenue, precision, adFormat);
-
         /// <summary>Клик по рекламе из медиации (mediation_click).</summary>
         public void TrackAnalyticsMediationClick(string network, string adUnit, string placement) =>
             _analyticsModule?.TrackMediationClick(network, adUnit, placement);
-
-        public void TrackAnalyticsMediationClick(string network, string adUnit, string placement, string adFormat) =>
-            _analyticsModule?.TrackMediationClick(network, adUnit, placement, adFormat);
 
         /// <summary>Связка device ↔ Amazon-покупатель (событие iap_link). Зовётся из
         /// InAppPurchaseModule по завершении полной сверки GetPurchaseUpdates.</summary>
@@ -519,29 +510,17 @@ namespace AMZNGoDSDK.Runtime
             if (_analyticsModule != null)
                 yield return _analyticsModule.TrackClickRoutine(paidAppId, placement);
         }
-
-        public IEnumerator TrackAnalyticsClickRoutine(string paidAppId, string placement, string adFormat)
-        {
-            if (_analyticsModule != null)
-                yield return _analyticsModule.TrackClickRoutine(paidAppId, placement, adFormat);
-        }
 #else
         public void TrackAnalyticsImpression(string paidAppId) => TrackAnalyticsImpression(paidAppId, null);
         public void TrackAnalyticsImpression(string paidAppId, string placement) { }
-        public void TrackAnalyticsImpression(string paidAppId, string placement, string adFormat) { }
         public void TrackAnalyticsClick(string paidAppId) => TrackAnalyticsClick(paidAppId, null);
         public void TrackAnalyticsClick(string paidAppId, string placement) { }
-        public void TrackAnalyticsClick(string paidAppId, string placement, string adFormat) { }
         public void TrackAnalyticsMediationImpression(
             string network, string adUnit, string placement, double revenue, string precision) { }
-        public void TrackAnalyticsMediationImpression(
-            string network, string adUnit, string placement, double revenue, string precision, string adFormat) { }
         public void TrackAnalyticsMediationClick(string network, string adUnit, string placement) { }
-        public void TrackAnalyticsMediationClick(string network, string adUnit, string placement, string adFormat) { }
         public void TrackAnalyticsIapLink(string amazonUserId, IReadOnlyList<string> receiptIds) { }
         public IEnumerator TrackAnalyticsClickRoutine(string paidAppId) => TrackAnalyticsClickRoutine(paidAppId, null);
         public IEnumerator TrackAnalyticsClickRoutine(string paidAppId, string placement) { yield break; }
-        public IEnumerator TrackAnalyticsClickRoutine(string paidAppId, string placement, string adFormat) { yield break; }
 #endif
 
         #endregion

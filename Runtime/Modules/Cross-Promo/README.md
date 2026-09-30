@@ -143,10 +143,9 @@ rewarded cross-promo. Асинхронная ошибка уже принято�
 AppMetrica-событие `crosspromo_banner_click` также передаёт `placement="banner"`
 (прежнее значение `banner_click` исправлено; имя события не изменилось).
 
-Во всех штатных рекламных событиях дополнительно передаётся `ad_format`:
-`interstitial`, `rewarded` или `banner`. Это общий формат для CrossPromo и MAX,
-независимый от произвольных имён MAX placement. В текущих штатных событиях
-CrossPromo значения `placement` и `ad_format` совпадают.
+В штатных рекламных событиях CrossPromo и MAX поле `placement` имеет одинаковый
+смысл и значения: `interstitial`, `rewarded` или `banner`. Произвольные имена
+из настроек MAX не подменяют это поле в событиях SDK.
 
 Пример payload клика:
 
@@ -156,7 +155,6 @@ CrossPromo значения `placement` и `ad_format` совпадают.
   "event_id": "32d030b737ea4e589523bcbe6fef81a0",
   "paid_app_id": "com.example.promoted",
   "placement": "rewarded",
-  "ad_format": "rewarded",
   "donor_app_id": "com.example.donor",
   "device_id_hash": "example-device-hash",
   "ts": 1790640000000
@@ -168,15 +166,9 @@ CrossPromo значения `placement` и `ad_format` совпадают.
 `AnalyticsModule` либо соответствующие `TrackAnalytics*` в `AmznGoDSDKCore`.
 Старые одноаргументные вызовы сохраняются; для них, а также для `null`, пустого
 или состоящего из пробелов плейсмента поле не отправляется: источник неизвестен.
-Для legacy-вызовов `ad_format` выводится только из точного известного значения
-`placement`; для остальных значений формат не угадывается и поле пропускается.
-Новые перегрузки с последним аргументом `adFormat` позволяют передать формат
-явно через константы `AdAnalyticsFormat`. Неизвестный или неканонический формат
-не сериализуется. Оба поля сохраняются в JSON очереди при повторной отправке.
+При ручной отправке передавайте `interstitial`, `rewarded` или `banner`.
+Плейсмент сохраняется в JSON очереди при повторной отправке.
 
-Бэкенд должен принимать необязательное поле `ad_format` у `cp_*` и
-`mediation_*`, сохраняя поддержку старых событий без него. Его схема и код
-отсутствуют в SDK; приём нового поля необходимо проверить на стороне сервера.
 Полный контракт, включая MAX-баннеры, описан в
 [`Documentation~/README.md`](../../../Documentation~/README.md#advertising-event-fields).
 

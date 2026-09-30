@@ -274,13 +274,14 @@ namespace AMZNGoDSDK.Editor
                             _currentSettings.AppLovin.BannerAdUnitId);
 
                     GUILayout.Space(6);
-                    EditorGUILayout.LabelField("AD Placements", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.LabelField("MAX Placements", EditorStyles.miniBoldLabel);
                     _currentSettings.AppLovin.InterstitialAdPlacement = EditorGUILayout
                         .TextField("Interstitial Placement", _currentSettings.AppLovin.InterstitialAdPlacement);
                     _currentSettings.AppLovin.RewardedAdPlacement = EditorGUILayout
                         .TextField("Rewarded Placement", _currentSettings.AppLovin.RewardedAdPlacement);
                     EditorGUILayout.HelpBox(
-                        "Названия мест показа передаются в MAX и аналитику. Если поле пустое, используется " +
+                        "Названия передаются только в MAX. В событиях SDK placement всегда 'interstitial' или 'rewarded'. " +
+                        "Если поле пустое, для MAX используется " +
                         $"'{Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement}' для interstitial и " +
                         $"'{Runtime.AppLovinSettingData.DefaultRewardedAdPlacement}' для rewarded.", MessageType.None);
 

@@ -32,6 +32,10 @@ namespace AMZNGoDSDK.Runtime
     /// </summary>
     internal static class AppLovinAnalytics
     {
+        private const string InterstitialPlacement = "interstitial";
+        private const string RewardedPlacement = "rewarded";
+        private const string BannerPlacement = "banner";
+
         private const string InterRequestedEvent = "mediation_inter_requested";
         private const string InterDisplayedEvent = "mediation_inter_displayed";
         private const string InterDisplayFailedEvent = "mediation_inter_display_failed";
@@ -70,16 +74,16 @@ namespace AMZNGoDSDK.Runtime
 
         #region Показы
 
-        public static void ReportInterRequested(string placement) =>
-            ReportSimple(InterRequestedEvent, placement, AdAnalyticsFormat.Interstitial);
+        public static void ReportInterRequested() =>
+            ReportSimple(InterRequestedEvent, InterstitialPlacement);
 
-        public static void ReportRewardRequested(string placement) =>
-            ReportSimple(RewardRequestedEvent, placement, AdAnalyticsFormat.Rewarded);
+        public static void ReportRewardRequested() =>
+            ReportSimple(RewardRequestedEvent, RewardedPlacement);
 
         /// <summary>MAX не принял показ: готового ad'а не было.</summary>
-        public static void ReportNoFill(string placement, bool sdkInitialized, string adFormat)
+        public static void ReportNoFill(bool sdkInitialized, bool isRewarded)
         {
-            var args = BuildArgs(placement, null, adFormat);
+            var args = BuildArgs(FullscreenPlacement(isRewarded), null);
             args["sdk_initialized"] = sdkInitialized ? "1" : "0";
 
             Report(NoFillEvent, args, alsoAdjust: false);
@@ -89,18 +93,18 @@ namespace AMZNGoDSDK.Runtime
         /// Показ состоялся. Уходит и в Adjust — как у кросс-промо: показ это ключевое событие
         /// воронки, по нему считаются когорты.
         /// </summary>
-        public static void ReportDisplayed(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
+        public static void ReportDisplayed(MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
             string eventName = isRewarded ? RewardDisplayedEvent : InterDisplayedEvent;
-            Report(eventName, BuildArgs(placement, adInfo, FullscreenFormat(isRewarded)), alsoAdjust: true);
+            Report(eventName, BuildArgs(FullscreenPlacement(isRewarded), adInfo), alsoAdjust: true);
         }
 
-        public static void ReportDisplayFailed(string placement, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo,
+        public static void ReportDisplayFailed(MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo,
             bool isRewarded)
         {
             string eventName = isRewarded ? RewardDisplayFailedEvent : InterDisplayFailedEvent;
 
-            var args = BuildArgs(placement, adInfo, FullscreenFormat(isRewarded));
+            var args = BuildArgs(FullscreenPlacement(isRewarded), adInfo);
             args["reason"] = errorInfo != null && !string.IsNullOrEmpty(errorInfo.Message)
                 ? errorInfo.Message
                 : "unknown";
@@ -112,18 +116,18 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>Клик по рекламе — как и показ, уходит в оба трекера.</summary>
-        public static void ReportClicked(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
+        public static void ReportClicked(MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
             string eventName = isRewarded ? RewardClickedEvent : InterClickedEvent;
-            ReportClickedInternal(eventName, placement, adInfo, FullscreenFormat(isRewarded));
+            ReportClickedInternal(eventName, FullscreenPlacement(isRewarded), adInfo);
         }
 
-        public static void ReportBannerClicked(string placement, MaxSdkBase.AdInfo adInfo) =>
-            ReportClickedInternal(BannerClickedEvent, placement, adInfo, AdAnalyticsFormat.Banner);
+        public static void ReportBannerClicked(MaxSdkBase.AdInfo adInfo) =>
+            ReportClickedInternal(BannerClickedEvent, BannerPlacement, adInfo);
 
-        private static void ReportClickedInternal(string eventName, string placement, MaxSdkBase.AdInfo adInfo, string adFormat)
+        private static void ReportClickedInternal(string eventName, string placement, MaxSdkBase.AdInfo adInfo)
         {
-            Report(eventName, BuildArgs(placement, adInfo, adFormat), alsoAdjust: true);
+            Report(eventName, BuildArgs(placement, adInfo), alsoAdjust: true);
 
             // Собственный бэкенд: mediation_click. Отдельный тип события, потому что cp_click
             // требует paid_app_id, которого у показа медиации нет.
@@ -134,7 +138,7 @@ namespace AMZNGoDSDK.Runtime
 
             try
             {
-                analytics.TrackMediationClick(adInfo.NetworkName, adInfo.AdUnitIdentifier, placement, adFormat);
+                analytics.TrackMediationClick(adInfo.NetworkName, adInfo.AdUnitIdentifier, placement);
             }
             catch (Exception ex)
             {
@@ -143,16 +147,16 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        public static void ReportHidden(string placement, MaxSdkBase.AdInfo adInfo, bool isRewarded)
+        public static void ReportHidden(MaxSdkBase.AdInfo adInfo, bool isRewarded)
         {
             string eventName = isRewarded ? RewardHiddenEvent : InterHiddenEvent;
-            Report(eventName, BuildArgs(placement, adInfo, FullscreenFormat(isRewarded)), alsoAdjust: false);
+            Report(eventName, BuildArgs(FullscreenPlacement(isRewarded), adInfo), alsoAdjust: false);
         }
 
         /// <summary>Награда за rewarded выдана — отдельное событие для экономики.</summary>
-        public static void ReportRewardEarned(string placement, MaxSdkBase.Reward reward, MaxSdkBase.AdInfo adInfo)
+        public static void ReportRewardEarned(MaxSdkBase.Reward reward, MaxSdkBase.AdInfo adInfo)
         {
-            var args = BuildArgs(placement, adInfo, AdAnalyticsFormat.Rewarded);
+            var args = BuildArgs(RewardedPlacement, adInfo);
 
             // MaxSdkBase.Reward — struct, а не класс: проверка на null тут невозможна
             // (CS0019). Пустой Label при этом штатен — сеть может не прислать подпись награды.
@@ -162,9 +166,9 @@ namespace AMZNGoDSDK.Runtime
             Report(RewardEarnedEvent, args, alsoAdjust: true);
         }
 
-        public static void ReportBannerLoadFailed(string placement, string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
+        public static void ReportBannerLoadFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
         {
-            var args = BuildArgs(placement, null, AdAnalyticsFormat.Banner);
+            var args = BuildArgs(BannerPlacement, null);
             args["ad_unit"] = adUnitId ?? string.Empty;
             args["reason"] = errorInfo != null && !string.IsNullOrEmpty(errorInfo.Message)
                 ? errorInfo.Message
@@ -175,12 +179,12 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <summary>MAX has no banner displayed callback; revenue confirms each impression, including refreshes.</summary>
-        public static void ReportBannerRevenuePaid(string placement, MaxSdkBase.AdInfo adInfo)
+        public static void ReportBannerRevenuePaid(MaxSdkBase.AdInfo adInfo)
         {
             if (adInfo == null)
                 return;
-            Report(BannerDisplayedEvent, BuildArgs(placement, adInfo, AdAnalyticsFormat.Banner), alsoAdjust: true);
-            ReportAdRevenue(placement, adInfo, AdAnalyticsFormat.Banner);
+            Report(BannerDisplayedEvent, BuildArgs(BannerPlacement, adInfo), alsoAdjust: true);
+            ReportAdRevenueInternal(BannerPlacement, adInfo);
         }
 
         #endregion
@@ -198,13 +202,16 @@ namespace AMZNGoDSDK.Runtime
         /// Пропущенный вызов — это молча потерянные деньги в отчётности, поэтому исключения
         /// глушатся по отдельности: сбой одного трекера не должен отменять отправку в другой.</para>
         /// </summary>
-        public static void ReportAdRevenue(string placement, MaxSdkBase.AdInfo adInfo, string adFormat)
+        public static void ReportAdRevenue(MaxSdkBase.AdInfo adInfo, bool isRewarded) =>
+            ReportAdRevenueInternal(FullscreenPlacement(isRewarded), adInfo);
+
+        private static void ReportAdRevenueInternal(string placement, MaxSdkBase.AdInfo adInfo)
         {
             if (adInfo == null)
                 return;
 
-            ReportAdRevenueToAdjust(placement, adInfo, adFormat);
-            ReportAdRevenueToAppMetrica(placement, adInfo, adFormat);
+            ReportAdRevenueToAdjust(placement, adInfo);
+            ReportAdRevenueToAppMetrica(placement, adInfo);
 
             // Собственный бэкенд (/v1/events, событие mediation_impression). Шлём именно здесь,
             // а не по OnAdDisplayedEvent: MAX отдаёт OnAdRevenuePaidEvent ровно один раз на показ,
@@ -220,8 +227,7 @@ namespace AMZNGoDSDK.Runtime
                         adInfo.AdUnitIdentifier,
                         placement,
                         adInfo.Revenue,
-                        adInfo.RevenuePrecision,
-                        adFormat);
+                        adInfo.RevenuePrecision);
                 }
                 catch (Exception ex)
                 {
@@ -231,10 +237,10 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
             // Плюс плоское событие в AppMetrica — там сумма показа нужна рядом с остальной воронкой.
-            Report("mediation_ad_revenue", BuildArgs(placement, adInfo, adFormat), alsoAdjust: false);
+            Report("mediation_ad_revenue", BuildArgs(placement, adInfo), alsoAdjust: false);
         }
 
-        private static void ReportAdRevenueToAdjust(string placement, MaxSdkBase.AdInfo adInfo, string adFormat)
+        private static void ReportAdRevenueToAdjust(string placement, MaxSdkBase.AdInfo adInfo)
         {
 #if AMZN_ADJUST_ENABLED
             var adjust = SdkModuleRegistry.Get<AdjustModule>();
@@ -246,9 +252,6 @@ namespace AMZNGoDSDK.Runtime
                 adRevenue.AdRevenueNetwork = adInfo.NetworkName;
                 adRevenue.AdRevenueUnit = adInfo.AdUnitIdentifier;
                 adRevenue.AdRevenuePlacement = placement;
-                string knownFormat = AdAnalyticsFormat.KnownOrNull(adFormat);
-                if (knownFormat != null)
-                    adRevenue.AddCallbackParameter("ad_format", knownFormat);
 
                 Adjust.TrackAdRevenue(adRevenue);
             }
@@ -259,7 +262,7 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        private static void ReportAdRevenueToAppMetrica(string placement, MaxSdkBase.AdInfo adInfo, string adFormat)
+        private static void ReportAdRevenueToAppMetrica(string placement, MaxSdkBase.AdInfo adInfo)
         {
 #if AMZN_APPMETRICA_ENABLED
             try
@@ -269,18 +272,13 @@ namespace AMZNGoDSDK.Runtime
                     AdNetwork = adInfo.NetworkName,
                     AdUnitId = adInfo.AdUnitIdentifier,
                     AdPlacementName = placement,
-                    AdType = adFormat == AdAnalyticsFormat.Banner ? AdType.Banner
-                        : adFormat == AdAnalyticsFormat.Rewarded ? AdType.Rewarded
-                        : adFormat == AdAnalyticsFormat.Interstitial ? AdType.Interstitial : (AdType?)null,
+                    AdType = placement == BannerPlacement ? AdType.Banner
+                        : placement == RewardedPlacement ? AdType.Rewarded : AdType.Interstitial,
 
                     // Precision — насколько точна сумма (exact / estimated / publisher_defined /
                     // undisclosed). Без неё выручку нельзя корректно агрегировать.
                     Precision = adInfo.RevenuePrecision
                 };
-
-                string knownFormat = AdAnalyticsFormat.KnownOrNull(adFormat);
-                if (knownFormat != null)
-                    adRevenue.Payload = new Dictionary<string, string> { ["ad_format"] = knownFormat };
 
                 AppMetrica.ReportAdRevenue(adRevenue);
             }
@@ -295,23 +293,19 @@ namespace AMZNGoDSDK.Runtime
 
         #region Внутреннее
 
-        private static string FullscreenFormat(bool isRewarded) =>
-            isRewarded ? AdAnalyticsFormat.Rewarded : AdAnalyticsFormat.Interstitial;
+        private static string FullscreenPlacement(bool isRewarded) =>
+            isRewarded ? RewardedPlacement : InterstitialPlacement;
 
         /// <summary>
         /// Поля показа из <c>adInfo</c>. Пустой adInfo допустим: в display_failed MAX может
         /// прислать его без сети и без выручки, и терять из-за этого само событие нельзя.
         /// </summary>
-        private static Dictionary<string, string> BuildArgs(string placement, MaxSdkBase.AdInfo adInfo, string adFormat)
+        private static Dictionary<string, string> BuildArgs(string placement, MaxSdkBase.AdInfo adInfo)
         {
             var args = new Dictionary<string, string>
             {
                 ["placement"] = placement ?? string.Empty
             };
-
-            string knownFormat = AdAnalyticsFormat.KnownOrNull(adFormat);
-            if (knownFormat != null)
-                args["ad_format"] = knownFormat;
 
             if (adInfo == null)
                 return args;
@@ -335,9 +329,9 @@ namespace AMZNGoDSDK.Runtime
             return args;
         }
 
-        private static void ReportSimple(string eventName, string placement, string adFormat)
+        private static void ReportSimple(string eventName, string placement)
         {
-            Report(eventName, BuildArgs(placement, null, adFormat), alsoAdjust: false);
+            Report(eventName, BuildArgs(placement, null), alsoAdjust: false);
         }
 
         private static void Report(string eventName, Dictionary<string, string> args, bool alsoAdjust)

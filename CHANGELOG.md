@@ -13,10 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the backend. Keep the `crosspromo_banner_click` event name unchanged.
 - Track MAX banner clicks, impressions and revenue across analytics channels;
   use revenue callbacks for impressions and retain late callbacks after hide.
-- Include explicit `ad_format` in advertising events and native revenue metadata,
-  so custom MAX placement names cannot obscure interstitial/rewarded/banner.
-  Preserve legacy analytics overloads and unknown-placement payload behavior.
-  Backend receivers must accept the new optional field and older queued events.
+- Keep analytics `placement` canonical (`interstitial`, `rewarded`, `banner`)
+  across cross-promo, MAX custom/backend events and native revenue reports.
+  Custom MAX placement settings apply only to MAX shows. Preserve original
+  tracking signatures and unknown-placement payload behavior.
 - Send cross-promo banner impressions and clicks to the backend with
   `placement: "banner"`. Start backend click tracking before redirect, with
   up to 1.5 seconds of waiting and tracking hosted on the persistent module.
@@ -54,8 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configure the built-in Adjust startup Remote Config key in SDK Settings → Firebase.
   Existing configs retain `adjust_enable`; each custom key keeps its own offline decision cache.
 - Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.
-  Pass them to MAX shows, analytics and ad revenue reports, while keeping
-  ad formats independent of placement names. Empty or missing values retain
+  Pass them to MAX shows; SDK analytics and revenue reports retain canonical
+  placement values. Empty or missing settings retain
   the existing `interstitial` and `rewarded` defaults.
 
 ## [1.0.7] - 2026-09-22

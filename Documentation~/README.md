@@ -89,27 +89,28 @@ project and injects the Maven dependencies of the enabled modules there.
 
 In `AMZN GoD > SDK Settings > AppLovin > AD Placements`, set separate
 Interstitial and Rewarded placement names for MAX reporting. Save Settings
-stores them in the SDK config and uses them for MAX shows, analytics events
-and ad revenue reports. These names are separate from the Ad Unit IDs.
+stores them in the SDK config and uses them for MAX shows. These names are
+separate from the Ad Unit IDs and do not change `placement` in SDK events or
+the SDK's native Adjust/AppMetrica revenue reports.
 
 Empty values and older configs use `interstitial` and `rewarded` respectively.
-Leading and trailing whitespace is removed. Custom placement names do not
-change the ad format reported to analytics.
+Leading and trailing whitespace is removed.
 
 ### Advertising event fields
 
-`ad_format` is the common format dimension for cross-promo and MAX events:
-`interstitial`, `rewarded`, or `banner`. It is independent of `placement`.
-Cross-promo keeps its existing format-based placements; MAX fullscreen ads
-keep the configured placement names. MAX banners use the fixed placement
-`banner`, set in MAX immediately after banner creation. `network_placement`
-remains the mediated network's identifier in MAX custom events.
+`placement` identifies the kind of advertising location in all SDK-generated
+cross-promo and MAX events: `interstitial`, `rewarded`, or `banner`. It is
+determined by the actual show/callback path, including requests, no-fill and
+errors. Configurable MAX placement names cannot override these values.
+`network_placement` remains the mediated network's identifier in MAX custom
+events; `ad_unit` remains its ad unit ID.
 
-All SDK-generated advertising custom events and backend `cp_impression`,
-`cp_click`, `mediation_impression`, and `mediation_click` include `ad_format`.
-Native MAX revenue reports also carry it as an Adjust callback parameter and
-AppMetrica payload parameter; AppMetrica additionally receives the matching
-`AdType`, including `Banner`.
+Backend `cp_impression`, `cp_click`, `mediation_impression`, and
+`mediation_click` use the same placement values as custom events. Native MAX
+revenue reports use them in Adjust `AdRevenuePlacement` and AppMetrica
+`AdPlacementName`; AppMetrica also receives the matching `AdType`, including
+`Banner`. No additional format field is sent. MAX banners use the fixed
+placement `banner`, set in MAX immediately after banner creation.
 
 MAX banner clicks emit `mediation_banner_clicked` and backend
 `mediation_click`. Each banner revenue callback, including auto-refreshes,
@@ -117,36 +118,29 @@ emits `mediation_banner_displayed`, `mediation_ad_revenue`, backend
 `mediation_impression`, and native revenue reports. Loading, showing or hiding
 the banner does not synthesize an impression. Late revenue after hiding is
 retained. Load errors emit `mediation_banner_load_failed` in AppMetrica with
-`placement`, `ad_format`, `ad_unit`, `reason`, and `error_code` when available.
+`placement`, `ad_unit`, `reason`, and `error_code` when available.
 Displayed/clicked custom events follow the existing AppMetrica/Adjust routing.
 Banner callbacks for other ad unit IDs are ignored.
 
-Existing public analytics signatures remain available. Overloads with a final
-`adFormat` argument accept the constants in `AdAnalyticsFormat`. Unknown,
-empty, or noncanonical format values omit `ad_format`; they are never converted
-to interstitial. Legacy cross-promo calls infer the format only from the exact
-placements `interstitial`, `rewarded`, and `banner`. Legacy mediation calls
-omit the format because a configured placement name does not identify it.
-Existing unknown-placement behavior is preserved: backend cross-promo omits
-empty/whitespace `placement`, while mediation retains its string field
-(`null` becomes `""`).
+Public tracking methods retain their original signatures. When calling them
+manually, pass `interstitial`, `rewarded`, or `banner` as `placement`. Legacy
+cross-promo calls without a known placement still omit the field; mediation
+retains its existing string field (`null` becomes `""`). Unknown sources are
+not automatically classified as interstitial.
 
-For example, a MAX rewarded click with a custom placement includes:
+For example, a MAX rewarded click includes the following, regardless of the
+MAX placement name configured for its show:
 
 ```json
 {
   "event_name": "mediation_click",
-  "placement": "revive",
-  "ad_format": "rewarded"
+  "placement": "rewarded"
 }
 ```
 
-This is a field excerpt; other existing event fields are unchanged. The
-backend receiver must accept optional `ad_format` on both event families and
-continue accepting older queued payloads without it. The receiver/schema is
-not part of this repository, so server acceptance must be verified separately.
-For aggregation, use `ad_format` across sources and retain `placement` for
-placement-specific reports. `first_open` and Adjust tracking URLs are unchanged.
+This is a field excerpt; other existing event fields are unchanged. Aggregate
+cross-promo and MAX events by `placement`. `first_open` and Adjust tracking
+URLs are unchanged.
 
 MAX API references: [banner callbacks](https://support.applovin.com/en/max/unity/ad-formats/banner-and-mrec-ads)
 and [placement configuration](https://support.applovin.com/en/max/unity/overview/advanced-settings).

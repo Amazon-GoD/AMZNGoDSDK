@@ -1,44 +1,38 @@
-# Advertising placement consistency — 2026-09-30
+# Canonical advertising placement — 2026-09-30
 
-Implemented on `tmp/placement-event-consistency`, created from local `safety`.
+The user clarified that `placement` itself identifies the advertising location:
+`banner`, `interstitial`, or `rewarded`. Implemented the correction on
+`tmp/canonical-event-placement`, created from local `safety`.
 
-- Cross-promo banner clicks now use `placement="banner"` in AppMetrica and
-  backend events. The event name is unchanged.
-- Added the shared `AdAnalyticsFormat` constants and optional `ad_format` to
-  advertising custom events, backend CP/mediation payloads and native MAX
-  revenue metadata. Configured MAX placement names retain their values.
-- Existing public tracking signatures remain; new overloads accept explicit
-  format independently of placement. Legacy CP calls infer only exact known
-  formats. Legacy mediation calls omit the format. Unknown formats are omitted,
-  and existing unknown-placement serialization rules are preserved.
-- Added MAX banner click, load-error and revenue callbacks with matching
-  subscribe/unsubscribe and ad-unit filtering. `SetBannerPlacement` sets
-  `banner` immediately after creation. Revenue callbacks produce banner
-  displayed events and native/backend revenue, including refreshes and late
-  revenue after hide. Loading/showing/hiding does not synthesize impressions.
-- Updated the SDK documentation and changelog with the payload contract and
-  backend compatibility requirement.
+- Removed the previously added separate format field from SDK custom events,
+  backend payloads and native revenue metadata, along with its helper and API
+  overloads. Original public tracking signatures are restored.
+- MAX analytics now derives placement from the actual show/callback path.
+  Internal reporting methods do not accept configurable placement names.
+  Requests, no-fill, lifecycle events, backend clicks/impressions and native
+  Adjust/AppMetrica revenue all receive canonical placement values.
+- Existing custom MAX placement settings remain for MAX show calls only;
+  the Editor help text and documentation explain this distinction.
+- Retained the cross-promo banner-click correction and MAX banner analytics:
+  ad-unit filtering, mirrored subscriptions, load errors, click tracking,
+  impression/revenue tracking on every revenue callback, and late revenue
+  after hide. AppMetrica retains the matching native AdType.
+- Legacy unknown-placement serialization, event queues, first-open attribution
+  and Adjust tracking URLs remain unchanged. Manual tracking calls should pass
+  the canonical placement strings documented in the SDK README.
 
-Two independent static reviews approved the AppLovin implementation and the
-shared/backend/CrossPromo implementation without blockers. Unity 2022.3.60f1
-Roslyn compilation passed **44/44 module builds** across eight configurations:
-Editor Android / Android Player × Analytics on/off × AppLovin on/off. The
-shared Runtime assembly and dependent modules were rebuilt with fresh
-references. Remaining compiler diagnostics were existing CS0168/CS0414 and
-the obsolete `MaxSdk.SetSdkKey` CS0618 warning.
+Two independent static reviews approved the final AppLovin and
+backend/CrossPromo changes without functional blockers. Line-ending findings
+were resolved before compilation. Unity 2022.3.60f1 Roslyn compilation passed
+**44/44 module builds** across Editor Android / Android Player × Analytics
+on/off × AppLovin on/off. Runtime and dependent modules used fresh references;
+all source hashes remained unchanged throughout compilation. Remaining
+diagnostics were the existing CS0168/CS0414 and obsolete SetSdkKey CS0618 warnings.
 
-Evidence is in ignored `Temp~/PlacementConsistencyValidation/Summary.log`,
-response files, compiler logs and source hashes. Original line endings were
-restored on unchanged lines after compilation; normalized source content was
-checked to remain identical. The only later source adjustment moved an XML
-documentation comment to its intended method. Whitespace checks passed.
-Unity tests are disabled by AGENTS.md and were not run. No device/Editor play
-or live analytics-delivery validation was performed.
-
-The backend implementation is outside this repository. It must accept optional
-`ad_format` on both CP and mediation events and continue accepting older queued
-payloads without it; server acceptance has not been verified here. Existing
-first-open attribution behavior and Adjust tracking URLs are unchanged.
+Evidence: ignored `Temp~/CanonicalPlacementValidation/Summary.log`, compiler
+logs, response files and source hashes. Whitespace checks passed. Unity tests
+are disabled by AGENTS.md and were not run. No device/Editor play or live
+analytics-delivery validation was performed. No new backend field is required.
 
 The completed tmp branch is intended for a local fast-forward merge into
 `safety`. No push or changes to `main` are part of this task.

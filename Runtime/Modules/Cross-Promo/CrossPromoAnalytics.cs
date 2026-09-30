@@ -25,14 +25,14 @@ namespace AMZNGoDSDK.Runtime
         private const string RejectedBusyEvent = "crosspromo_rejected_busy";
 
         // Плейсменты.
-        private const string Interstitial = AdAnalyticsFormat.Interstitial;
-        private const string Rewarded = AdAnalyticsFormat.Rewarded;
+        private const string Interstitial = "interstitial";
+        private const string Rewarded = "rewarded";
 
         // ---- Banner: здесь только AppMetrica-клик. Баннер отдельно отправляет на бэкенд
         //      cp_impression/cp_click с placement="banner" через CrossPromoModule. ----
 
         public static void ReportBannerClick(BannerData data) =>
-            ReportAppMetrica(BannerClickEvent, data, AdAnalyticsFormat.Banner);
+            ReportAppMetrica(BannerClickEvent, data, "banner");
 
         // ---- Запрос (AppMetrica only) ----
 
@@ -102,8 +102,11 @@ namespace AMZNGoDSDK.Runtime
         private static void ReportDisplayFailedInternal(
             string eventName, string placement, string reason, string errorCode, BannerData data)
         {
-            var args = BuildPlacementArgs(placement);
-            args["reason"] = string.IsNullOrEmpty(reason) ? "unknown" : reason;
+            var args = new Dictionary<string, string>
+            {
+                ["placement"] = placement ?? string.Empty,
+                ["reason"] = string.IsNullOrEmpty(reason) ? "unknown" : reason
+            };
 
             if (data != null)
             {
@@ -138,8 +141,11 @@ namespace AMZNGoDSDK.Runtime
 
         private static Dictionary<string, string> BuildArgs(BannerData data, string placement)
         {
-            var args = BuildPlacementArgs(placement);
-            args["title"] = data.title ?? string.Empty;
+            var args = new Dictionary<string, string>
+            {
+                ["title"] = data.title ?? string.Empty,
+                ["placement"] = placement
+            };
 
             if (!string.IsNullOrWhiteSpace(data.redirectUrl))
                 args["redirectUrl"] = data.redirectUrl;
@@ -155,20 +161,12 @@ namespace AMZNGoDSDK.Runtime
 
         private static void ReportSimpleAppMetrica(string eventName, string placement)
         {
-            SafeReportAppMetrica(eventName, BuildPlacementArgs(placement));
-        }
-
-        private static Dictionary<string, string> BuildPlacementArgs(string placement)
-        {
             var args = new Dictionary<string, string>
             {
                 ["placement"] = placement ?? string.Empty
             };
 
-            string adFormat = AdAnalyticsFormat.KnownOrNull(placement);
-            if (adFormat != null)
-                args["ad_format"] = adFormat;
-            return args;
+            SafeReportAppMetrica(eventName, args);
         }
 
         // Раньше репорты шли через фасад AmznGoDSDKCore; после разрезания на per-module
