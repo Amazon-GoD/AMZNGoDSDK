@@ -155,8 +155,9 @@ namespace AMZNGoDSDK.Editor
         private static void CheckAdMobAndroidAppId(List<string> errors)
         {
             const string error = "Модуль AppLovin требует собственный Android App ID AdMob в формате " +
-                "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX без пробелов. Проверьте установленный пакет MAX " +
-                "и укажите App ID в AppLovin → Integration Manager → Google Bidding and Google AdMob → App ID (Android).";
+                "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX без пробелов. Укажите его в AMZN GoD → SDK Settings → " +
+                "AppLovin MAX → AdMob Android App ID. Если поле SDK пустое, используется App ID из " +
+                "AppLovin → Integration Manager → Google Bidding and Google AdMob → App ID (Android).";
             try
             {
                 Type settingsType = null;

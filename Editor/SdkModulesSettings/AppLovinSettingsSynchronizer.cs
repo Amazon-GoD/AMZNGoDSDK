@@ -7,11 +7,11 @@ using UnityEngine;
 
 namespace AMZNGoDSDK.Editor
 {
-    /// <summary>Synchronizes the MAX key and disables Android Ad Review before vendor build hooks.</summary>
+    /// <summary>Synchronizes MAX settings and disables Android Ad Review before vendor build hooks.</summary>
     [InitializeOnLoad]
     internal sealed class AppLovinSettingsSynchronizer : IPreprocessBuildWithReport
     {
-        private const string ErrorMessage = "[AMZNGoDSDK][AppLovin] Не удалось синхронизировать SDK Key " +
+        private const string ErrorMessage = "[AMZNGoDSDK][AppLovin] Не удалось синхронизировать SDK Key / AdMob Android App ID " +
             "или выключить MAX Ad Review (SafeDK). Проверьте установленный пакет MAX и его AppLovinSettings.";
 
         public int callbackOrder => -100;
@@ -68,8 +68,10 @@ namespace AMZNGoDSDK.Editor
             if (settings == null || !settings.Enabled)
                 return;
 
-            var sdkKey = settings.AppLovin != null && settings.AppLovin.Enabled ? settings.AppLovin.SdkKey : null;
-            if (!android && string.IsNullOrWhiteSpace(sdkKey)) return;
+            bool appLovinEnabled = settings.AppLovin != null && settings.AppLovin.Enabled;
+            var sdkKey = appLovinEnabled ? settings.AppLovin.SdkKey : null;
+            var adMobAndroidAppId = appLovinEnabled ? settings.AppLovin.AdMobAndroidAppId : null;
+            if (!android && string.IsNullOrWhiteSpace(sdkKey) && string.IsNullOrWhiteSpace(adMobAndroidAppId)) return;
 
             Type settingsType = null;
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -103,17 +105,24 @@ namespace AMZNGoDSDK.Editor
                 }
             }
 
-            // Empty means the user manages the key in MAX Integration Manager.
-            if (string.IsNullOrWhiteSpace(sdkKey)) return;
-            var keyProperty = settingsType.GetProperty("SdkKey", BindingFlags.Public | BindingFlags.Instance);
-            if (keyProperty == null || !keyProperty.CanRead || !keyProperty.CanWrite)
-                throw new InvalidOperationException();
-            if (string.Equals(keyProperty.GetValue(instance) as string, sdkKey, StringComparison.Ordinal)) return;
+            SynchronizeStringProperty(settingsType, instance, "SdkKey", sdkKey, "SDK Key");
+            SynchronizeStringProperty(settingsType, instance, "AdMobAndroidAppId", adMobAndroidAppId, "AdMob Android App ID");
+        }
 
-            keyProperty.SetValue(instance, sdkKey);
+        private static void SynchronizeStringProperty(Type settingsType, ScriptableObject instance,
+            string propertyName, string value, string displayName)
+        {
+            // Empty means the user manages this value in MAX Integration Manager.
+            if (string.IsNullOrWhiteSpace(value)) return;
+            var property = settingsType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (property == null || property.PropertyType != typeof(string) || !property.CanRead || !property.CanWrite)
+                throw new InvalidOperationException();
+            if (string.Equals(property.GetValue(instance) as string, value, StringComparison.Ordinal)) return;
+
+            property.SetValue(instance, value);
             EditorUtility.SetDirty(instance);
             AssetDatabase.SaveAssetIfDirty(instance);
-            Debug.Log("[AMZNGoDSDK][AppLovin] SDK Key синхронизирован с MAX Integration Manager.");
+            Debug.Log("[AMZNGoDSDK][AppLovin] " + displayName + " синхронизирован с MAX Integration Manager.");
         }
     }
 }

@@ -14,6 +14,12 @@ namespace AMZNGoDSDK.Runtime
         /// </summary>
         public string SdkKey;
 
+        /// <summary>
+        /// Android App ID AdMob для манифеста сборки. Пустое значение сохраняет
+        /// App ID, заданный в MAX Integration Manager.
+        /// </summary>
+        public string AdMobAndroidAppId;
+
         public string InterstitialAdUnitId;
         public string RewardedAdUnitId;
 

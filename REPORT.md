@@ -1,3 +1,26 @@
+# AdMob Android App ID in SDK Settings — 2026-09-30
+
+Added `AdMob Android App ID` after SDK Key in the AppLovin MAX section of
+SDK Settings, on `tmp/applovin-admob-app-id` created from `safety` at `c737590`.
+
+- The field persists through both Editor/Runtime settings conversions and JSON.
+- Nonblank values synchronize to MAX on save, reload and before builds,
+  independently of an empty or unchanged SDK Key and the active build target.
+- Blank values preserve the existing MAX App ID for compatibility with old
+  configurations. Raw nonblank values retain strict Android preflight validation.
+- Disabled SDK/AppLovin does not copy the ID; existing Android SafeDK handling
+  remains intact. No iOS App ID or runtime initialization changes were needed.
+- UI help, preflight errors and README now point to the SDK Settings field.
+
+Independent static review approved the implementation without findings.
+Unity 2022.3.60f1 Roslyn compilation passed 24/24 fresh assembly builds across
+Android Editor/Player and AppLovin on/off, with Analytics enabled. Source hashes
+stayed unchanged. Evidence: ignored `Temp~/AdMobAppIdSettingsValidation/`.
+Whitespace verification passed. Unity tests are disabled by AGENTS.md; no live
+Editor UI/save/build or device validation was performed.
+
+---
+
 # Dev Crew report
 
 **Date:** 2026-09-30

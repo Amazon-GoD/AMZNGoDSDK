@@ -248,6 +248,7 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 SdkKey = runtimeSettings.SdkKey,
+                AdMobAndroidAppId = runtimeSettings.AdMobAndroidAppId,
                 InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
                 BannerAdUnitId = runtimeSettings.BannerAdUnitId,
@@ -531,6 +532,7 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 SdkKey = editorSettings.SdkKey,
+                AdMobAndroidAppId = editorSettings.AdMobAndroidAppId,
                 InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = editorSettings.RewardedAdUnitId,
                 BannerAdUnitId = editorSettings.BannerAdUnitId,

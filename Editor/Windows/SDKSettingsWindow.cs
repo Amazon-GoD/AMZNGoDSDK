@@ -262,6 +262,13 @@ namespace AMZNGoDSDK.Editor
                             "Если пусто, используется ключ из Integration Manager."),
                             _currentSettings.AppLovin.SdkKey);
 
+                    _currentSettings.AppLovin.AdMobAndroidAppId = EditorGUILayout
+                        .TextField(new GUIContent("AdMob Android App ID",
+                            "App ID приложения AdMob в формате ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX, не Ad Unit ID. " +
+                            "Непустой ID переносится в MAX при сохранении и перед сборкой. " +
+                            "Если пусто, используется App ID из MAX Integration Manager."),
+                            _currentSettings.AppLovin.AdMobAndroidAppId);
+
                     _currentSettings.AppLovin.InterstitialAdUnitId = EditorGUILayout
                         .TextField("Interstitial Ad Unit", _currentSettings.AppLovin.InterstitialAdUnitId);
 
