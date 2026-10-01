@@ -8,9 +8,9 @@ namespace AMZNGoDSDK.Runtime
     /// <summary>
     /// Повторы с бэкоффом для асинхронных операций Amazon (ТЗ IAP-03): три попытки через
     /// 2 / 8 / 30 секунд, после исчерпания — защёлка «повторить при следующем возврате из
-    /// фона». Заодно single-flight: у слушателя Amazon нет привязки к запросу (RequestId не
-    /// читается), поэтому параллельные прогоны одной операции запрещены одним флагом —
-    /// после IAP-11 источников запросов сверки три (старт, ручной Restore, форграунд).
+    /// фона». Заодно single-flight для полного прогона сверки (старт, ручной Restore,
+    /// форграунд) и активный таймаут: отсутствие ответа завершает прогон через обработчик
+    /// вызывающего, а поздние ответы отбрасываются им по RequestId.
     /// </summary>
     internal sealed class IapRetryScheduler
     {
@@ -23,43 +23,39 @@ namespace AMZNGoDSDK.Runtime
         private readonly MonoBehaviour _host;
         private readonly Action _retryAction;
         private readonly Action _onExhausted;
+        private readonly Action _onTimeout;
 
         private int _failedAttempts;
         private bool _inFlight;
-        private float _inFlightSince;
         private bool _retryOnForeground;
         private Coroutine _pendingRetry;
+        private Coroutine _watchdog;
 
-        public bool InFlight => InFlightFresh;
+        public bool InFlight => _inFlight;
 
-        private bool InFlightFresh =>
-            _inFlight && Time.realtimeSinceStartup - _inFlightSince < InFlightTimeoutSeconds;
-
-        public IapRetryScheduler(MonoBehaviour host, Action retryAction, Action onExhausted)
+        public IapRetryScheduler(MonoBehaviour host, Action retryAction, Action onExhausted, Action onTimeout = null)
         {
             _host = host;
             _retryAction = retryAction;
             _onExhausted = onExhausted;
+            _onTimeout = onTimeout;
         }
 
-        /// <summary>false — операция уже в полёте, второй запуск запрещён. Полёт старше
-        /// ватчдога считается мёртвым: новый запуск разрешается, поздний ответ мёртвого
-        /// прогона отбрасывается на стороне вызывающего (сверка — по RequestId в
-        /// IapReconcileSession.OwnsResponse, покупка — сравнением с RequestId текущей).</summary>
+        /// <summary>false — операция уже в полёте, второй запуск запрещён до её завершения,
+        /// включая обработку таймаута. Ватчдог ограничивает весь прогон, а не одну страницу.</summary>
         public bool TryBegin()
         {
-            if (InFlightFresh)
-                return false;
             if (_inFlight)
-                Debug.LogWarning("[AMZNGoDSDK] In-flight IAP operation timed out with no response — starting a new run");
+                return false;
             CancelPendingRetry();
             _inFlight = true;
-            _inFlightSince = Time.realtimeSinceStartup;
+            _watchdog = _host.StartCoroutine(Watchdog());
             return true;
         }
 
         public void OnSuccess()
         {
+            CancelWatchdog();
             _inFlight = false;
             _failedAttempts = 0;
             _retryOnForeground = false;
@@ -67,6 +63,7 @@ namespace AMZNGoDSDK.Runtime
 
         public void OnFailure()
         {
+            CancelWatchdog();
             _inFlight = false;
 
             // Каталог шлётся батчами и НЕ ходит через TryBegin: одна волна сбоя даёт
@@ -91,11 +88,35 @@ namespace AMZNGoDSDK.Runtime
 
         public void OnForeground()
         {
-            if (!_retryOnForeground || InFlightFresh)
+            if (!_retryOnForeground || _inFlight)
                 return;
             _retryOnForeground = false;
             _failedAttempts = 0;
             _retryAction?.Invoke();
+        }
+
+        public void Cancel()
+        {
+            CancelWatchdog();
+            CancelPendingRetry();
+            _inFlight = false;
+            _failedAttempts = 0;
+            _retryOnForeground = false;
+        }
+
+        private IEnumerator Watchdog()
+        {
+            yield return new WaitForSecondsRealtime(InFlightTimeoutSeconds);
+            _watchdog = null;
+
+            if (!_inFlight)
+                yield break;
+
+            Debug.LogWarning("[AMZNGoDSDK] In-flight IAP operation timed out with no response — failing the run");
+            if (_onTimeout != null)
+                _onTimeout();
+            else
+                OnFailure();
         }
 
         private IEnumerator RetryAfter(float seconds)
@@ -103,6 +124,14 @@ namespace AMZNGoDSDK.Runtime
             yield return new WaitForSecondsRealtime(seconds);
             _pendingRetry = null;
             _retryAction?.Invoke();
+        }
+
+        private void CancelWatchdog()
+        {
+            if (_watchdog == null)
+                return;
+            _host.StopCoroutine(_watchdog);
+            _watchdog = null;
         }
 
         private void CancelPendingRetry()

@@ -183,9 +183,6 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             _savedTimeScale = Time.timeScale;
-            if (_savedTimeScale <= 0f)
-                _savedTimeScale = 1f;
-
             Time.timeScale = 0f;
             _pausedByModule = true;
         }
@@ -195,7 +192,7 @@ namespace AMZNGoDSDK.Runtime
             if (!_pausedByModule)
                 return;
 
-            Time.timeScale = Mathf.Max(0.01f, _savedTimeScale);
+            Time.timeScale = _savedTimeScale;
             _pausedByModule = false;
         }
 
@@ -291,7 +288,7 @@ namespace AMZNGoDSDK.Runtime
 
             HideBanner();
 
-            // Never leave the game frozen if the SDK is torn down while offline.
+            // Restore the previous time scale, including a pause owned by the game.
             RestoreTimeScale();
         }
     }

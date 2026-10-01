@@ -74,8 +74,13 @@ namespace AMZNGoDSDK.Editor
                 {
                     Name = "Firebase",
                     RequiredAsmdefs = new[] { "AMZNGoDSDK.Module.Firebase" },
-                    RequiredDlls = new[] { "Firebase.Analytics.dll", "Firebase.Crashlytics.dll" },
-                    Description = "Firebase.Analytics.dll, Firebase.Crashlytics.dll (installed by the consumer)"
+                    // The module references all four assemblies regardless of runtime settings.
+                    RequiredDlls = new[]
+                    {
+                        "Firebase.App.dll", "Firebase.Analytics.dll",
+                        "Firebase.Crashlytics.dll", "Firebase.RemoteConfig.dll"
+                    },
+                    Description = "Firebase.App.dll, Firebase.Analytics.dll, Firebase.Crashlytics.dll, Firebase.RemoteConfig.dll (installed by the consumer)"
                 }
             },
             {

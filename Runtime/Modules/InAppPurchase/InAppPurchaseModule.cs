@@ -98,7 +98,9 @@ namespace AMZNGoDSDK.Runtime
             if (!Enabled)
                 return;
 
-            _reconcileRetry = new IapRetryScheduler(this, RetryReconcile, OnReconcileExhausted);
+            _reconcileRetry?.Cancel();
+            _catalogRetry?.Cancel();
+            _reconcileRetry = new IapRetryScheduler(this, RetryReconcile, OnReconcileExhausted, OnReconcileRunFailed);
             _catalogRetry = new IapRetryScheduler(this, RetryCatalog, null);
 
             _catalog.Configure(settings);
@@ -538,8 +540,8 @@ namespace AMZNGoDSDK.Runtime
             if (onComplete != null)
                 _restoreCallbacks.Add(onComplete);
 
-            // Single-flight: слушатель Amazon один, RequestId не читается — параллельные
-            // прогоны перемешали бы страницы. Колбэк дождётся текущего прогона.
+            // Single-flight: один прогон собирает все страницы; поздние ответы старых
+            // прогонов фильтруются по RequestId. Колбэк дождётся текущего прогона.
             if (!_reconcileRetry.TryBegin())
                 return;
 
@@ -1018,6 +1020,9 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Cleanup()
         {
+            _reconcileRetry?.Cancel();
+            _catalogRetry?.Cancel();
+            _reconcileSession = null;
             SdkTrustedTime.OnFirstFreshTime -= OnTrustedTimeAvailable;
             _gateway?.ReleaseListeners();
         }
