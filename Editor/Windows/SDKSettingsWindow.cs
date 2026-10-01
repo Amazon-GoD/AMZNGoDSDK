@@ -75,6 +75,7 @@ namespace AMZNGoDSDK.Editor
             _snapshotRefreshAt = EditorApplication.timeSinceStartup;
             EditorApplication.update += UpdateStatus;
             EditorApplication.projectChanged += OnProjectChanged;
+            Undo.undoRedoPerformed += Repaint;
             UnityEditor.PackageManager.Events.registeredPackages += OnRegisteredPackages;
             ReadLiveState();
 
@@ -91,6 +92,7 @@ namespace AMZNGoDSDK.Editor
             _snapshotRefreshPending = false;
             EditorApplication.update -= UpdateStatus;
             EditorApplication.projectChanged -= OnProjectChanged;
+            Undo.undoRedoPerformed -= Repaint;
             UnityEditor.PackageManager.Events.registeredPackages -= OnRegisteredPackages;
         }
 
@@ -633,6 +635,12 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.InAppPurchase.Enabled,
                 () =>
                 {
+                    using (new EditorGUI.DisabledScope(IsEditorBusy))
+                        if (GUILayout.Button("Import from Unity IAP")) ImportUnityIapCatalog();
+                    EditorGUILayout.HelpBox(
+                        "Импорт добавляет новые товары из Unity IAP Catalog. Используется SKU AmazonApps, " +
+                        "если он задан, иначе общий Product ID. Существующие товары сохраняются. " +
+                        "После проверки нажмите Save Settings.", MessageType.Info);
                     GUILayout.Space(10);
 
                     GUILayout.Label("Subscription Products:", EditorStyles.miniBoldLabel);
@@ -762,6 +770,28 @@ namespace AMZNGoDSDK.Editor
                         _currentSettings.InAppPurchase.NonConsumableProducts.Add(new NonConsumableProduct());
                     }
                 });
+        }
+
+        private void ImportUnityIapCatalog()
+        {
+            string path = InAppPurchaseCatalogHelper.FindCatalogPath();
+            if (string.IsNullOrEmpty(path))
+                path = EditorUtility.OpenFilePanel("Выберите Unity IAP Catalog (IAPProductCatalog.json)",
+                    Application.dataPath, "json");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                var result = InAppPurchaseCatalogHelper.ImportFile(_currentSettings.InAppPurchase, path,
+                    () => Undo.RegisterCompleteObjectUndo(this, "Import Unity IAP Catalog"));
+                Repaint();
+                EditorUtility.DisplayDialog("Import from Unity IAP", result.GetSummary(), "OK");
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog("Ошибка импорта Unity IAP",
+                    "Не удалось прочитать каталог Unity IAP. Настройки не изменены.\n\n" + ex.Message, "OK");
+            }
         }
 
         private void DrawDebugConsoleSettings()
