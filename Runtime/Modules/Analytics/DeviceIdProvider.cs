@@ -125,6 +125,14 @@ namespace AMZNGoDSDK.Runtime
                 using (var resolver = activity.Call<AndroidJavaObject>("getContentResolver"))
                 using (var secure = new AndroidJavaClass("android.provider.Settings$Secure"))
                 {
+                    // Amazon требует читать opt-out перед ID; учёт конверсий и отчётность
+                    // разрешены и при ограничении персонализации, поэтому ID не отбрасываем.
+                    // -1 означает неизвестную настройку и не вызывает исключение на обычном Android.
+                    int limitAdTracking = secure.CallStatic<int>("getInt", resolver, "limit_ad_tracking", -1);
+                    string trackingStatus = limitAdTracking == 0 ? "not limited"
+                        : limitAdTracking == 1 ? "limited" : "unknown";
+                    Debug.Log($"{Tag} Ad tracking preference: {trackingStatus}. Fire ID usage is limited to conversion tracking and reporting.");
+
                     string id = secure.CallStatic<string>("getString", resolver, "advertising_id");
                     id = id?.Trim();
 
@@ -140,7 +148,7 @@ namespace AMZNGoDSDK.Runtime
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"{Tag} Could not read advertising_id from Settings.Secure: {e.Message}");
+                Debug.LogWarning($"{Tag} Could not read Fire advertising settings from Settings.Secure: {e.Message}");
                 return false;
             }
 #else
