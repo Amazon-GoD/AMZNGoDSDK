@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix MAX banners to standard dp sizes (320 x 50 on phones, 728 x 90 on
+  tablets), disabling adaptive height and screen-wide stretching. Expose
+  `StandardBannerSizeDp` and document density/render-aware UI reservation;
+  retain Cross-Promo's 396 x 80 size and scaling.
 - Allow Android-only MAX replacement when legacy adapters declare iOS CocoaPods
   or leave iOS native files. Update only Android UPM adapters, preserving
   settings and the existing backup/restore flow.

@@ -96,6 +96,82 @@ the SDK's native Adjust/AppMetrica revenue reports.
 Empty values and older configs use `interstitial` and `rewarded` respectively.
 Leading and trailing whitespace is removed.
 
+### AppLovin banner layout
+
+MAX banners use a fixed standard size in density-independent pixels (dp):
+320 x 50 on phones and 728 x 90 on tablets, exposed as
+`AppLovinModule.StandardBannerSizeDp`. Banner creation disables adaptive
+height and explicitly sets the standard width so `BottomCenter` does not
+stretch the banner across the screen.
+
+Game-side UI reservation should use `MaxSdk.GetBannerLayout(adUnitId)` once
+its width and height are positive, and the standard size while the layout is
+empty. MAX returns a top-left-origin rectangle in dp. The example below
+converts it to bottom-left-origin Unity `Screen` pixels, accounting for
+screen density and reduced render resolution:
+
+```csharp
+#if AMZN_APPLOVIN_ENABLED
+using AMZNGoDSDK.Runtime;
+using UnityEngine;
+
+public static class MaxBannerLayout
+{
+    public static Rect GetScreenRect(string bannerAdUnitId)
+    {
+        if (Screen.width <= 0 || Screen.height <= 0)
+            return Rect.zero;
+
+        var density = Mathf.Max(0.1f, MaxSdkUtils.GetScreenDensity());
+        var displayWidth = Display.main.systemWidth;
+        var displayHeight = Display.main.systemHeight;
+        if (displayWidth <= 0 || displayHeight <= 0)
+        {
+            displayWidth = Screen.width;
+            displayHeight = Screen.height;
+        }
+
+        // Some devices report the display dimensions in the native orientation.
+        if ((displayWidth > displayHeight) != (Screen.width > Screen.height))
+        {
+            var temporaryWidth = displayWidth;
+            displayWidth = displayHeight;
+            displayHeight = temporaryWidth;
+        }
+
+        var scaleX = density * Screen.width / displayWidth;
+        var scaleY = density * Screen.height / displayHeight;
+        var layout = MaxSdk.GetBannerLayout(bannerAdUnitId);
+        if (layout.width > 0f && layout.height > 0f)
+        {
+            return new Rect(layout.x * scaleX,
+                Screen.height - layout.yMax * scaleY,
+                layout.width * scaleX, layout.height * scaleY);
+        }
+
+        var sizeDp = AppLovinModule.StandardBannerSizeDp;
+        var width = Mathf.Ceil(sizeDp.x * scaleX);
+        var height = Mathf.Ceil(sizeDp.y * scaleY);
+        var safeArea = Screen.safeArea;
+        return new Rect(safeArea.center.x - width * 0.5f, safeArea.yMin,
+            width, height);
+    }
+}
+#endif
+```
+
+Call this only while MAX is initialized, the banner is intended to be visible,
+and its ad unit ID is valid. Recalculate when the banner layout, orientation,
+safe area or render resolution changes. The returned rectangle uses render
+screen pixels; convert it further if the reserving UI uses local Canvas
+coordinates.
+
+Apply these dimensions and calculations only to MAX. Cross-Promo remains
+396 x 80 with its existing scaling. Consumer-game layout scripts are not part
+of this SDK; adapt their MAX reservation path using the example above.
+
+MAX reference: [banner sizes and layout](https://support.applovin.com/en/max/unity/ad-formats/banner-and-mrec-ads).
+
 ### Advertising event fields
 
 `placement` identifies the kind of advertising location in all SDK-generated

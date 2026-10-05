@@ -1,3 +1,27 @@
+# MAX standard banner size — 2026-10-05
+
+Implemented on `tmp/max-standard-banner-size`, created from `safety` at `e38d29c`.
+`AppLovinModule.StandardBannerSizeDp` exposes 320×50 dp for phones and
+728×90 dp for tablets. Banner creation now sets `IsAdaptive = false` and
+explicitly calls `SetBannerWidth` before showing. Existing lifecycle,
+placement, refresh and analytics behavior is preserved.
+
+`Documentation~/README.md` includes a consumer-side UI reservation example:
+use `GetBannerLayout`, fall back to the standard size while it is empty,
+and account for density, orientation and reduced render resolution.
+Game-specific `SceneMediationBanner` is outside this SDK. Cross-Promo code
+and its 396×80 prefab, including their scaling, remain unchanged.
+
+Independent static review approved without findings. Unity 2022.3.60f1
+Roslyn compilation passed for Editor Android and Android Player with real
+MAX references; source hashes remained unchanged. Only the existing CS0618
+warning for `SetSdkKey` remains. Whitespace verification passed.
+Evidence: ignored `Temp~/BannerSizeValidation/` (summary, compiler logs and RSPs).
+Unity tests are disabled by AGENTS.md; no live Editor or device ad-layout
+validation was performed. No remote push was performed.
+
+---
+
 # Cross-promo cap exhaustion debug flag — 2026-09-30
 
 Implemented on `tmp/cp-force-caps-debug`, created from `safety` at `8553fb0`.

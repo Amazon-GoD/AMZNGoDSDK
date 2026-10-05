@@ -22,6 +22,11 @@ namespace AMZNGoDSDK.Runtime
         private const int MaxRetryExponent = 6;
         private const string BannerPlacement = "banner";
 
+        /// <summary>Стандартный размер MAX-баннера в dp, не в физических пикселях.</summary>
+        public static Vector2 StandardBannerSizeDp => MaxSdkUtils.IsTablet()
+            ? new Vector2(728f, 90f)
+            : new Vector2(320f, 50f);
+
         private string _sdkKey;
         private string _interstitialAdUnitId;
         private string _rewardedAdUnitId;
@@ -177,8 +182,15 @@ namespace AMZNGoDSDK.Runtime
 
             if (!_bannerCreated)
             {
-                MaxSdk.CreateBanner(_bannerAdUnitId,
-                    new MaxSdkBase.AdViewConfiguration(MaxSdkBase.AdViewPosition.BottomCenter));
+                var configuration = new MaxSdkBase.AdViewConfiguration(
+                    MaxSdkBase.AdViewPosition.BottomCenter)
+                {
+                    IsAdaptive = false
+                };
+
+                MaxSdk.CreateBanner(_bannerAdUnitId, configuration);
+                // BottomCenter растягивает баннер на весь экран без явной ширины в dp.
+                MaxSdk.SetBannerWidth(_bannerAdUnitId, StandardBannerSizeDp.x);
                 MaxSdk.SetBannerPlacement(_bannerAdUnitId, BannerPlacement);
                 _bannerCreated = true;
             }
