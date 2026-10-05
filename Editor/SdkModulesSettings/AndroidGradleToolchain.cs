@@ -15,7 +15,9 @@ namespace AMZNGoDSDK.Editor
     /// <summary>Применяет современный Android toolchain только к сгенерированному Gradle-проекту.</summary>
     public sealed class AndroidGradleToolchain : IPostGenerateGradleAndroidProject
     {
-        public int callbackOrder => 2500;
+        // MAX applies its saved AGP override at int.MaxValue - 10. Pin the final
+        // profile afterwards, before prohibited-SDK cleanup at int.MaxValue - 1.
+        public int callbackOrder => int.MaxValue - 2;
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
         private static readonly Regex PluginVersion = new Regex(
             @"(id\s*\(?\s*['""]com\.android\.(?:application|library)['""]\s*\)?\s*version\s*['""])[^'""]+(['""])");
@@ -64,12 +66,33 @@ namespace AMZNGoDSDK.Editor
             string localPath = Path.Combine(root, "local.properties");
             changes[localPath] = SetProperty(File.Exists(localPath) ? File.ReadAllText(localPath) : "",
                 "sdk.dir", AndroidToolchainSettings.GradleSdkRoot);
+            PrepareWrapper(root, changes);
 
             foreach (var change in changes)
                 File.WriteAllText(change.Key, change.Value, Utf8);
             Debug.Log("[AMZN GoD SDK] Android Gradle Plugin " + AndroidToolchainSettings.AndroidGradlePluginVersion +
                 ", Gradle " + AndroidToolchainSettings.GradleVersion + ", JDK 17, compileSdk " + AndroidToolchainSettings.CompileSdk +
                 ": подготовлен " + root);
+        }
+
+        private static void PrepareWrapper(string root, Dictionary<string, string> changes)
+        {
+            string path = Path.Combine(root, "gradle", "wrapper", "gradle-wrapper.properties");
+            if (!File.Exists(path))
+            {
+                // A direct Unity build may not include a wrapper. An export must
+                // be buildable independently of Unity's External Tools selection.
+                if (UnityEditor.EditorUserBuildSettings.exportAsGoogleAndroidProject)
+                    throw new BuildFailedException("Не найден Gradle wrapper экспортируемого проекта: " + path);
+                return;
+            }
+
+            string content = File.ReadAllText(path);
+            // Preserve cache paths, timeout and other consumer settings. URL and
+            // checksum are one pinned pair; keeping an old checksum breaks export.
+            content = SetProperty(content, "distributionUrl", AndroidToolchainSettings.GradleDistributionUrl);
+            content = SetProperty(content, "distributionSha256Sum", AndroidToolchainSettings.GradleDistributionSha256);
+            changes[path] = content;
         }
 
         private static IEnumerable<string> IncludedModules(string root, string settings)
@@ -159,7 +182,8 @@ namespace AMZNGoDSDK.Editor
         }
 
         private static string RemoveProperty(string content, string key) => Regex.Replace(content,
-            @"(?m)^[ \t]*" + Regex.Escape(key) + @"[ \t]*[=:][^\r\n]*(?:\r?\n)?", "");
+            @"(?m)^[ \t]*" + Regex.Escape(key) +
+            @"(?:[ \t]*[=:]|[ \t]+)(?:[^\r\n\\]|\\[^\r\n]|\\\r?\n[ \t]*)*(?:\r?\n|\z)", "");
 
         private static string SetProperty(string content, string key, string value)
         {

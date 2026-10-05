@@ -537,12 +537,15 @@ namespace AMZNGoDSDK.Runtime
 
         private void StartReconcile(Action<bool> onComplete)
         {
+            // TryBegin can expire the previous run and fail its waiting callbacks.
+            // Register the new caller only afterwards, so it belongs to the new/current run.
+            bool started = _reconcileRetry.TryBegin();
             if (onComplete != null)
                 _restoreCallbacks.Add(onComplete);
 
             // Single-flight: один прогон собирает все страницы; поздние ответы старых
             // прогонов фильтруются по RequestId. Колбэк дождётся текущего прогона.
-            if (!_reconcileRetry.TryBegin())
+            if (!started)
                 return;
 
             BeginReconcileRun();
@@ -573,13 +576,19 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnReconcileRunFailed()
         {
+            // Exhaustion can raise game callbacks that start another Restore. Detach
+            // this run's callers before invoking anything outside the scheduler.
+            var callbacks = TakeRestoreCallbacks();
             _reconcileSession = null;    // частичный ответ выбрасывается целиком
-            _reconcileRetry.OnFailure(); // бэкофф 2/8/30 с; состояние остаётся Unknown
-
-            // Ручной Restore не должен держать экран «Восстановление…» весь цикл бэкоффа
-            // (~40 с): колбэк отпускаем по первому сбою, ретраи продолжаются фоном — если
-            // поздний прогон успеет, игра узнает штатными событиями прав.
-            CompleteRestoreCallbacks(false);
+            try
+            {
+                _reconcileRetry.OnFailure(); // бэкофф 2/8/30 с; состояние остаётся Unknown
+            }
+            finally
+            {
+                // Ручной Restore завершается по первому сбою; ретраи идут фоном.
+                CompleteRestoreCallbacks(callbacks, false);
+            }
         }
 
         private void OnReconcileExhausted()
@@ -592,12 +601,13 @@ namespace AMZNGoDSDK.Runtime
                 _analytics.AccessRevoked(sku, "grace_expired");
                 RaiseRevoked(sku);
             }
-
-            CompleteRestoreCallbacks(false);
         }
 
         private void OnGetPurchaseUpdatesResponse(GetPurchaseUpdatesResponse response)
         {
+            // Native callbacks can arrive while the host is inactive and its watchdog
+            // coroutine is stopped. Apply the same absolute deadline before any receipt.
+            _reconcileRetry.ExpireIfNeeded();
             if (_reconcileSession == null)
             {
                 Debug.LogWarning("[AMZNGoDSDK] GetPurchaseUpdates response without an active run — ignored");
@@ -648,7 +658,18 @@ namespace AMZNGoDSDK.Runtime
 
             var result = _reconcileSession.Complete(_catalog.LongLivedSkus);
             _reconcileSession = null;
-            ApplyReconcileResult(result);
+            // No response is missing now. A Restore from a game callback must join
+            // this application of the result even if the old deadline passes meanwhile.
+            _reconcileRetry.FinishWaitingForResponse();
+            try
+            {
+                ApplyReconcileResult(result);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AMZNGoDSDK] Applying reconciliation failed: {e}");
+                OnReconcileRunFailed();
+            }
         }
 
         private void ApplyReconcileResult(IapReconcileResult result)
@@ -784,12 +805,23 @@ namespace AMZNGoDSDK.Runtime
 
         private void CompleteRestoreCallbacks(bool success)
         {
+            CompleteRestoreCallbacks(TakeRestoreCallbacks(), success);
+        }
+
+        private List<Action<bool>> TakeRestoreCallbacks()
+        {
             if (_restoreCallbacks.Count == 0)
-                return;
+                return null;
 
             var callbacks = new List<Action<bool>>(_restoreCallbacks);
             _restoreCallbacks.Clear();
+            return callbacks;
+        }
 
+        private static void CompleteRestoreCallbacks(List<Action<bool>> callbacks, bool success)
+        {
+            if (callbacks == null)
+                return;
             foreach (var callback in callbacks)
             {
                 try { callback?.Invoke(success); }
@@ -957,6 +989,24 @@ namespace AMZNGoDSDK.Runtime
 
         #region Lifecycle
 
+        private void OnDisable()
+        {
+            // Disabling a component does not stop its coroutines; deactivating its
+            // GameObject does. Preserve work only for the latter lifecycle transition.
+            if (gameObject.activeInHierarchy)
+                return;
+            _reconcileRetry?.SuspendForDeactivation();
+            _catalogRetry?.SuspendForDeactivation();
+        }
+
+        private void OnEnable()
+        {
+            if (!Enabled)
+                return;
+            _reconcileRetry?.ResumeAfterActivation();
+            _catalogRetry?.ResumeAfterActivation();
+        }
+
         private void OnApplicationPause(bool paused)
         {
             if (!Enabled)
@@ -1023,8 +1073,11 @@ namespace AMZNGoDSDK.Runtime
             _reconcileRetry?.Cancel();
             _catalogRetry?.Cancel();
             _reconcileSession = null;
+            _serviceReady = false;
+            IsInitialized = false;
             SdkTrustedTime.OnFirstFreshTime -= OnTrustedTimeAvailable;
             _gateway?.ReleaseListeners();
+            CompleteRestoreCallbacks(false);
         }
 
         #endregion

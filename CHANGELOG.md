@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep exported Android Gradle wrappers on 8.13 with its pinned SHA-256 and
+  apply the AGP profile after MAX's Android postprocessor.
+- Handle empty UPM scoped registries without invalid JSON. Resolve AppHud
+  templates from physical package paths and remove SDK-owned dependencies
+  when the feature, AppMetrica module or SDK is disabled.
+- Hide CP and MAX banners behind fullscreen ads and hidden Unity UI; preserve
+  the game's CanvasGroup state instead of overwriting it each frame.
+- Reserve the analytics queue for regular events by limiting banner impressions
+  to 10 of 50 entries. Persist CP clicks before waiting for the device ID and
+  run ExoPlayer backend click tracking independently of Adjust requests.
+- Revalidate Fire advertising IDs on startup and foreground, reject stale/zero
+  cached IDs, and include the current identity in IAP/attribution deduplication.
+- Isolate concurrent iOS Adjust getter callbacks, including timeout variants,
+  by request ID across the managed/native bridge.
+- Preserve IAP retry/watchdog deadlines when the SDK object is deactivated;
+  reject expired responses and isolate reentrant Restore completion callbacks.
+- Avoid claiming an existing game pause or restoring a stale time scale after
+  the game has resumed while offline.
 - Fix MAX banners to standard dp sizes (320 x 50 on phones, 728 x 90 on
   tablets), disabling adaptive height and screen-wide stretching. Expose
   `StandardBannerSizeDp` and document density/render-aware UI reservation;
@@ -47,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back up changed templates; defer package synchronization until after builds.
 
 - Retain Unity 2022.3 and update Android dependencies for API 24: MAX Unity
-  8.6.6 / Android 13.6.4 with 15 allowed adapters pinned, Firebase 13.17.0,
+  8.6.6 / Android 13.6.4 with 16 allowed adapters pinned, Firebase 13.17.0,
   Adjust 5.8.0, AppMetrica Unity 6.10.0 / Android 8.5.1 and EDM4U 1.2.189.
 - Automatically prepare dependencies of enabled modules and the Android build
   tools. Use AGP 8.13.2, Gradle 8.13, a separate JDK 17 and compileSdk 36 while

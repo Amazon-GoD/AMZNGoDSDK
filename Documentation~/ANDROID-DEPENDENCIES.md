@@ -1,4 +1,4 @@
-# Android dependencies — 2026-09-23
+# Android dependencies — updated 2026-10-05
 
 Unity remains **2022.3 LTS** (development project: 2022.3.60f1). The updated
 mediation requires **Android API 24** on the device. Compilation uses API 36;
@@ -23,7 +23,10 @@ again. No machine-specific paths are committed to the SDK.
 
 Unity's JDK 11, Android SDK and NDK stay in place. Generated Gradle projects
 use a separate JDK 17 and Android SDK, AGP **8.13.2**, and the prepared
-Gradle **8.13**. The previous Gradle selection is restored after building.
+Gradle **8.13**. The exported Gradle wrapper uses the same pinned distribution
+and SHA-256 checksum; other wrapper settings are preserved. The final profile
+is applied after MAX's saved Gradle overrides. The previous Gradle selection
+in Unity is restored after building.
 The SDK automatically raises Minimum API Level to 24 when MAX is enabled;
 a project's higher minimum is retained. Known old R8 8.2.47 and Kotlin 1.8.22
 overrides are removed from generated projects.
@@ -54,7 +57,7 @@ Xcode 26.2; iOS builds are outside this Android verification.
 
 ## Pinned MAX adapter set
 
-All 15 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
+All 16 supported, allowed Android adapters are pinned in `AppLovinPackageInstaller`.
 UPM versions are read from the AppLovin registry rather than inferred from
 native version numbers. Replacing MAX updates the installed adapters and
 preserves their network selection. Automatic initial setup installs the
@@ -72,6 +75,7 @@ networks keep their settings. This follows the vendor's
 | Pangle / ByteDance | 803000401.0.0 | 8.3.0.4.1 |
 | Chartboost | 9140101.0.0 | 9.14.1.1 |
 | Meta | 6220000.0.0 | 6.22.0.0 |
+| Google AdMob | 25050000.0.0 | 25.5.0.0 |
 | InMobi | 11040103.0.0 | 11.4.1.3 |
 | LINE | 300001010.1.0 | 3000.1.1.1 |
 | Mintegral | 17018100.0.0 | 17.1.81.0 |
@@ -88,6 +92,18 @@ ironSource and Unity Ads are removed by the Amazon prohibited SDK cleanup policy
 Quality Service is disabled on Android, and the optional AppMetrica Fyber revenue
 bridge is excluded. See [Automatic cleanup](AMAZON-SDK-CLEANUP.md) for the process
 and final APK/AAB verification.
+
+### Upgrading projects to the AdMob adapter set
+
+Google AdMob is now mandatory when AppLovin is enabled. Saving SDK Settings
+installs the pinned AdMob adapter alongside MAX core and the other required
+adapters, including in projects configured before AdMob joined this set.
+Before the next Android build, enter the AdMob **Android App ID** in
+**AMZN GoD → SDK Settings → AppLovin MAX → AdMob Android App ID**. This is the
+application ID (`ca-app-pub-…~…`), not an ad unit ID. Saving settings and the
+build preflight synchronize it into MAX. An empty SDK field retains an App ID
+already set in MAX Integration Manager. The Android build stops if the final
+App ID is missing or has an invalid format.
 
 ## Other modules reviewed
 
@@ -112,7 +128,7 @@ and final APK/AAB verification.
 - [AppMetrica Android release notes](https://appmetrica.yandex.com/docs/en/sdk/android/changelog-android)
 - [EDM4U 1.2.189](https://github.com/googlesamples/unity-jar-resolver/releases/tag/v1.2.189)
 
-The initial dependency audit inspected 279 resolved AAR manifests. Before the
+The initial September 2026 dependency audit inspected 279 resolved AAR manifests. Before the
 Amazon cleanup, the 17-adapter set and updated Firebase/AppMetrica built an APK
 through Unity 2022.3.60f1 (Mono, armeabi-v7a): minSdk 24, targetSdk 34,
 compileSdk 36. Automatic preparation was checked by downloading tools from

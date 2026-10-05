@@ -36,6 +36,7 @@ namespace AMZNGoDSDK.Editor
             CheckManagedAssemblies(disabled, errors);
             CheckAlwaysIncludedResources(disabled, errors);
             CheckExternalDependencyFiles(disabled, errors);
+            AppMetricaAppHudDependencies.CollectValidationErrors(errors);
 
             if (errors.Count == 0)
                 return;

@@ -32,10 +32,9 @@ namespace AMZNGoDSDK.Runtime
         private int _nextDownloadIndex;
         private bool _explicitlyHidden;
         private bool _crossPromoVisible;
-        private CanvasGroup _bannerCanvasGroup;
-        private float _originalAlpha;
-        private bool _originalInteractable;
-        private bool _originalBlocksRaycasts;
+        private CanvasGroup _presentationCanvasGroup;
+        private readonly List<CanvasGroup> _visibilityCanvasGroups = new();
+        private readonly List<Canvas> _visibilityCanvases = new();
         private bool _shouldUseAppLovinBanner;
         private float _nextFillCheckTime;
         private const float FillCheckIntervalSeconds = 0.25f;
@@ -52,16 +51,15 @@ namespace AMZNGoDSDK.Runtime
                 bannerGO = gameObject;
             }
 
-            // Не деактивируем bannerGO: он может содержать сам контроллер, которому
-            // нужно продолжать следить за cap, no-ads и готовностью MAX.
-            _bannerCanvasGroup = bannerGO.GetComponent<CanvasGroup>();
-            if (_bannerCanvasGroup == null)
+            // Первый CanvasGroup остаётся интерфейсом игры (в том числе GetComponent).
+            // Служебное переключение CP/MAX использует отдельную группу: не перетираем
+            // alpha/interactable игры и не меняем иерархию пользовательского префаба.
+            if (bannerGO.GetComponent<CanvasGroup>() == null)
             {
-                _bannerCanvasGroup = bannerGO.AddComponent<CanvasGroup>();
+                bannerGO.AddComponent<CanvasGroup>();
             }
-            _originalAlpha = _bannerCanvasGroup.alpha;
-            _originalInteractable = _bannerCanvasGroup.interactable;
-            _originalBlocksRaycasts = _bannerCanvasGroup.blocksRaycasts;
+            _presentationCanvasGroup = bannerGO.AddComponent<CanvasGroup>();
+            SetCrossPromoVisible(false);
 
             if (adImage == null)
             {
@@ -108,6 +106,8 @@ namespace AMZNGoDSDK.Runtime
             HideAppLovinBanner();
             SetCrossPromoVisible(false);
             StopInitialization();
+            if (_presentationCanvasGroup != null)
+                Destroy(_presentationCanvasGroup);
         }
 
         private void BindToModule()
@@ -241,14 +241,9 @@ namespace AMZNGoDSDK.Runtime
             if (bannerDataList.Count == 0 || adImage == null || !adImage.isActiveAndEnabled)
                 return;
 
-            // Баннера не видно на экране — показ не шлём.
-            if (!_crossPromoVisible || _explicitlyHidden || !isActiveAndEnabled
-                || bannerGO == null || !bannerGO.activeInHierarchy
-                || _bannerCanvasGroup == null || _bannerCanvasGroup.alpha <= 0f)
-                return;
-
-            // Куплено отключение рекламы — показ не шлём.
-            if (isNoAds?.Invoke() ?? false)
+            // Проверяем непосредственно перед событием: fullscreen/UI могли измениться
+            // между Update контроллера и очередной итерацией ротации.
+            if (!_crossPromoVisible || !CanDisplayBanner())
                 return;
 
             var index = _currentBannerIndex % bannerDataList.Count;
@@ -311,8 +306,7 @@ namespace AMZNGoDSDK.Runtime
         public void OnBannerClick()
         {
             RefreshBannerUI();
-            if (!_crossPromoVisible || !isActiveAndEnabled || _bannerCanvasGroup == null
-                || _bannerCanvasGroup.alpha <= 0f || !_bannerCanvasGroup.interactable)
+            if (!_crossPromoVisible || !CanDisplayBanner() || !IsBannerUiVisible(requireInteraction: true))
             {
                 return;
             }
@@ -407,8 +401,18 @@ namespace AMZNGoDSDK.Runtime
 
         private void RefreshBannerUI(bool forceFillCheck = true)
         {
-            if (!isActiveAndEnabled || _explicitlyHidden || bannerGO == null
-                || !bannerGO.activeInHierarchy || (isNoAds?.Invoke() ?? false))
+#if AMZN_APPLOVIN_ENABLED
+            var appLovinModule = SdkModuleRegistry.Get<AppLovinModule>();
+            if (_appLovinModule != appLovinModule)
+            {
+                HideAppLovinBanner();
+                _appLovinModule = appLovinModule;
+            }
+#endif
+
+            // Одна eligibility для обоих провайдеров: скрытие Unity UI и fullscreen
+            // должны прерывать также CP-ротацию, а не только запрещать нативный MAX.
+            if (!CanDisplayBanner())
             {
                 HideAppLovinBanner();
                 SetCrossPromoVisible(false);
@@ -422,17 +426,7 @@ namespace AMZNGoDSDK.Runtime
             }
 
 #if AMZN_APPLOVIN_ENABLED
-            var appLovinModule = SdkModuleRegistry.Get<AppLovinModule>();
-            if (_appLovinModule != appLovinModule)
-            {
-                HideAppLovinBanner();
-                _appLovinModule = appLovinModule;
-            }
-
-            // Последний cap может сработать ещё во время видео. Нативный баннер
-            // допускается только после закрытия CP/MAX fullscreen-рекламы.
-            if (_shouldUseAppLovinBanner && _module != null && !_module.IsVideoPromoVisible
-                && _appLovinModule != null && !_appLovinModule.IsShowingAd
+            if (_shouldUseAppLovinBanner && _appLovinModule != null
                 && _appLovinModule.ShowBanner())
             {
                 _appLovinBannerOwner = this;
@@ -443,6 +437,61 @@ namespace AMZNGoDSDK.Runtime
 
             HideAppLovinBanner();
             SetCrossPromoVisible(true);
+        }
+
+        private bool CanDisplayBanner()
+        {
+            if (!isActiveAndEnabled || _explicitlyHidden || bannerGO == null
+                || !bannerGO.activeInHierarchy || (isNoAds?.Invoke() ?? false)
+                || (_module != null && _module.IsVideoPromoVisible))
+                return false;
+
+#if AMZN_APPLOVIN_ENABLED
+            var appLovinModule = SdkModuleRegistry.Get<AppLovinModule>();
+            if (appLovinModule != null && appLovinModule.IsShowingAd)
+                return false;
+#endif
+
+            return IsBannerUiVisible(requireInteraction: false);
+        }
+
+        private bool IsBannerUiVisible(bool requireInteraction)
+        {
+            if (adImage == null || !adImage.isActiveAndEnabled || adImage.color.a <= 0f
+                || adImage.canvas == null || adImage.canvasRenderer.GetAlpha() <= 0f)
+                return false;
+
+            bool ignoreParentGroups = false;
+            for (var current = adImage.transform; current != null; current = current.parent)
+            {
+                current.GetComponents(_visibilityCanvases);
+                foreach (var canvas in _visibilityCanvases)
+                {
+                    if (!canvas.isActiveAndEnabled)
+                        return false;
+                }
+
+                if (ignoreParentGroups)
+                    continue;
+
+                current.GetComponents(_visibilityCanvasGroups);
+                foreach (var group in _visibilityCanvasGroups)
+                {
+                    // Наша alpha=0 означает замену картинки нативным MAX, а не скрытие
+                    // экрана игрой. Не создаём зависимость eligibility от своего output.
+                    if (group == _presentationCanvasGroup || !group.isActiveAndEnabled)
+                        continue;
+
+                    if (group.alpha <= 0f
+                        || (requireInteraction && (!group.interactable || !group.blocksRaycasts)))
+                        return false;
+
+                    if (group.ignoreParentGroups)
+                        ignoreParentGroups = true;
+                }
+            }
+
+            return true;
         }
 
         private void HideAppLovinBanner()
@@ -462,11 +511,11 @@ namespace AMZNGoDSDK.Runtime
         private void SetCrossPromoVisible(bool show)
         {
             _crossPromoVisible = show;
-            if (_bannerCanvasGroup != null)
+            if (_presentationCanvasGroup != null)
             {
-                _bannerCanvasGroup.alpha = show ? _originalAlpha : 0f;
-                _bannerCanvasGroup.interactable = show && _originalInteractable;
-                _bannerCanvasGroup.blocksRaycasts = show && _originalBlocksRaycasts;
+                _presentationCanvasGroup.alpha = show ? 1f : 0f;
+                _presentationCanvasGroup.interactable = show;
+                _presentationCanvasGroup.blocksRaycasts = show;
             }
 
             if (show)

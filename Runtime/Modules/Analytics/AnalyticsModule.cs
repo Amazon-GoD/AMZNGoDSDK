@@ -17,8 +17,8 @@ namespace AMZNGoDSDK.Runtime
     // iap_link из InAppPurchaseModule (связка device ↔ Amazon-покупатель, по завершении
     // полной сверки GetPurchaseUpdates) и attribution (источник трафика из Adjust).
     // Идемпотентность first_open и кэш device_id_hash через PlayerPrefs с историческими
-    // ключами cp_* — это намеренно: апгрейд с хотфикса не должен слать дубли и терять
-    // закешированный device_id.
+    // ключами cp_* — это намеренно: апгрейд не должен повторять first_open.
+    // Сохранённый device_id используется только после проверки текущего Fire ID.
     public class AnalyticsModule : ModuleBase
     {
         private const long MinTimestampMs = 1577836800000L;
@@ -38,13 +38,13 @@ namespace AMZNGoDSDK.Runtime
         // неотличима от потерянного поля, поэтому отсутствие идентификатора кодируется явно.
         private const string UnattributedDeviceId = "unattributed";
 
-        // Идемпотентность iap_link: SHA-256 от amazon_user_id + отсортированного списка
+        // Идемпотентность iap_link: SHA-256 от device_id + amazon_user_id + отсортированного списка
         // receipt_ids последней ДОСТАВЛЕННОЙ связки. Пишется только по HTTP 2xx — тот же
         // принцип, что у флага first_open: Rejected/транзиент не должны хоронить связку.
         private const string IapLinkHashKey = "amzn_iap_link_hash";
 
-        // Идемпотентность attribution: последний ДОСТАВЛЕННЫЙ TrackerToken. Смена токена
-        // (reattribution после переустановки по другой рекламе) → отправка заново.
+        // Идемпотентность attribution: последняя ДОСТАВЛЕННАЯ пара Fire ID / TrackerToken.
+        // Сброс Fire ID или реатрибуция требуют новой связки.
         private const string AttributionTokenKey = "amzn_attribution_tracker_token";
 
         // Атрибуция Adjust резолвится асинхронно, иногда спустя десятки секунд после
@@ -62,6 +62,10 @@ namespace AMZNGoDSDK.Runtime
         private bool _flushing;
         private bool _firstOpenInFlight;
         private bool _attributionRoutineRunning;
+        private bool _identityRefreshRunning;
+        private bool _runtimeStarted;
+        private bool _resumeAfterActivation;
+        private readonly HashSet<string> _preparingEventBodies = new HashSet<string>(StringComparer.Ordinal);
 
         // Связка, отправка которой уже в полёте: сверка IAP может завершиться несколько
         // раз подряд (init + после покупки), и без этой защёлки одна и та же связка ушла
@@ -111,10 +115,51 @@ namespace AMZNGoDSDK.Runtime
 
         public override void Initialize()
         {
+            StopAllCoroutines();
+            ResetTransientState();
+            _runtimeStarted = true;
+            _resumeAfterActivation = false;
+            DeviceIdProvider.BeginSession();
             StartCoroutine(InitializeRoutine());
         }
 
-        public override void Cleanup() { }
+        public override void Cleanup()
+        {
+            _runtimeStarted = false;
+            _resumeAfterActivation = false;
+            StopAllCoroutines();
+            ResetTransientState();
+        }
+
+        private void OnDisable()
+        {
+            // Component.enabled=false leaves coroutines running; SetActive(false)
+            // stops them. Do not depend on iterator finally blocks for stopped work.
+            if (gameObject.activeInHierarchy || !_runtimeStarted)
+                return;
+            StopAllCoroutines();
+            ResetTransientState();
+            _resumeAfterActivation = true;
+        }
+
+        private void OnEnable()
+        {
+            if (_resumeAfterActivation && Enabled)
+                Initialize();
+        }
+
+        private void ResetTransientState()
+        {
+            // Disk-backed events survive; transient preparation/in-flight markers do not.
+            _preparingEventBodies.Clear();
+            _flushing = false;
+            _firstOpenInFlight = false;
+            _attributionRoutineRunning = false;
+            _identityRefreshRunning = false;
+            _iapLinkInFlightHash = null;
+            _deviceIdHash = null;
+            _deviceIdResolved = false;
+        }
 
         private IEnumerator InitializeRoutine()
         {
@@ -318,11 +363,6 @@ namespace AMZNGoDSDK.Runtime
 
         private IEnumerator TrackCrossPromoEvent(string eventName, string paidAppId, long ts, string placement)
         {
-            // Раньше здесь был ранний return при !IsReady — событие пропадало навсегда,
-            // хотя device_id резолвился буквально десятки миллисекунд спустя. Теперь ждём
-            // резолва (ограниченно), не теряя событие.
-            yield return WaitUntilDeviceIdResolved();
-
             string resolvedPaidAppId = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
             if (string.IsNullOrEmpty(resolvedPaidAppId))
             {
@@ -330,12 +370,39 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            string deviceIdHash = EventDeviceIdHash;
             string eventId = NewEventId();
-            Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, placement={placement}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
+            string pendingJson = null;
+            if (eventName == "cp_click")
+            {
+                // Store navigation may kill the process before the Fire ID arrives.
+                // Persist a complete event before the first wait; a restarted process
+                // can deliver this same event_id with the original identity snapshot.
+                pendingJson = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId,
+                    EventDeviceIdHash, ts, eventId, placement);
+                if (!AnalyticsEventQueue.TryEnqueue(pendingJson))
+                    yield break;
+                _preparingEventBodies.Add(pendingJson);
+            }
 
-            string json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId, deviceIdHash, ts, eventId, placement);
-            yield return SendEventWithRetry(json, eventId);
+            string json;
+            string deviceIdHash;
+            try
+            {
+                yield return WaitUntilDeviceIdResolved();
+                deviceIdHash = EventDeviceIdHash;
+                json = BuildCrossPromoEventJson(eventName, resolvedPaidAppId, AppId,
+                    deviceIdHash, ts, eventId, placement);
+                if (pendingJson != null && !AnalyticsEventQueue.ReplaceExact(pendingJson, json))
+                    yield break; // An evicted/completed event must not be reinserted.
+            }
+            finally
+            {
+                if (pendingJson != null)
+                    _preparingEventBodies.Remove(pendingJson);
+            }
+
+            Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, placement={placement}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
+            yield return SendEventWithRetry(json, eventId, enqueue: pendingJson == null);
         }
 
         /// <summary>
@@ -386,7 +453,8 @@ namespace AMZNGoDSDK.Runtime
                 yield break;
             }
 
-            string linkHash = ComputeIapLinkHash(amazonUserId, receiptIds);
+            string deviceIdHash = _deviceIdHash;
+            string linkHash = ComputeIapLinkHash(deviceIdHash, amazonUserId, receiptIds);
 
             if (PlayerPrefs.GetString(IapLinkHashKey, "") == linkHash)
             {
@@ -399,12 +467,13 @@ namespace AMZNGoDSDK.Runtime
             _iapLinkInFlightHash = linkHash;
 
             string eventId = NewEventId();
-            string json = BuildIapLinkJson(amazonUserId, receiptIds, _deviceIdHash, ts, eventId);
-            Debug.Log($"{Tag} >>> iap_link: amazon_user_id={amazonUserId}, receipts={receiptIds.Count}, device_id_hash={_deviceIdHash}, ts={ts}, event_id={eventId}");
+            string json = BuildIapLinkJson(amazonUserId, receiptIds, deviceIdHash, ts, eventId);
+            Debug.Log($"{Tag} >>> iap_link: amazon_user_id={amazonUserId}, receipts={receiptIds.Count}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
             var outcome = SendOutcome.Retry;
             yield return SendEventWithRetry(json, eventId, o => outcome = o);
-            _iapLinkInFlightHash = null;
+            if (_iapLinkInFlightHash == linkHash)
+                _iapLinkInFlightHash = null;
 
             if (outcome == SendOutcome.Delivered)
             {
@@ -463,10 +532,13 @@ namespace AMZNGoDSDK.Runtime
                 if (a == null || (string.IsNullOrEmpty(a.TrackerToken) && string.IsNullOrEmpty(a.Network)))
                     continue;
 
-                // Дефолт null, а не "": у атрибуции без TrackerToken ключ — пустая строка,
-                // и дефолт "" ложно совпал бы с ней ещё ДО первой отправки.
+                // Identity can be refreshed while Adjust is resolving attribution.
+                if (!_deviceIdResolved || string.IsNullOrEmpty(_deviceIdHash))
+                    continue;
+                string deviceIdHash = _deviceIdHash;
                 string token = a.TrackerToken ?? string.Empty;
-                if (PlayerPrefs.GetString(AttributionTokenKey, null) == token)
+                string attributionKey = deviceIdHash + "|" + token;
+                if (PlayerPrefs.GetString(AttributionTokenKey, null) == attributionKey)
                 {
                     Debug.Log($"{Tag} attribution already delivered (tracker_token unchanged), skipping");
                     yield break;
@@ -483,17 +555,17 @@ namespace AMZNGoDSDK.Runtime
                 string json = BuildAttributionJson(
                     a.Network, a.Campaign, a.Adgroup, a.Creative,
                     a.TrackerName, a.TrackerToken, a.CostAmount, a.CostCurrency,
-                    _deviceIdHash, ts, eventId);
+                    deviceIdHash, ts, eventId);
                 Debug.Log($"{Tag} >>> attribution: network={a.Network}, campaign={a.Campaign}, tracker_token={a.TrackerToken}, " +
                           $"cost={(a.CostAmount.HasValue ? a.CostAmount.Value.ToString(CultureInfo.InvariantCulture) : "null")} {a.CostCurrency}, " +
-                          $"device_id_hash={_deviceIdHash}, ts={ts}, event_id={eventId}");
+                          $"device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
                 var outcome = SendOutcome.Retry;
                 yield return SendEventWithRetry(json, eventId, o => outcome = o);
 
                 if (outcome == SendOutcome.Delivered)
                 {
-                    PlayerPrefs.SetString(AttributionTokenKey, token);
+                    PlayerPrefs.SetString(AttributionTokenKey, attributionKey);
                     PlayerPrefs.Save();
                     Debug.Log($"{Tag} attribution confirmed, tracker_token saved");
                 }
@@ -502,6 +574,13 @@ namespace AMZNGoDSDK.Runtime
                     Debug.LogWarning($"{Tag} attribution not confirmed ({outcome}) — token NOT saved, will resend");
                 }
 
+                // A foreground identity refresh may finish while this HTTP send is
+                // running. RetryPending then sees our guard; service the new ID here.
+                if (_deviceIdResolved && !string.IsNullOrEmpty(_deviceIdHash) && _deviceIdHash != deviceIdHash)
+                {
+                    i = -1;
+                    continue;
+                }
                 yield break;
             }
 
@@ -551,13 +630,15 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"{Tag} device_id not resolved after {DeviceIdWaitForEventSeconds}s — sending event with '{UnattributedDeviceId}'");
         }
 
-        private IEnumerator SendEventWithRetry(string json, string eventId, Action<SendOutcome> onResult = null)
+        private IEnumerator SendEventWithRetry(string json, string eventId, Action<SendOutcome> onResult = null,
+            bool enqueue = true)
         {
             // Сначала кладём на диск, потом отправляем. Тогда, чем бы отправка ни закончилась
             // — в том числе если приложение убьют на середине запроса (игрок ушёл в стор) —
             // событие не пропадёт: оно уже в очереди и уйдёт при следующем запуске.
             // Дубли на бэкенде отсекаются по event_id.
-            AnalyticsEventQueue.Enqueue(json);
+            if (enqueue)
+                AnalyticsEventQueue.Enqueue(json);
 
             if (!IsInternetAvailable())
             {
@@ -693,6 +774,9 @@ namespace AMZNGoDSDK.Runtime
 
             for (int i = 0; i < events.Count; i++)
             {
+                // The snapshot can outlive a click's identity enrichment or removal.
+                if (_preparingEventBodies.Contains(events[i]) || !AnalyticsEventQueue.ContainsExact(events[i]))
+                    continue;
                 var outcome = SendOutcome.Retry;
                 yield return SendEvent(events[i], o => outcome = o);
 
@@ -723,11 +807,30 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (hasFocus && IsReady && IsInternetAvailable())
+            if (hasFocus && IsReady && !_identityRefreshRunning)
             {
-                Debug.Log($"{Tag} App focused — retrying pending events");
-                StartCoroutine(RetryPending());
+                // The user may have reset the advertising ID while outside the app.
+                // Refresh even offline; a previously cached ID must not survive a reset.
+                StartCoroutine(RefreshIdentityAndRetry());
             }
+        }
+
+        private IEnumerator RefreshIdentityAndRetry()
+        {
+            _identityRefreshRunning = true;
+            try
+            {
+                _deviceIdHash = null;
+                _deviceIdResolved = false;
+                DeviceIdProvider.BeginSession();
+                yield return ResolveDeviceId();
+            }
+            finally
+            {
+                _identityRefreshRunning = false;
+            }
+            if (IsInternetAvailable())
+                yield return RetryPending();
         }
 
         private void OnApplicationPause(bool pauseStatus)
@@ -898,10 +1001,10 @@ namespace AMZNGoDSDK.Runtime
             string.IsNullOrEmpty(s) ? "null" : "\"" + EscapeJson(s) + "\"";
 
         /// <summary>Канонический хеш связки: receiptIds уже отсортированы вызывающим.</summary>
-        private static string ComputeIapLinkHash(string amazonUserId, List<string> receiptIds)
+        private static string ComputeIapLinkHash(string deviceIdHash, string amazonUserId, List<string> receiptIds)
         {
-            var sb = new StringBuilder(amazonUserId.Length + receiptIds.Count * 24 + 1);
-            sb.Append(amazonUserId).Append('|');
+            var sb = new StringBuilder(deviceIdHash.Length + amazonUserId.Length + receiptIds.Count * 24 + 2);
+            sb.Append(deviceIdHash).Append('|').Append(amazonUserId).Append('|');
             for (int i = 0; i < receiptIds.Count; i++)
             {
                 if (i > 0)

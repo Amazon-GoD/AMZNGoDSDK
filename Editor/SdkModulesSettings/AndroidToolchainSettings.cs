@@ -23,6 +23,8 @@ namespace AMZNGoDSDK.Editor
         public const int JavaMajorVersion = 17;
         public const string AndroidGradlePluginVersion = "8.13.2";
         public const string GradleVersion = "8.13";
+        public const string GradleDistributionUrl = "https://services.gradle.org/distributions/gradle-" + GradleVersion + "-bin.zip";
+        public const string GradleDistributionSha256 = "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78";
         public const string BuildToolsVersion = "36.0.0";
         public const string JavaHomeEnvironmentVariable = "AMZNGOD_ANDROID_JAVA_HOME";
         public const string SdkRootEnvironmentVariable = "AMZNGOD_ANDROID_SDK_ROOT";

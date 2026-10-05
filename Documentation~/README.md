@@ -80,6 +80,11 @@ Open `AMZN GoD > SDK Settings`. Enabling/disabling a module:
 No files are moved or renamed inside the package — toggles are fully
 compatible with the immutable UPM package cache.
 
+The optional AppMetrica AppHud feature also manages its generated
+`Assets/Editor/AppMetricaAppHudAdapterDependencies.xml`. Disabling AppHud,
+AppMetrica or the SDK removes the owned file. Custom dependencies belong in a
+separate XML; an edited legacy file is preserved and reported for migration.
+
 EDM4U picks up the generated dependencies file automatically: on the first
 Android resolve it enables `Assets/Plugins/Android/mainTemplate.gradle` (plus
 `gradleTemplate.properties` / `settingsTemplate.gradle`) in the consumer
@@ -103,6 +108,12 @@ MAX banners use a fixed standard size in density-independent pixels (dp):
 `AppLovinModule.StandardBannerSizeDp`. Banner creation disables adaptive
 height and explicitly sets the standard width so `BottomCenter` does not
 stretch the banner across the screen.
+
+The Cross-Promo/MAX banner controller respects fullscreen ads, disabled Unity
+Canvas/Image components and transparent CanvasGroups in the banner hierarchy.
+It uses a separate CanvasGroup for provider switching and preserves the game's
+own group, including fades. Native MAX banners are shown or hidden; partial
+Unity alpha does not apply a corresponding fade to the native view.
 
 Game-side UI reservation should use `MaxSdk.GetBannerLayout(adUnitId)` once
 its width and height are positive, and the standard size while the layout is
@@ -220,6 +231,38 @@ URLs are unchanged.
 
 MAX API references: [banner callbacks](https://support.applovin.com/en/max/unity/ad-formats/banner-and-mrec-ads)
 and [placement configuration](https://support.applovin.com/en/max/unity/overview/advanced-settings).
+
+### Analytics persistence and identity
+
+The persisted queue holds up to 50 events. At most 10 are Cross-Promo banner
+impressions (`cp_impression`, `placement: "banner"`); this stream cannot evict
+clicks, revenue or other regular events. When 50 regular events fill the queue,
+the oldest regular event can still be evicted. The existing PlayerPrefs key
+and payload format are retained.
+
+Cross-Promo clicks are persisted before waiting for a Fire ID. ExoPlayer starts
+backend and Adjust click requests independently and retains its four-second
+store-navigation deadline. Banner clicks retain their 1.5-second deadline.
+An early click can remain `unattributed` if the process exits before resolution;
+queued events are not reassigned to a later session's identity.
+
+Fire ID is freshly validated on startup and foreground. Stale or all-zero
+saved IDs are discarded, with no fallback to an unrelated device identifier.
+IAP and attribution deduplication includes the validated identity, so the
+first corresponding event after an ID reset can be sent again. `first_open`
+remains once per installation/app type. Upgrading old deduplication markers
+can cause one additional IAP/attribution event; backend upserts remain required.
+
+### Offline pause integration
+
+`InternetConnection` restores time only when it changed a nonzero
+`Time.timeScale` to zero. An existing game pause is left to the game, and a
+new nonzero time scale set while offline is preserved on reconnection.
+
+If several game systems own pause state, set `PauseGameWhenOffline` to false
+and connect the module's `OnInternetLost` / `OnInternetAvailable` events to
+the game's pause controller. Direct writes of zero by multiple owners are
+indistinguishable; the SDK cannot infer another pause from an unchanged value.
 
 ### Build-time notes
 

@@ -12,9 +12,11 @@ namespace AdjustSdk
 
         // app callbacks as method parameters
         private static List<Action<bool>> appIsEnabledGetterCallbacks;
-        private static List<Action<AdjustAttribution>> appAttributionGetterCallbacks;
-        private static List<Action<AdjustThirdPartySharingResult>> appThirdPartySharingGetterCallbacks;
-        private static List<Action<string>> appAdidGetterCallbacks;
+        private static readonly Dictionary<int, Action<AdjustAttribution>> appAttributionGetterCallbacks = new Dictionary<int, Action<AdjustAttribution>>();
+        private static readonly Dictionary<int, Action<AdjustThirdPartySharingResult>> appThirdPartySharingGetterCallbacks = new Dictionary<int, Action<AdjustThirdPartySharingResult>>();
+        private static readonly Dictionary<int, Action<string>> appAdidGetterCallbacks = new Dictionary<int, Action<string>>();
+        private static readonly object getterCallbacksLock = new object();
+        private static int nextGetterCallbackId = 0;
         private static List<Action<string>> appIdfaGetterCallbacks;
         private static List<Action<string>> appIdfvGetterCallbacks;
         private static List<Action<string>> appLastDeeplinkGetterCallbacks;
@@ -129,21 +131,21 @@ namespace AdjustSdk
         [DllImport("__Internal")]
         private static extern void _AdjustIsEnabled(AdjustDelegateIsEnabledGetter callback);
 
-        private delegate void AdjustDelegateAttributionGetter(string attribution);
+        private delegate void AdjustDelegateAttributionGetter(string attribution, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAttribution(AdjustDelegateAttributionGetter callback);
+        private static extern void _AdjustGetAttribution(int callbackId, AdjustDelegateAttributionGetter callback);
 
-        private delegate void AdjustDelegateAttributionGetterWithTimeout(string attribution);
+        private delegate void AdjustDelegateAttributionGetterWithTimeout(string attribution, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, AdjustDelegateAttributionGetterWithTimeout callback);
+        private static extern void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAttributionGetterWithTimeout callback);
 
-        private delegate void AdjustDelegateAdidGetter(string adid);
+        private delegate void AdjustDelegateAdidGetter(string adid, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAdid(AdjustDelegateAdidGetter callback);
+        private static extern void _AdjustGetAdid(int callbackId, AdjustDelegateAdidGetter callback);
 
-        private delegate void AdjustDelegateAdidGetterWithTimeout(string adid);
+        private delegate void AdjustDelegateAdidGetterWithTimeout(string adid, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, AdjustDelegateAdidGetterWithTimeout callback);
+        private static extern void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAdidGetterWithTimeout callback);
 
         private delegate void AdjustDelegateIdfaGetter(string idfa);
         [DllImport("__Internal")]
@@ -161,9 +163,9 @@ namespace AdjustSdk
         [DllImport("__Internal")]
         private static extern void _AdjustGetSdkVersion(AdjustDelegateSdkVersionGetter callback);
 
-        private delegate void AdjustDelegateThirdPartySharingGetter(string thirdPartySharingSettings);
+        private delegate void AdjustDelegateThirdPartySharingGetter(string thirdPartySharingSettings, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetThirdPartySharingSettingsWithTimeout(int timeoutInMilliseconds, AdjustDelegateThirdPartySharingGetter callback);
+        private static extern void _AdjustGetThirdPartySharingSettingsWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateThirdPartySharingGetter callback);
 
         [DllImport("__Internal")]
         private static extern void _AdjustGdprForgetMe();
@@ -563,42 +565,26 @@ namespace AdjustSdk
 
         public static void GetAttribution(Action<AdjustAttribution> callback)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                appAttributionGetterCallbacks = new List<Action<AdjustAttribution>>();
-            }
-            appAttributionGetterCallbacks.Add(callback);
-            _AdjustGetAttribution(AttributionGetterMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAttributionGetterCallbacks, callback);
+            _AdjustGetAttribution(callbackId, AttributionGetterMonoPInvoke);
         }
 
         public static void GetAttributionWithTimeout(int timeoutInMilliseconds, Action<AdjustAttribution> callback)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                appAttributionGetterCallbacks = new List<Action<AdjustAttribution>>();
-            }
-            appAttributionGetterCallbacks.Add(callback);
-            _AdjustGetAttributionWithTimeout(timeoutInMilliseconds, AttributionGetterWithTimeoutMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAttributionGetterCallbacks, callback);
+            _AdjustGetAttributionWithTimeout(timeoutInMilliseconds, callbackId, AttributionGetterWithTimeoutMonoPInvoke);
         }
 
         public static void GetAdid(Action<string> callback)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                appAdidGetterCallbacks = new List<Action<string>>();
-            }
-            appAdidGetterCallbacks.Add(callback);
-            _AdjustGetAdid(AdidGetterMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAdidGetterCallbacks, callback);
+            _AdjustGetAdid(callbackId, AdidGetterMonoPInvoke);
         }
 
         public static void GetAdidWithTimeout(int timeoutInMilliseconds, Action<string> callback)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                appAdidGetterCallbacks = new List<Action<string>>();
-            }
-            appAdidGetterCallbacks.Add(callback);
-            _AdjustGetAdidWithTimeout(timeoutInMilliseconds, AdidGetterWithTimeoutMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAdidGetterCallbacks, callback);
+            _AdjustGetAdidWithTimeout(timeoutInMilliseconds, callbackId, AdidGetterWithTimeoutMonoPInvoke);
         }
 
         public static void GetIdfa(Action<string> callback)
@@ -645,12 +631,8 @@ namespace AdjustSdk
             int timeoutInMilliseconds,
             Action<AdjustThirdPartySharingResult> callback)
         {
-            if (appThirdPartySharingGetterCallbacks == null)
-            {
-                appThirdPartySharingGetterCallbacks = new List<Action<AdjustThirdPartySharingResult>>();
-            }
-            appThirdPartySharingGetterCallbacks.Add(callback);
-            _AdjustGetThirdPartySharingSettingsWithTimeout(timeoutInMilliseconds, ThirdPartySharingGetterMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appThirdPartySharingGetterCallbacks, callback);
+            _AdjustGetThirdPartySharingSettingsWithTimeout(timeoutInMilliseconds, callbackId, ThirdPartySharingGetterMonoPInvoke);
         }
 
         public static void GdprForgetMe()
@@ -826,6 +808,32 @@ namespace AdjustSdk
             }
         }
 
+        private static int RegisterGetterCallback<T>(Dictionary<int, Action<T>> callbacks, Action<T> callback)
+        {
+            lock (getterCallbacksLock)
+            {
+                // Never reuse an ID while a late native completion could still arrive.
+                int callbackId = checked(++nextGetterCallbackId);
+                callbacks.Add(callbackId, callback);
+                return callbackId;
+            }
+        }
+
+        private static bool TryTakeGetterCallback<T>(Dictionary<int, Action<T>> callbacks, int callbackId, out Action<T> callback)
+        {
+            lock (getterCallbacksLock)
+            {
+                if (!callbacks.TryGetValue(callbackId, out callback))
+                {
+                    return false;
+                }
+
+                // Remove before invoking user code, which may start another getter.
+                callbacks.Remove(callbackId);
+                return true;
+            }
+        }
+
         // MonoPInvokeCallback methods as method parameters
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateIsEnabledGetter))]
         private static void IsEnabledGetterMonoPInvoke(bool isEnabled)
@@ -849,122 +857,54 @@ namespace AdjustSdk
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAttributionGetter))]
-        private static void AttributionGetterMonoPInvoke(string attribution)
+        private static void AttributionGetterMonoPInvoke(string attribution, int callbackId)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                return;
-            }
-
             AdjustThreadDispatcher.RunOnMainThread(() =>
             {
-                foreach (Action<AdjustAttribution> callback in appAttributionGetterCallbacks)
+                Action<AdjustAttribution> callback;
+                if (TryTakeGetterCallback(appAttributionGetterCallbacks, callbackId, out callback) && callback != null)
                 {
-                    if (callback != null)
-                    {
-                        // regular getter never returns null, so attribution should always be valid
-                        callback.Invoke(new AdjustAttribution(attribution));
-                    }
+                    callback.Invoke(attribution == null ? null : new AdjustAttribution(attribution));
                 }
-                appAttributionGetterCallbacks.Clear();
             });
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAttributionGetterWithTimeout))]
-        private static void AttributionGetterWithTimeoutMonoPInvoke(string attribution)
+        private static void AttributionGetterWithTimeoutMonoPInvoke(string attribution, int callbackId)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                return;
-            }
-
-            AdjustThreadDispatcher.RunOnMainThread(() =>
-            {
-                foreach (Action<AdjustAttribution> callback in appAttributionGetterCallbacks)
-                {
-                    if (callback != null)
-                    {
-                        // timeout version can return null, so handle it properly
-                        AdjustAttribution adjustAttribution = null;
-                        if (attribution != null)
-                        {
-                            adjustAttribution = new AdjustAttribution(attribution);
-                        }
-                        callback.Invoke(adjustAttribution);
-                    }
-                }
-                appAttributionGetterCallbacks.Clear();
-            });
+            AttributionGetterMonoPInvoke(attribution, callbackId);
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateThirdPartySharingGetter))]
-        private static void ThirdPartySharingGetterMonoPInvoke(string thirdPartySharingSettings)
+        private static void ThirdPartySharingGetterMonoPInvoke(string thirdPartySharingSettings, int callbackId)
         {
-            if (appThirdPartySharingGetterCallbacks == null)
-            {
-                return;
-            }
-
             AdjustThreadDispatcher.RunOnMainThread(() =>
             {
-                foreach (Action<AdjustThirdPartySharingResult> callback in appThirdPartySharingGetterCallbacks)
+                Action<AdjustThirdPartySharingResult> callback;
+                if (TryTakeGetterCallback(appThirdPartySharingGetterCallbacks, callbackId, out callback) && callback != null)
                 {
-                    if (callback != null)
-                    {
-                        // timeout version can return null, so handle it properly
-                        AdjustThirdPartySharingResult adjustThirdPartySharingResult = null;
-                        if (thirdPartySharingSettings != null)
-                        {
-                            adjustThirdPartySharingResult = new AdjustThirdPartySharingResult(thirdPartySharingSettings);
-                        }
-                        callback.Invoke(adjustThirdPartySharingResult);
-                    }
+                    callback.Invoke(thirdPartySharingSettings == null ? null : new AdjustThirdPartySharingResult(thirdPartySharingSettings));
                 }
-                appThirdPartySharingGetterCallbacks.Clear();
             });
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAdidGetter))]
-        private static void AdidGetterMonoPInvoke(string adid)
+        private static void AdidGetterMonoPInvoke(string adid, int callbackId)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                return;
-            }
-
             AdjustThreadDispatcher.RunOnMainThread(() =>
             {
-                foreach (Action<string> callback in appAdidGetterCallbacks)
+                Action<string> callback;
+                if (TryTakeGetterCallback(appAdidGetterCallbacks, callbackId, out callback) && callback != null)
                 {
-                    if (callback != null)
-                    {
-                        callback.Invoke(adid);
-                    }
+                    callback.Invoke(adid);
                 }
-                appAdidGetterCallbacks.Clear();
             });
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAdidGetterWithTimeout))]
-        private static void AdidGetterWithTimeoutMonoPInvoke(string adid)
+        private static void AdidGetterWithTimeoutMonoPInvoke(string adid, int callbackId)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                return;
-            }
-
-            AdjustThreadDispatcher.RunOnMainThread(() =>
-            {
-                foreach (Action<string> callback in appAdidGetterCallbacks)
-                {
-                    if (callback != null)
-                    {
-                        // timeout version can return null, so pass it through as-is
-                        callback.Invoke(adid);
-                    }
-                }
-                appAdidGetterCallbacks.Clear();
-            });
+            AdidGetterMonoPInvoke(adid, callbackId);
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateIdfaGetter))]

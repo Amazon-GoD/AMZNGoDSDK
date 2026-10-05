@@ -7,6 +7,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Xml;
 using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
@@ -318,7 +319,7 @@ namespace AMZNGoDSDK.Editor
 
             try
             {
-                return File.ReadAllText(ManifestPath).Contains(RegistryUrl);
+                return HasAppLovinRegistry(File.ReadAllText(ManifestPath));
             }
             catch (Exception ex)
             {
@@ -1016,46 +1017,59 @@ namespace AMZNGoDSDK.Editor
         public static string InsertRegistry(string manifest, out string error)
         {
             error = null;
-
-            if (string.IsNullOrWhiteSpace(manifest))
+            try
             {
-                error = "Манифест пуст.";
-                return null;
-            }
-
-            if (manifest.Contains(RegistryUrl))
-                return manifest;
-
-            int scopedIndex = manifest.IndexOf("\"scopedRegistries\"", StringComparison.Ordinal);
-
-            if (scopedIndex >= 0)
-            {
-                // Реестры уже есть — вставляем свой первым элементом массива.
-                int arrayStart = manifest.IndexOf('[', scopedIndex);
-                if (arrayStart < 0)
+                var json = ManifestJson.Parse(manifest);
+                int arrayStart = json.FindRootValue("scopedRegistries");
+                string updated;
+                if (arrayStart >= 0)
                 {
-                    error = "В манифесте есть \"scopedRegistries\", но не найдена открывающая скобка массива.";
-                    return null;
+                    if (manifest[arrayStart] != '[')
+                        throw new FormatException("Поле scopedRegistries должно быть массивом.");
+                    if (HasAppLovinRegistry(manifest)) return manifest;
+                    int next = NextJsonToken(manifest, arrayStart + 1);
+                    string separator = manifest[next] == ']' ? "" : ",";
+                    updated = manifest.Insert(arrayStart + 1, Environment.NewLine + RegistryEntryJson("    ") + separator);
                 }
-
-                string entry = RegistryEntryJson("    ");
-                return manifest.Insert(arrayStart + 1, Environment.NewLine + entry + ",");
+                else
+                {
+                    int braceIndex = manifest.IndexOf('{');
+                    int next = NextJsonToken(manifest, braceIndex + 1);
+                    var block = new StringBuilder();
+                    block.Append(Environment.NewLine);
+                    block.Append("  \"scopedRegistries\": [").Append(Environment.NewLine);
+                    block.Append(RegistryEntryJson("    ")).Append(Environment.NewLine);
+                    block.Append("  ]");
+                    if (manifest[next] != '}') block.Append(',');
+                    updated = manifest.Insert(braceIndex + 1, block.ToString());
+                }
+                // Validate the exact text before EnsureScopedRegistry backs up and writes it.
+                ManifestJson.Parse(updated);
+                return updated;
             }
-
-            int braceIndex = manifest.IndexOf('{');
-            if (braceIndex < 0)
+            catch (Exception ex) when (ex is FormatException || ex is XmlException || ex is SerializationException)
             {
-                error = "Манифест не похож на JSON-объект: нет открывающей скобки.";
+                error = ex.Message;
                 return null;
             }
+        }
 
-            var block = new StringBuilder();
-            block.Append(Environment.NewLine);
-            block.Append("  \"scopedRegistries\": [").Append(Environment.NewLine);
-            block.Append(RegistryEntryJson("    ")).Append(Environment.NewLine);
-            block.Append("  ],");
+        private static int NextJsonToken(string json, int position)
+        {
+            while (position < json.Length && char.IsWhiteSpace(json[position])) position++;
+            return position;
+        }
 
-            return manifest.Insert(braceIndex + 1, block.ToString());
+        private static bool HasAppLovinRegistry(string manifest)
+        {
+            ManifestJson.Parse(manifest);
+            var document = new XmlDocument { XmlResolver = null };
+            using (var reader = JsonReaderWriterFactory.CreateJsonReader(
+                       Encoding.UTF8.GetBytes(manifest), XmlDictionaryReaderQuotas.Max))
+                document.Load(reader);
+            foreach (XmlNode url in document.SelectNodes("/root/scopedRegistries[@type='array']/item[@type='object']/url[@type='string']"))
+                if (url.InnerText == RegistryUrl) return true;
+            return false;
         }
 
         private static string RegistryEntryJson(string indent)

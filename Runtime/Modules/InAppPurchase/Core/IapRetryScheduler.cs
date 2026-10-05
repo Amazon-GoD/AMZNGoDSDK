@@ -27,9 +27,13 @@ namespace AMZNGoDSDK.Runtime
 
         private int _failedAttempts;
         private bool _inFlight;
+        private bool _waitingForResponse;
         private bool _retryOnForeground;
         private Coroutine _pendingRetry;
         private Coroutine _watchdog;
+        private double _inFlightDeadline;
+        private double _retryDeadline;
+        private bool _retryScheduled;
 
         public bool InFlight => _inFlight;
 
@@ -45,10 +49,21 @@ namespace AMZNGoDSDK.Runtime
         /// включая обработку таймаута. Ватчдог ограничивает весь прогон, а не одну страницу.</summary>
         public bool TryBegin()
         {
+            ExpireIfNeeded();
             if (_inFlight)
                 return false;
+            if (!HostIsActive)
+            {
+                // Restore may be requested while the SDK object is inactive. Keep the
+                // request pending without trying to start a coroutine on an inactive host.
+                _retryScheduled = true;
+                _retryDeadline = Time.realtimeSinceStartupAsDouble;
+                return false;
+            }
             CancelPendingRetry();
             _inFlight = true;
+            _waitingForResponse = true;
+            _inFlightDeadline = Time.realtimeSinceStartupAsDouble + InFlightTimeoutSeconds;
             _watchdog = _host.StartCoroutine(Watchdog());
             return true;
         }
@@ -57,6 +72,7 @@ namespace AMZNGoDSDK.Runtime
         {
             CancelWatchdog();
             _inFlight = false;
+            _waitingForResponse = false;
             _failedAttempts = 0;
             _retryOnForeground = false;
         }
@@ -65,11 +81,12 @@ namespace AMZNGoDSDK.Runtime
         {
             CancelWatchdog();
             _inFlight = false;
+            _waitingForResponse = false;
 
             // Каталог шлётся батчами и НЕ ходит через TryBegin: одна волна сбоя даёт
             // OnFailure на каждый батч. Пока ретрай уже назначен, дубли не копим — иначе
             // попытки исчерпываются одной волной, а корутины плодятся параллельно.
-            if (_pendingRetry != null)
+            if (_retryScheduled)
                 return;
 
             if (_failedAttempts >= Delays.Length)
@@ -83,11 +100,14 @@ namespace AMZNGoDSDK.Runtime
 
             float delay = Delays[_failedAttempts];
             _failedAttempts++;
-            _pendingRetry = _host.StartCoroutine(RetryAfter(delay));
+            _retryScheduled = true;
+            _retryDeadline = Time.realtimeSinceStartupAsDouble + delay;
+            ResumePendingRetry();
         }
 
         public void OnForeground()
         {
+            ResumeAfterActivation();
             if (!_retryOnForeground || _inFlight)
                 return;
             _retryOnForeground = false;
@@ -100,29 +120,72 @@ namespace AMZNGoDSDK.Runtime
             CancelWatchdog();
             CancelPendingRetry();
             _inFlight = false;
+            _waitingForResponse = false;
             _failedAttempts = 0;
             _retryOnForeground = false;
         }
 
-        private IEnumerator Watchdog()
+        private bool HostIsActive => _host != null && _host.gameObject.activeInHierarchy;
+
+        /// <summary>Preserve deadlines when Unity stops this host's coroutines.</summary>
+        public void SuspendForDeactivation()
         {
-            yield return new WaitForSecondsRealtime(InFlightTimeoutSeconds);
-            _watchdog = null;
+            CancelWatchdog();
+            StopPendingRetryCoroutine();
+        }
 
-            if (!_inFlight)
-                yield break;
+        public void ResumeAfterActivation()
+        {
+            if (!HostIsActive)
+                return;
+            ExpireIfNeeded();
+            if (_inFlight && _waitingForResponse && _watchdog == null)
+                _watchdog = _host.StartCoroutine(Watchdog());
+            ResumePendingRetry();
+        }
 
+        /// <summary>The full response arrived; keep single-flight while game callbacks run.</summary>
+        public void FinishWaitingForResponse()
+        {
+            _waitingForResponse = false;
+            CancelWatchdog();
+        }
+
+        public void ExpireIfNeeded()
+        {
+            if (!_inFlight || !_waitingForResponse || Time.realtimeSinceStartupAsDouble < _inFlightDeadline)
+                return;
+            CancelWatchdog();
             Debug.LogWarning("[AMZNGoDSDK] In-flight IAP operation timed out with no response — failing the run");
+            // The owner invalidates its session/RequestIds and completes existing restore
+            // callbacks before TryBegin can admit a replacement run.
             if (_onTimeout != null)
                 _onTimeout();
             else
                 OnFailure();
         }
 
-        private IEnumerator RetryAfter(float seconds)
+        private IEnumerator Watchdog()
         {
-            yield return new WaitForSecondsRealtime(seconds);
+            while (_inFlight && _waitingForResponse && Time.realtimeSinceStartupAsDouble < _inFlightDeadline)
+                yield return new WaitForSecondsRealtime((float)Math.Max(0,
+                    _inFlightDeadline - Time.realtimeSinceStartupAsDouble));
+            _watchdog = null;
+            ExpireIfNeeded();
+        }
+
+        private void ResumePendingRetry()
+        {
+            if (_retryScheduled && _pendingRetry == null && HostIsActive)
+                _pendingRetry = _host.StartCoroutine(RetryAfter());
+        }
+
+        private IEnumerator RetryAfter()
+        {
+            yield return new WaitForSecondsRealtime((float)Math.Max(0,
+                _retryDeadline - Time.realtimeSinceStartupAsDouble));
             _pendingRetry = null;
+            _retryScheduled = false;
             _retryAction?.Invoke();
         }
 
@@ -135,6 +198,12 @@ namespace AMZNGoDSDK.Runtime
         }
 
         private void CancelPendingRetry()
+        {
+            _retryScheduled = false;
+            StopPendingRetryCoroutine();
+        }
+
+        private void StopPendingRetryCoroutine()
         {
             if (_pendingRetry == null)
                 return;

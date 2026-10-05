@@ -444,14 +444,12 @@ namespace AMZNGoDSDK.Runtime
             // crosspromo_video_click заменён на них.
             CrossPromoAnalytics.ReportClicked(placement, data);
 
-            // Бэкенд-клик (cp_click) больше НЕ уходит здесь «сам по себе»: он отправляется и
-            // ДОЖИДАЕТСЯ внутри SendClickTracking, перед открытием стора. Открывать стор
-            // первым нельзя: приложение сворачивается, Unity встаёт на паузу и GET клика
-            // может не доехать никогда.
+            // Оба канала стартуют на модуле: Adjust не задерживает сохранение backend-клика,
+            // а уничтожение оверлея не прерывает незавершённую отправку.
             var module = CrossPromoModule.Instance;
             if (module != null)
             {
-                module.StartCoroutine(TrackThenOpen(config, paidAppId, placement));
+                module.StartCoroutine(TrackThenOpen(module, config, paidAppId, placement));
             }
             else
             {
@@ -459,7 +457,7 @@ namespace AMZNGoDSDK.Runtime
                 // магазин открывался, клик не отправлялся, в логе было пусто. Теперь ошибка
                 // громкая, а Adjust-клик всё же пытаемся отправить best-effort.
                 Debug.LogError("[CrossPromo] CrossPromoModule.Instance is null — клик НЕ отправлен на бэкенд! Открываю стор best-effort.");
-                StartCoroutine(SendClickTracking(config, paidAppId, placement));
+                StartCoroutine(SendExternalClickTracking(config));
                 if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
                     Application.OpenURL(config.RedirectUrl);
             }
@@ -470,45 +468,38 @@ namespace AMZNGoDSDK.Runtime
         /// по CTA не ощущался зависшим), затем открывает стор. Незавершённые ретраи продолжаются
         /// в фоне на модуле.
         /// </summary>
-        private static IEnumerator TrackThenOpen(PromoConfiguration config, string paidAppId, string placement)
+        private static IEnumerator TrackThenOpen(CrossPromoModule module, PromoConfiguration config, string paidAppId, string placement)
         {
-            var module = CrossPromoModule.Instance;
-            bool trackingDone = false;
-
-            if (module != null)
-                module.StartCoroutine(RunClickTracking(config, paidAppId, placement, () => trackingDone = true));
-            else
-                trackingDone = true;
-
+            bool backendDone = false;
+            bool externalDone = false;
             float deadline = Time.realtimeSinceStartup + ClickTrackingTimeoutSeconds;
-            while (!trackingDone && Time.realtimeSinceStartup < deadline)
+
+            // Единственный backend cp_click. Ожидание device ID и HTTP внутри Analytics
+            // не должно зависеть от Adjust GET или внешнего TrackingUrl.
+            module.StartCoroutine(RunClickTracking(
+                module.TrackClickRoutine(paidAppId, placement), () => backendDone = true));
+            module.StartCoroutine(RunClickTracking(
+                SendExternalClickTracking(config), () => externalDone = true));
+
+            while ((!backendDone || !externalDone) && Time.realtimeSinceStartup < deadline)
                 yield return null;
 
-            if (!trackingDone)
+            if (!backendDone || !externalDone)
                 Debug.LogWarning($"[CrossPromoExoNativeOverlay] Click tracking still in flight after {ClickTrackingTimeoutSeconds}s — opening store, tracking continues in background");
 
             if (!string.IsNullOrWhiteSpace(config.RedirectUrl))
                 Application.OpenURL(config.RedirectUrl);
         }
 
-        private static IEnumerator RunClickTracking(PromoConfiguration config, string paidAppId, string placement, Action onDone)
+        private static IEnumerator RunClickTracking(IEnumerator tracking, Action onDone)
         {
-            yield return SendClickTracking(config, paidAppId, placement);
+            yield return tracking;
             onDone?.Invoke();
         }
 
-        private static IEnumerator SendClickTracking(PromoConfiguration config, string paidAppId, string placement)
+        private static IEnumerator SendExternalClickTracking(PromoConfiguration config)
         {
-            // Ждём КАЖДЫЙ канал клика: и Adjust-ссылку, и наш бэкенд (cp_click). Раньше
-            // бэкенд-клик уходил «сам по себе», его никто не ждал — стор открывался, приложение
-            // сворачивалось, и запрос умирал на полпути. TrackClickRoutine к тому же кладёт
-            // событие на диск (enqueue-first), поэтому даже недосланный клик долетит позже.
-            var adjust = CrossPromoAdjustTracking.SendGet(CrossPromoAdjustTracking.BuildClickUrl(config));
-            var backend = CrossPromoModule.Instance?.TrackClickRoutine(paidAppId, placement);
-
-            yield return adjust;
-            if (backend != null)
-                yield return backend;
+            yield return CrossPromoAdjustTracking.SendGet(CrossPromoAdjustTracking.BuildClickUrl(config));
 
             if (CrossPromoAdjustTracking.IsHttpUrl(config.TrackingUrl))
             {

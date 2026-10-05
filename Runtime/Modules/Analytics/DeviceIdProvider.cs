@@ -34,6 +34,29 @@ namespace AMZNGoDSDK.Runtime
         private static string _pendingRawId;
         private static bool _requestInFlight;
         private static float _lastRequestTime = float.NegativeInfinity;
+        private static bool _sessionValidated;
+        private static string _validatedRawId;
+        private static string _validatedHash;
+        private static int _requestGeneration;
+        private static int _requestSequence;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticState() => BeginSession();
+
+        /// <summary>Persistent IDs are never trusted before a fresh system/fallback read.</summary>
+        internal static void BeginSession()
+        {
+            _sessionValidated = false;
+            _validatedRawId = null;
+            _validatedHash = null;
+            _pendingRawId = null;
+            _requestInFlight = false;
+            _lastRequestTime = float.NegativeInfinity;
+            _requestGeneration++;
+#if !AMZN_ADJUST_ENABLED
+            _resolvedWithoutFireId = false;
+#endif
+        }
 
 #if !AMZN_ADJUST_ENABLED
         // Только для сборок без Adjust: если системное чтение не удалось, фолбэка нет.
@@ -43,33 +66,36 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>Raw (unhashed) Fire ID for Adjust tracker URLs. Empty when unavailable.</summary>
         public static string RawDeviceId =>
-            !string.IsNullOrEmpty(GetCachedDeviceIdHash())
-                ? PlayerPrefs.GetString(CacheKeyRaw, "")
-                : _pendingRawId;
+            !string.IsNullOrEmpty(TryResolveAndCache()) ? _validatedRawId : null;
 
         /// <summary>Adjust URL parameter name. Always "fire_adid" — no other source is used.</summary>
         public static string DeviceIdParamName => FireAdIdParam;
 
         public static string GetCachedDeviceIdHash()
         {
-            if (!PlayerPrefs.HasKey(CacheKey))
-                return null;
+            if (_sessionValidated)
+                return _validatedHash;
 
-            // На устройствах, обновившихся с версии с фолбэками, в кэше может лежать хэш,
-            // посчитанный из adid или android_id. Такой идентификатор больше не годится —
-            // выбрасываем его и перезапрашиваем Fire ID.
-            string cachedParam = PlayerPrefs.GetString(CacheKeyParam, "");
-            if (cachedParam != FireAdIdParam)
+            // A valid-looking saved hash can belong to a reset ID, a previous profile,
+            // or an all-zero ID accepted by older SDKs. Verify the current source first.
+            if (TryReadFireAdIdFromSystem(out var systemId))
             {
-                Debug.Log($"{Tag} Discarding legacy cached device id (param='{cachedParam}') — only {FireAdIdParam} is accepted.");
-                PlayerPrefs.DeleteKey(CacheKey);
-                PlayerPrefs.DeleteKey(CacheKeyRaw);
-                PlayerPrefs.DeleteKey(CacheKeyParam);
-                PlayerPrefs.Save();
-                return null;
+                if (IsUsableId(systemId))
+                    return CacheAndReturn(systemId);
+                ClearPersistentCache();
+                _pendingRawId = null;
+                _validatedRawId = null;
+                _validatedHash = string.Empty;
+                _sessionValidated = true;
+                _requestGeneration++;
+                _requestInFlight = false;
+                return string.Empty;
             }
 
-            return PlayerPrefs.GetString(CacheKey);
+            // A failed read is not permission to reuse an unverified identifier.
+            // Adjust may still provide a fresh value; keep null while it is pending.
+            ClearPersistentCache();
+            return null;
         }
 
         /// <summary>
@@ -85,18 +111,11 @@ namespace AMZNGoDSDK.Runtime
         public static string TryResolveAndCache()
         {
             var cached = GetCachedDeviceIdHash();
-            if (!string.IsNullOrEmpty(cached))
-            {
-                Debug.Log($"{Tag} Using cached device_id_hash: {cached}");
+            if (cached != null)
                 return cached;
-            }
-
-            // Fire OS отвечает синхронно и без Adjust, в том числе без AMZN_ADJUST_ENABLED.
-            if (TryReadFireAdIdFromSystem(out var systemId))
-                return systemId != null ? CacheAndReturn(systemId) : string.Empty;
 
             // Adjust используется только как фолбэк, если системное чтение не удалось.
-            if (!string.IsNullOrEmpty(_pendingRawId))
+            if (IsUsableId(_pendingRawId))
                 return CacheAndReturn(_pendingRawId);
 
 #if !AMZN_ADJUST_ENABLED
@@ -158,17 +177,43 @@ namespace AMZNGoDSDK.Runtime
 
         private static string CacheAndReturn(string rawId)
         {
-            Debug.Log($"{Tag} Fire ID received: {rawId}");
+            if (!IsUsableId(rawId))
+                return null;
+            rawId = rawId.Trim();
             var hash = HashDeviceId(rawId);
             if (string.IsNullOrEmpty(hash))
                 return null;
 
-            PlayerPrefs.SetString(CacheKey, hash);
-            PlayerPrefs.SetString(CacheKeyRaw, rawId);
-            PlayerPrefs.SetString(CacheKeyParam, FireAdIdParam);
-            PlayerPrefs.Save();
-            Debug.Log($"{Tag} Cached device_id_hash={hash}, param={FireAdIdParam}");
+            if (PlayerPrefs.GetString(CacheKey, "") != hash ||
+                PlayerPrefs.GetString(CacheKeyRaw, "") != rawId ||
+                PlayerPrefs.GetString(CacheKeyParam, "") != FireAdIdParam)
+            {
+                PlayerPrefs.SetString(CacheKey, hash);
+                PlayerPrefs.SetString(CacheKeyRaw, rawId);
+                PlayerPrefs.SetString(CacheKeyParam, FireAdIdParam);
+                PlayerPrefs.Save();
+            }
+            _validatedRawId = rawId;
+            _validatedHash = hash;
+            _sessionValidated = true;
+            _pendingRawId = null;
+            _requestInFlight = false;
+            _requestGeneration++;
             return hash;
+        }
+
+        private static bool IsUsableId(string rawId) =>
+            !string.IsNullOrWhiteSpace(rawId) && rawId.Trim() != ZeroFireAdId;
+
+        private static void ClearPersistentCache()
+        {
+            if (!PlayerPrefs.HasKey(CacheKey) && !PlayerPrefs.HasKey(CacheKeyRaw) &&
+                !PlayerPrefs.HasKey(CacheKeyParam))
+                return;
+            PlayerPrefs.DeleteKey(CacheKey);
+            PlayerPrefs.DeleteKey(CacheKeyRaw);
+            PlayerPrefs.DeleteKey(CacheKeyParam);
+            PlayerPrefs.Save();
         }
 
         public static string HashDeviceId(string rawId)
@@ -197,15 +242,22 @@ namespace AMZNGoDSDK.Runtime
 
             _requestInFlight = true;
             _lastRequestTime = now;
+            int generation = _requestGeneration;
+            int sequence = ++_requestSequence;
             Debug.Log($"{Tag} Requesting AmazonAdId from Adjust SDK fallback...");
 
             try
             {
                 AdjustSdk.Adjust.GetAmazonAdId(amazonAdId =>
                 {
-                    _requestInFlight = false;
+                    // Ignore an old identity session, but accept a delayed successful
+                    // response from a timed-out request within this same session.
+                    if (generation != _requestGeneration)
+                        return;
+                    if (sequence == _requestSequence)
+                        _requestInFlight = false;
 
-                    if (!string.IsNullOrWhiteSpace(amazonAdId) && amazonAdId.Trim() != ZeroFireAdId)
+                    if (IsUsableId(amazonAdId))
                     {
                         Debug.Log($"{Tag} Adjust.GetAmazonAdId callback received: {amazonAdId}");
                         _pendingRawId = amazonAdId;

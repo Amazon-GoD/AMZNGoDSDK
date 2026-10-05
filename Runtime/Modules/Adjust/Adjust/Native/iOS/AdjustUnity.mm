@@ -423,7 +423,7 @@ extern "C"
         }];
     }
 
-    void _AdjustGetAttribution(AdjustDelegateAttributionGetter callback) {
+    void _AdjustGetAttribution(int callbackId, AdjustDelegateAttributionGetter callback) {
         [Adjust attributionWithCompletionHandler:^(ADJAttribution * _Nullable attribution) {
             // TODO: nil checks
             NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
@@ -452,11 +452,11 @@ extern "C"
                                                                    length:[dataAttribution length]
                                                                  encoding:NSUTF8StringEncoding];
             const char* attributionCString = [stringAttribution UTF8String];
-            callback(attributionCString);
+            callback(attributionCString, callbackId);
         }];
     }
 
-    void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, AdjustDelegateAttributionGetter callback) {
+    void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAttributionGetter callback) {
         [Adjust attributionWithTimeout:timeoutInMilliseconds completionHandler:^(ADJAttribution * _Nullable attribution) {
             if (attribution != nil) {
                 NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
@@ -485,27 +485,27 @@ extern "C"
                                                                        length:[dataAttribution length]
                                                                      encoding:NSUTF8StringEncoding];
                 const char* attributionCString = [stringAttribution UTF8String];
-                callback(attributionCString);
+                callback(attributionCString, callbackId);
             } else {
                 // pass NULL when attribution is nil - C# callback will handle it
-                callback(NULL);
+                callback(NULL, callbackId);
             }
         }];
     }
 
-    void _AdjustGetAdid(AdjustDelegateAdidGetter callback) {
+    void _AdjustGetAdid(int callbackId, AdjustDelegateAdidGetter callback) {
         [Adjust adidWithCompletionHandler:^(NSString * _Nullable adid) {
             // TODO: nil checks
-            callback([adid UTF8String]);
+            callback([adid UTF8String], callbackId);
         }];
     }
 
-    void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, AdjustDelegateAdidGetter callback) {
+    void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAdidGetter callback) {
         [Adjust adidWithTimeout:timeoutInMilliseconds completionHandler:^(NSString * _Nullable adid) {
             if (adid != nil) {
-                callback([adid UTF8String]);
+                callback([adid UTF8String], callbackId);
             } else {
-                callback(NULL);
+                callback(NULL, callbackId);
             }
         }];
     }
@@ -540,14 +540,15 @@ extern "C"
     }
 
     void _AdjustGetThirdPartySharingSettingsWithTimeout(int timeoutInMilliseconds,
+                                                        int callbackId,
                                                         AdjustDelegateThirdPartySharingGetter callback) {
         [Adjust thirdPartySharingSettingsWithTimeout:timeoutInMilliseconds
                                    completionHandler:^(ADJThirdPartySharingResult * _Nullable thirdPartySharingResult) {
             if (thirdPartySharingResult != nil && thirdPartySharingResult.thirdPartySharingSettingsJson != nil) {
-                callback([thirdPartySharingResult.thirdPartySharingSettingsJson UTF8String]);
+                callback([thirdPartySharingResult.thirdPartySharingSettingsJson UTF8String], callbackId);
             } else {
                 // pass NULL when third party sharing settings are not available - C# callback will handle it
-                callback(NULL);
+                callback(NULL, callbackId);
             }
         }];
     }

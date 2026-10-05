@@ -1,6 +1,5 @@
 #if AMZN_APPMETRICA_ENABLED
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Io.AppMetrica.Editor.Features;
 using UnityEditor;
@@ -51,38 +50,9 @@ namespace Io.AppMetrica.Editor {
         }
 
         internal static void UpdateDependencyState(string name, bool isEnabled) {
-            string[] assets = AssetDatabase.FindAssets(name);
-
-            if (assets.Length == 0) {
-                Log($"Cannot find dependency file with name - {name}");
-                return;
-            }
-
-            string templateFileName = $"{name}Template.xml";
-            string templateGuid = assets.FirstOrDefault(a =>
-                Path.GetFileName(AssetDatabase.GUIDToAssetPath(a)) == templateFileName);
-
-            if (templateGuid == null) {
-                Log($"Cannot find template for dependency - {name}");
-                return;
-            }
-
-            string templatePath = AssetDatabase.GUIDToAssetPath(templateGuid);
-            string filePath = $"{Application.dataPath}/Editor/{name}.xml";
-
-            if (isEnabled) {
-                if (File.Exists(filePath) &&
-                    File.ReadAllBytes(filePath).SequenceEqual(File.ReadAllBytes(templatePath))) {
-                    return;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-                File.Copy(templatePath, filePath, overwrite: true);
-            }
-            else if (File.Exists(filePath)) {
-                File.Delete(filePath);
-                File.Delete(filePath + ".meta");
-            }
+            if (name != AMZNGoDSDK.Editor.AppMetricaAppHudDependencies.DependencyName)
+                throw new System.ArgumentException("Unsupported AppMetrica dependency: " + name, nameof(name));
+            AMZNGoDSDK.Editor.AppMetricaAppHudDependencies.Synchronize(isEnabled);
         }
 
         private static void ApplyDefines() {

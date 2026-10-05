@@ -20,7 +20,6 @@ namespace AMZNGoDSDK.Editor
     /// <summary>Installs build tools per project, without replacing Unity's JDK or SDK.</summary>
     public static class AndroidToolchainInstaller
     {
-        private const string GradleSha256 = "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78";
         private static Task<Paths> _installation;
         private static CancellationTokenSource _cancellation;
         private static bool _reloadLocked;
@@ -164,7 +163,7 @@ namespace AMZNGoDSDK.Editor
                 if (!GradleValid(paths.Gradle))
                 {
                     _status = "Загрузка Gradle 8.13…";
-                    InstallArchive(client, "https://services.gradle.org/distributions/gradle-8.13-bin.zip", GradleSha256,
+                    InstallArchive(client, AndroidToolchainSettings.GradleDistributionUrl, AndroidToolchainSettings.GradleDistributionSha256,
                         false, paths.Gradle, request.Os, token);
                 }
                 if (!SdkValid(paths.Sdk))

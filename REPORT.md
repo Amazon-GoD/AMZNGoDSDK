@@ -1,3 +1,63 @@
+# Dev Crew report
+
+**Date:** 2026-10-05
+**Task:** Исправить все замечания ревью изменений после v1.0.7, кроме legacy Unity Video Player.
+
+## What was done
+
+- ✅ Подготовлены исправления 14 пунктов R01–R06, E01–E04, E06, D01, C01 и C02; E05 исключён по указанию пользователя.
+- ✅ Android wrapper/порядок callbacks, UPM manifest и AppHud dependencies приведены к согласованному поведению.
+- ✅ Исправлены видимость баннеров, приоритет очереди, сохранение кликов, Fire ID и iOS Adjust callbacks.
+- ✅ Устранены зависание IAP после деактивации, ошибки повторного Restore и перезапись игровой паузы.
+- ✅ Три независимых направления ревью одобрили код; финальная изолированная компиляция Run3 прошла 30/30.
+- ⚠️ Device/Editor/Gradle/Xcode-приёмка не выполнялась; сценарии и доказательства собраны в [FIXES.md](Documentation~/Reviews/2026-10-05/FIXES.md).
+
+## Architecture
+
+Editor-слой окончательно применяет Android-профиль и синхронизирует optional AppHud XML независимо от define модуля.
+CP использует единую проверку видимости; Analytics сохраняет клики перед ожиданием ID и ограничивает частые баннерные показы.
+iOS bridge маршрутизирует ответы Adjust по request ID, IAP хранит абсолютные deadlines и разделяет callbacks прогонов.
+InternetConnection восстанавливает timeScale только при сохранении собственной паузы; публичные API потребителя сохранены.
+
+## Files created/modified
+
+- `Editor/SdkModulesSettings/{AndroidGradleToolchain,AndroidToolchainSettings,AndroidToolchainInstaller}.cs` — Android profile/wrapper.
+- `Editor/SdkDependencies/{AppLovinPackageInstaller,ManifestJson}.cs` — manifest; `Editor/ConditionalCompilation/{AppMetricaAppHudDependencies,EdmDependencyGenerator,DisabledModuleBuildGuard}.cs` и `AppMetricaResolver.cs` — AppHud, с meta новых helpers.
+- `Runtime/Modules/Analytics/{AnalyticsEventQueue,AnalyticsModule,DeviceIdProvider}.cs` — очередь, identity и lifecycle.
+- `CrossPromoBanner.cs`, `CrossPromoExoNativeOverlay.cs` — баннеры/клики; `AdjustiOS.cs`, `AdjustUnity.h`, `AdjustUnity.mm` — согласованный iOS bridge.
+- `IapRetryScheduler.cs`, `InAppPurchaseModule.cs`, `InternetConnectionModule.cs` — восстановление операций и пауза.
+- `CHANGELOG.md`, документация SDK/Adjust, `Documentation~/Reviews/2026-10-05/FIXES.md`, `REPORT.md` — миграция, ограничения и результат; полный список путей есть в FIXES.
+
+## Review results
+
+Итог: согласованные исправления одобрены без оставшихся новых замечаний в проверенной области; закрыты P1 — 1, P2 — 10, P3 — 1 и два условных пункта C01/C02.
+E05 P2 остаётся исключённым; `CrossPromoVideoOverlay.cs` и `CrossPromoModule.cs` не изменены.
+Три независимых направления ревью и повторные проверки после доработок; точное число внутренних итераций ревью не протоколировалось. Проведены три прохода компиляции, финальный — Run3.
+Работа подготовлена в `tmp/review-fixes-v107` от `safety` на `ac39f9c`; push не выполнялся, `main` не использовалась.
+
+## Tests
+
+Testing disabled — skipped: AGENTS.md отключает тестер; Unity Test Framework не запускался.
+Финальная Unity 2022.3.60f1 Roslyn-компиляция Run3: 30/30 PASS, 0 errors; все 330 source/asmdef SHA-256 совпали до/после.
+Проверены Editor Android, Android Player, iOS Adjust C# и пять вариантов module defines; native ABI сопоставлен статически.
+Это изолированная компиляция, не сборка Unity/iOS/Android; предупреждения и ограничения сохранены в [локальном COMPILATION.md](Temp~/ReviewFixes20261005/COMPILATION.md).
+
+## Known limitations
+
+Unity Editor, Android export/Gradle, device runtime, Objective-C/Xcode и IL2CPP не запускались; iOS C# использовал доступные managed engine references.
+Очередь ограничена 50 событиями: 51-е обычное событие может вытеснить старое; ранний клик может остаться unattributed после остановки процесса.
+Native MAX поддерживает скрытие, но не частичную Unity alpha; одинаковые записи timeScale=0 разных владельцев неразличимы.
+При миграции dedup-marker возможна дополнительная IAP/attribution отправка; нужна серверная идемпотентность. Legacy E05 остаётся без исправления по запросу.
+
+## How to use
+
+Начать с [FIXES.md](Documentation~/Reviews/2026-10-05/FIXES.md): там матрица исправлений, ссылки на код, совместимость и приёмка.
+В consumer сохранить SDK Settings, проверить AdMob Android App ID, экспортировать и собрать Android-проект через его wrapper.
+Выполнить описанные device/lifecycle сценарии; для iOS отдельно проверить native build и конкурентные Adjust getters.
+При общем игровом pause controller отключить `PauseGameWhenOffline` и использовать события модуля сети.
+
+---
+
 # MAX standard banner size — 2026-10-05
 
 Implemented on `tmp/max-standard-banner-size`, created from `safety` at `e38d29c`.
