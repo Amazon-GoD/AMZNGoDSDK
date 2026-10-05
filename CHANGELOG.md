@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-10-05
+
 ### Fixed
 
+- Require Firebase App, Analytics, Crashlytics and Remote Config assemblies
+  before enabling the Firebase module's compilation define.
 - Keep exported Android Gradle wrappers on 8.13 with its pinned SHA-256 and
   apply the AGP profile after MAX's Android postprocessor.
 - Handle empty UPM scoped registries without invalid JSON. Resolve AppHud
@@ -54,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Read Fire advertising ID directly from Fire OS settings after reading the
+  advertising opt-out preference; use Adjust only if system access fails.
+  ID use remains limited to conversion tracking and reporting.
+- Cache SDK Settings dependency status and refresh it after relevant changes,
+  keeping repeated package and file checks out of window rendering while
+  preserving unsaved settings and dependency retry controls.
 - Automatically remove prohibited Android SDK dependencies and known carriers
   (ironSource, Unity Ads, AppMetrica Fyber revenue bridge and MAX Quality Service).
   Verify final APK/AAB DEX definitions and references after every Android build;
@@ -76,12 +86,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Import the Unity IAP product catalog from SDK Settings without requiring
+  Unity Purchasing. Prefer AmazonApps store IDs, preserve existing products
+  and skip duplicate SKUs; set subscription terms and save the draft to apply.
+- Switch the Cross-Promo banner to a bottom-center MAX banner after JSON
+  interstitial/rewarded caps are exhausted. Keep CP when MAX is not ready;
+  expose a default-off debug override for testing cap exhaustion.
+- Install Google AdMob with the required MAX Android adapters and configure
+  its Android App ID in SDK Settings. Validate the effective ID before builds;
+  an empty SDK field preserves an existing MAX Integration Manager value.
 - Configure the built-in Adjust startup Remote Config key in SDK Settings → Firebase.
   Existing configs retain `adjust_enable`; each custom key keeps its own offline decision cache.
 - Configure AppLovin interstitial and rewarded AD Placements in SDK Settings.
   Pass them to MAX shows; SDK analytics and revenue reports retain canonical
   placement values. Empty or missing settings retain
   the existing `interstitial` and `rewarded` defaults.
+
+### Upgrade notes
+
+- Install the stable channel from `#Releases` or pin `#v1.0.8`. This release
+  includes the changes shipped in `v1.0.8-beta.1` and `v1.0.8-beta.2`.
+- Unity 2022.3 remains supported. The enabled MAX stack requires Android API
+  24, 16 adapters plus MAX core, and a valid AdMob Android App ID. See
+  `Documentation~/ANDROID-DEPENDENCIES.md` before updating a consumer project.
+- Legacy Unity Video Player was excluded from the final review fixes. Its
+  known reward-callback issue remains; the detailed scope and limitations are
+  in `Documentation~/Reviews/2026-10-05/FIXES.md`.
+- Validation: 30 isolated C# compiler invocations passed with Unity
+  2022.3.60f1, including module-toggle variants and the managed iOS Adjust
+  bridge. Full Android/iOS builds, Unity runtime and device checks were not
+  rerun for this release; the iOS native bridge still needs Xcode validation.
 
 ## [1.0.7] - 2026-09-22
 

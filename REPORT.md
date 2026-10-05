@@ -1,3 +1,23 @@
+# Release 1.0.8 — source preparation, 2026-10-05
+
+Prepared stable release documentation on `tmp/release-1.0.8`, created from
+`safety` at `556905a`. The changelog closes Unreleased into 1.0.8, includes
+the beta features and review fixes, and records upgrade requirements and
+validation limits. README installation examples pin `v1.0.8`.
+
+Production source code and the development package version remain unchanged.
+The release pipeline sets package version 1.0.8 in its exported UPM tree,
+hides both samples and excludes internal Deploy and IAP Testing content.
+The stable package continues the `Releases` history; source development
+continues on `safety`. Legacy Unity Video Player remains outside the fixes.
+
+The prior 30/30 isolated C# compilation results remain applicable to the
+unchanged source. Full Unity/Gradle/Xcode/device builds were not rerun.
+Release-tree, archive and SSH publication evidence is recorded locally under
+the ignored `Temp~/ReleaseBuild/Runner108` folder by the release runner.
+
+---
+
 # Dev Crew report
 
 **Date:** 2026-10-05
