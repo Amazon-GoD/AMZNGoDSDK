@@ -1,6 +1,5 @@
 #if AMZN_APPMETRICA_ENABLED
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Io.AppMetrica.Editor.Features;
 using UnityEditor;
@@ -32,6 +31,7 @@ namespace Io.AppMetrica.Editor {
         {
             [SupportedFeatureNames.AppHudAdapter] = new AppHudAdapter("AppHudAdapter"),
             [SupportedFeatureNames.IronSourceAdRevenueV8] = new IronSourceAdRevenueV8("IronSourceAdRevenueV8"),
+            [SupportedFeatureNames.IronSourceAdRevenueV9] = new IronSourceAdRevenueV9("IronSourceAdRevenueV9"),
             [SupportedFeatureNames.FyberAdRevenueV3] = new FyberAdRevenueV3("FyberAdRevenueV3"),
             [SupportedFeatureNames.TopOnAdRevenueV2] = new TopOnAdRevenueV2("TopOnAdRevenueV2"),
         };
@@ -48,33 +48,34 @@ namespace Io.AppMetrica.Editor {
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
         }
-        
+
         internal static void UpdateDependencyState(string name, bool isEnabled) {
-            string[] assets = AssetDatabase.FindAssets(name);
-
-            if (assets.Length == 0) {
-                Log($"Cannot find dependency file with name - {name}");
-                return;
-            }
-
-            if (assets.Length == 2 && isEnabled) {
-                return;
-            }
-
-            string asset = assets[0];
-            string path = AssetDatabase.GUIDToAssetPath(asset);
-            
-            string filePath = $"{Application.dataPath}/Editor/{name}.xml";
-            if (isEnabled && !File.Exists(filePath)) {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-                File.Copy(path, filePath);
-            } else if (!isEnabled && File.Exists(filePath)) {
-                File.Delete(filePath);
-                File.Delete(filePath + ".meta");
-            }
+            if (name != AMZNGoDSDK.Editor.AppMetricaAppHudDependencies.DependencyName)
+                throw new System.ArgumentException("Unsupported AppMetrica dependency: " + name, nameof(name));
+            AMZNGoDSDK.Editor.AppMetricaAppHudDependencies.Synchronize(isEnabled);
         }
 
         private static void ApplyDefines() {
+            var enabledDefines = SupportedFeatures.Values
+                .Where(feature => feature.IsEnabled)
+                .Select(feature => feature.DefineName)
+                .ToArray();
+
+            var autoEnabledDefines = SupportedFeatures.Values
+                .Where(feature => feature.IsAutoEnabled)
+                .Select(feature => feature.AutoEnabledDefineName)
+                .ToArray();
+
+            var disabledDefines = SupportedFeatures.Values
+                .Where(feature => !feature.IsEnabled)
+                .Select(feature => feature.DefineName)
+                .ToArray();
+
+            var autoDisabledDefines = SupportedFeatures.Values
+                .Where(feature => !feature.IsAutoEnabled)
+                .Select(feature => feature.AutoEnabledDefineName)
+                .ToArray();
+
             foreach (var supportedTarget in SupportedBuildTargets) {
 #if UNITY_2021_3_OR_NEWER
                 PlayerSettings.GetScriptingDefineSymbols(supportedTarget, out var currentDefines);
@@ -83,26 +84,6 @@ namespace Io.AppMetrica.Editor {
                     .GetScriptingDefineSymbolsForGroup(supportedTarget)
                     .Split(DefineSplits, System.StringSplitOptions.RemoveEmptyEntries);
 #endif
-                var enabledDefines = SupportedFeatures.Values
-                    .Where(feature => feature.IsEnabled)
-                    .Select(feature => feature.DefineName)
-                    .ToArray();
-
-                var autoEnabledDefines = SupportedFeatures.Values
-                    .Where(feature => feature.IsAutoEnabled)
-                    .Select(feature => feature.AutoEnabledDefineName)
-                    .ToArray();
-                
-                var disabledDefines = SupportedFeatures.Values
-                    .Where(feature => !feature.IsEnabled)
-                    .Select(feature => feature.DefineName)
-                    .ToArray();
-                
-                var autoDisabledDefines = SupportedFeatures.Values
-                    .Where(feature => !feature.IsAutoEnabled)
-                    .Select(feature => feature.AutoEnabledDefineName)
-                    .ToArray();
-
                 var newDefines = currentDefines
                     .Union(enabledDefines)
                     .Union(autoEnabledDefines)
@@ -114,7 +95,6 @@ namespace Io.AppMetrica.Editor {
 #else
                 PlayerSettings.SetScriptingDefineSymbolsForGroup(supportedTarget, string.Join(";", newDefines));
 #endif
-                AssetDatabase.SaveAssets();
             }
         }
         
@@ -127,6 +107,7 @@ namespace Io.AppMetrica.Editor {
         internal const string AppHudAdapter = nameof(AppHudAdapter);
         internal const string AppLovinAdRevenueV8 = nameof(AppLovinAdRevenueV8);
         internal const string IronSourceAdRevenueV8 = nameof(IronSourceAdRevenueV8);
+        internal const string IronSourceAdRevenueV9 = nameof(IronSourceAdRevenueV9);
         internal const string FyberAdRevenueV3 = nameof(FyberAdRevenueV3);
         internal const string TopOnAdRevenueV2 = nameof(TopOnAdRevenueV2);
     }

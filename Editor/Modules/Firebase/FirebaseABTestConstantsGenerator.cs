@@ -20,6 +20,10 @@ namespace AMZNGoDSDK.Editor
         internal static bool Validate(FirebaseSettingData settings, out string error)
         {
             error = null;
+            string adjustKey = settings?.AdjustEnableRemoteConfigKey?.Trim();
+            if (!string.IsNullOrEmpty(adjustKey) && !Runtime.FirebaseSettingData.IsValidRemoteConfigKey(adjustKey))
+                return Fail("Adjust Remote Config Key — 1–100 символов: латиница, цифры, '_'; первый символ — буква или '_'.", out error);
+            adjustKey = Runtime.FirebaseSettingData.NormalizeAdjustEnableRemoteConfigKey(adjustKey);
             if (!IsValidPath(OutputPath(settings)))
                 return Fail("Файл констант должен быть .cs внутри Assets, вне Editor и скрытых папок; путь без '..'.", out error);
 
@@ -48,11 +52,11 @@ namespace AMZNGoDSDK.Editor
                 }
                 if (!groups.Contains(test.GetDefaultGroup()))
                     return Fail($"{label}: выберите существующую Default Group.", out error);
-                if (test.TestId == Runtime.FirebaseSettingData.AdjustEnableTestId
+                if (test.TestId == adjustKey
                     && (groups.Count != 2 || !groups.Contains(Runtime.FirebaseSettingData.AdjustEnabledGroup)
                         || !groups.Contains(Runtime.FirebaseSettingData.AdjustDisabledGroup)
                         || test.GetDefaultGroup() != Runtime.FirebaseSettingData.AdjustEnabledGroup))
-                    return Fail("Встроенный adjust_enable использует только строковые группы true / false и Default Group = true.", out error);
+                    return Fail($"Встроенный {adjustKey} использует только строковые группы true / false и Default Group = true.", out error);
             }
             return true;
         }

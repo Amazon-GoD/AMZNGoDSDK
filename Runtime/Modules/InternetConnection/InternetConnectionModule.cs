@@ -182,10 +182,11 @@ namespace AMZNGoDSDK.Runtime
             if (!_settings.PauseGameWhenOffline || _pausedByModule)
                 return;
 
+            // An existing pause belongs to the game. We did not change its value and
+            // must not restore it later after the game has already resumed itself.
+            if (Time.timeScale == 0f)
+                return;
             _savedTimeScale = Time.timeScale;
-            if (_savedTimeScale <= 0f)
-                _savedTimeScale = 1f;
-
             Time.timeScale = 0f;
             _pausedByModule = true;
         }
@@ -195,7 +196,10 @@ namespace AMZNGoDSDK.Runtime
             if (!_pausedByModule)
                 return;
 
-            Time.timeScale = Mathf.Max(0.01f, _savedTimeScale);
+            // A nonzero value means another owner resumed/changed time while offline.
+            // Do not overwrite that newer decision with our earlier snapshot.
+            if (Time.timeScale == 0f)
+                Time.timeScale = _savedTimeScale;
             _pausedByModule = false;
         }
 
@@ -291,7 +295,7 @@ namespace AMZNGoDSDK.Runtime
 
             HideBanner();
 
-            // Never leave the game frozen if the SDK is torn down while offline.
+            // Restore the previous time scale, including a pause owned by the game.
             RestoreTimeScale();
         }
     }

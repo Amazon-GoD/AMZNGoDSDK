@@ -25,20 +25,23 @@
 @property (nonatomic) AdjustDelegateSessionSuccessCallback sessionSuccessCallback;
 @property (nonatomic) AdjustDelegateSessionFailureCallback sessionFailureCallback;
 @property (nonatomic) AdjustDelegateDeferredDeeplinkCallback deferredDeeplinkCallback;
+@property (nonatomic) AdjustDelegateRemoteTriggerCallback remoteTriggerCallback;
 @property (nonatomic) AdjustDelegateSkanUpdatedCallback skanUpdatedCallback;
+@property (nonatomic) AdjustDelegateThirdPartySharingSettingsChangedCallback thirdPartySharingSettingsChangedCallback;
 
 /**
  * @brief Get instance of the AdjustUnityDelegate with properly swizzled callback methods.
  *
- * @param swizzleAttributionCallback        Indicator whether attribution callback should be swizzled or not.
- * @param swizzleEventSuccessCallback       Indicator whether event success callback should be swizzled or not.
- * @param swizzleEventFailureCallback       Indicator whether event failure callback should be swizzled or not.
- * @param swizzleSessionSuccessCallback     Indicator whether session success callback should be swizzled or not.
- * @param swizzleSessionFailureCallback     Indicator whether session failure callback should be swizzled or not.
- * @param swizzleDeferredDeeplinkCallback   Indicator whether deferred deep link callback should be swizzled or not.
- * @param swizzleSkanUpdatedCallback        Indicator whether SKAD conversion value update callback should be swizzled or not.
- * @param shouldLaunchDeferredDeeplink      Indicator whether SDK should launch deferred deep link by default or not.
- * @param adjustUnityGameObjectName         Name of the Unity game object that loads Adjust script.
+ * @param attributionCallback           Attribution callback function pointer.
+ * @param eventSuccessCallback          Event success callback function pointer.
+ * @param eventFailureCallback          Event failure callback function pointer.
+ * @param sessionSuccessCallback        Session success callback function pointer.
+ * @param sessionFailureCallback        Session failure callback function pointer.
+ * @param deferredDeeplinkCallback      Deferred deep link callback function pointer.
+ * @param remoteTriggerCallback         Remote trigger callback function pointer.
+ * @param skanUpdatedCallback           SKAdNetwork conversion value update callback function pointer.
+ * @param thirdPartySharingSettingsChangedCallback  Third party sharing settings changed callback function pointer.
+ * @param shouldLaunchDeferredDeeplink  Indicator whether SDK should launch deferred deep link by default or not.
  *
  * @return AdjustUnityDelegate object instance with properly swizzled callback methods.
  */
@@ -48,7 +51,9 @@
                   sessionSuccessCallback:(AdjustDelegateSessionSuccessCallback)sessionSuccessCallback
                   sessionFailureCallback:(AdjustDelegateSessionFailureCallback)sessionFailureCallback
                 deferredDeeplinkCallback:(AdjustDelegateDeferredDeeplinkCallback)deferredDeeplinkCallback
+                   remoteTriggerCallback:(AdjustDelegateRemoteTriggerCallback)remoteTriggerCallback
                      skanUpdatedCallback:(AdjustDelegateSkanUpdatedCallback)skanUpdatedCallback
+thirdPartySharingSettingsChangedCallback:(AdjustDelegateThirdPartySharingSettingsChangedCallback)thirdPartySharingSettingsChangedCallback
             shouldLaunchDeferredDeeplink:(BOOL)shouldLaunchDeferredDeeplink;
 
 /**

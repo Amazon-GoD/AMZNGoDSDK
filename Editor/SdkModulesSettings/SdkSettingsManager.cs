@@ -248,8 +248,14 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 SdkKey = runtimeSettings.SdkKey,
+                AdMobAndroidAppId = runtimeSettings.AdMobAndroidAppId,
                 InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
+                BannerAdUnitId = runtimeSettings.BannerAdUnitId,
+                InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    runtimeSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
+                RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    runtimeSettings.RewardedAdPlacement, Runtime.AppLovinSettingData.DefaultRewardedAdPlacement),
                 VerboseLogging = runtimeSettings.VerboseLogging
             };
         }
@@ -264,6 +270,8 @@ namespace AMZNGoDSDK.Editor
                 EnableAnalytics = runtimeSettings.EnableAnalytics,
                 EnableCrashlytics = runtimeSettings.EnableCrashlytics,
                 EnableRemoteConfig = runtimeSettings.EnableRemoteConfig,
+                AdjustEnableRemoteConfigKey = string.IsNullOrWhiteSpace(runtimeSettings.AdjustEnableRemoteConfigKey)
+                    ? Runtime.FirebaseSettingData.AdjustEnableTestId : runtimeSettings.AdjustEnableRemoteConfigKey,
                 RemoteConfigFetchTimeoutSeconds = runtimeSettings.RemoteConfigFetchTimeoutSeconds > 0
                     ? runtimeSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
                 RemoteConfigMinimumFetchIntervalSeconds = runtimeSettings.RemoteConfigMinimumFetchIntervalSeconds > 0
@@ -398,6 +406,8 @@ namespace AMZNGoDSDK.Editor
 
             AppLovinSettingsSynchronizer.Synchronize();
 
+            SdkDependencyManager.RequestInstall();
+
             return true;
         }
 
@@ -522,8 +532,14 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 SdkKey = editorSettings.SdkKey,
+                AdMobAndroidAppId = editorSettings.AdMobAndroidAppId,
                 InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = editorSettings.RewardedAdUnitId,
+                BannerAdUnitId = editorSettings.BannerAdUnitId,
+                InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    editorSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
+                RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
+                    editorSettings.RewardedAdPlacement, Runtime.AppLovinSettingData.DefaultRewardedAdPlacement),
                 VerboseLogging = editorSettings.VerboseLogging
             };
         }
@@ -537,6 +553,8 @@ namespace AMZNGoDSDK.Editor
                 EnableAnalytics = editorSettings.EnableAnalytics,
                 EnableCrashlytics = editorSettings.EnableCrashlytics,
                 EnableRemoteConfig = editorSettings.EnableRemoteConfig,
+                AdjustEnableRemoteConfigKey = Runtime.FirebaseSettingData.NormalizeAdjustEnableRemoteConfigKey(
+                    editorSettings.AdjustEnableRemoteConfigKey),
                 RemoteConfigFetchTimeoutSeconds = editorSettings.RemoteConfigFetchTimeoutSeconds > 0
                     ? editorSettings.RemoteConfigFetchTimeoutSeconds : Runtime.FirebaseSettingData.DefaultFetchTimeoutSeconds,
                 RemoteConfigMinimumFetchIntervalSeconds = editorSettings.RemoteConfigMinimumFetchIntervalSeconds > 0

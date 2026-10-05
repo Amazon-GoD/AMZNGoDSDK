@@ -59,12 +59,14 @@ namespace Io.AppMetrica.Editor {
             EditorGUILayout.LabelField("AdRevenue AutoCollection Networks", _titleLabelStyle);
             using (new EditorGUILayout.VerticalScope("box")) {
                 
-                _settings.IsAppLovinAdRevenueV8Enabled = AutoEnabledToggle("AppLovin", _settings.IsAppLovinAdRevenueV8Enabled, _settings.IsAppLovinAdRevenueV8AutoEnabled);
                 GUILayout.Space(5);
-                
-                _settings.IsIronSourceAdRevenueV8Enabled = AutoEnabledToggle("IronSource", _settings.IsIronSourceAdRevenueV8Enabled, _settings.IsIronSourceAdRevenueV8AutoEnabled);
+
+                _settings.IsIronSourceAdRevenueV8Enabled = AutoEnabledToggle("IronSource V8", _settings.IsIronSourceAdRevenueV8Enabled, _settings.IsIronSourceAdRevenueV8AutoEnabled);
                 GUILayout.Space(5);
-                
+
+                _settings.IsIronSourceAdRevenueV9Enabled = AutoEnabledToggle("IronSource V9 (LevelPlay)", _settings.IsIronSourceAdRevenueV9Enabled, _settings.IsIronSourceAdRevenueV9AutoEnabled);
+                GUILayout.Space(5);
+
                 _settings.IsFyberAdRevenueV3Enabled = AutoEnabledToggle("Fyber", _settings.IsFyberAdRevenueV3Enabled, _settings.IsFyberAdRevenueV3AutoEnabled);
                 GUILayout.Space(5);
                 
@@ -102,10 +104,10 @@ namespace Io.AppMetrica.Editor {
 
         private class Settings {
             internal bool IsAppHudEnabled;
-            internal bool IsAppLovinAdRevenueV8Enabled;
-            internal bool IsAppLovinAdRevenueV8AutoEnabled;
             internal bool IsIronSourceAdRevenueV8Enabled;
             internal bool IsIronSourceAdRevenueV8AutoEnabled;
+            internal bool IsIronSourceAdRevenueV9Enabled;
+            internal bool IsIronSourceAdRevenueV9AutoEnabled;
             internal bool IsFyberAdRevenueV3Enabled;
             internal bool IsFyberAdRevenueV3AutoEnabled;
             internal bool IsTopOnAdRevenueV2Enabled;
@@ -114,10 +116,10 @@ namespace Io.AppMetrica.Editor {
 
             internal Settings() {
                 IsAppHudEnabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.AppHudAdapter].IsEnabled;
-                IsAppLovinAdRevenueV8Enabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.AppLovinAdRevenueV8].IsEnabled;
-                IsAppLovinAdRevenueV8AutoEnabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.AppLovinAdRevenueV8].IsAutoEnabled;
                 IsIronSourceAdRevenueV8Enabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV8].IsEnabled;
                 IsIronSourceAdRevenueV8AutoEnabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV8].IsAutoEnabled;
+                IsIronSourceAdRevenueV9Enabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV9].IsEnabled;
+                IsIronSourceAdRevenueV9AutoEnabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV9].IsAutoEnabled;
                 IsFyberAdRevenueV3Enabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.FyberAdRevenueV3].IsEnabled;
                 IsFyberAdRevenueV3AutoEnabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.FyberAdRevenueV3].IsAutoEnabled;
                 IsTopOnAdRevenueV2Enabled = AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.TopOnAdRevenueV2].IsEnabled;
@@ -129,8 +131,8 @@ namespace Io.AppMetrica.Editor {
                 try {
                     AppMetricaSettings.DisableWatcher();
                     AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.AppHudAdapter].IsManualEnabled = IsAppHudEnabled;
-                    AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.AppLovinAdRevenueV8].IsManualEnabled = IsAppLovinAdRevenueV8Enabled;
                     AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV8].IsManualEnabled = IsIronSourceAdRevenueV8Enabled;
+                    AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.IronSourceAdRevenueV9].IsManualEnabled = IsIronSourceAdRevenueV9Enabled;
                     AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.FyberAdRevenueV3].IsManualEnabled = IsFyberAdRevenueV3Enabled;
                     AppMetricaResolver.SupportedFeatures[SupportedFeatureNames.TopOnAdRevenueV2].IsManualEnabled = IsTopOnAdRevenueV2Enabled;
                     AppMetricaSettings.SetBool("AutoFeaturesDetection.Enabled", IsAutoFeaturesDetectionEnabled);

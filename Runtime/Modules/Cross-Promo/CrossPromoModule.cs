@@ -55,6 +55,25 @@ namespace AMZNGoDSDK.Runtime
         private const string InterstitialPlacement = "interstitial";
         private const string RewardedPlacement = "rewarded";
 
+        /// <summary>Debug override маршрутизации; не меняет cap, конфиг или PlayerPrefs.</summary>
+        public bool DebugForceCapsExhausted { get; set; }
+
+        private bool IsSimulatingExhaustedCaps
+        {
+            get
+            {
+#if AMZN_APPLOVIN_ENABLED
+                if (!Enabled || !DebugForceCapsExhausted)
+                    return false;
+
+                var mediation = SdkModuleRegistry.Get<AppLovinModule>();
+                return mediation != null && mediation.Enabled;
+#else
+                return false;
+#endif
+            }
+        }
+
         public PromosConfigurationInfo LoadedConfig => _crossPromoConfig;
 
         /// <summary>True when a video is ready to play. For the UnityVideoPlayer backend this
@@ -94,7 +113,11 @@ namespace AMZNGoDSDK.Runtime
         /// </para>
         /// </summary>
         public bool HasFill =>
-            _configFetchReturnedVideos && (_crossPromoConfig?.HasAvailableVideos() ?? false);
+            _configFetchReturnedVideos && !IsSimulatingExhaustedCaps && (_crossPromoConfig?.HasAvailableVideos() ?? false);
+
+        // Баннер наследует тот же cap/master-флаг, что и interstitial/rewarded.
+        // Отсутствие загруженного конфига не означает, что его cap уже исчерпан.
+        internal bool ShouldUseAppLovinBanner => Enabled && _configFetchReturnedVideos && !HasFill;
 
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
@@ -498,21 +521,25 @@ namespace AMZNGoDSDK.Runtime
             OnBannerFuncsUpdated?.Invoke(onClose, isNoAds);
         }
 
-        public void TrackImpression(string paidAppId)
+        public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
+
+        public void TrackImpression(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"} → delegating to Analytics");
+            Debug.Log($"[CrossPromoModule] TrackImpression called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
-            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved);
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackImpression(resolved, placement);
 #endif
         }
 
-        public void TrackClick(string paidAppId)
+        public void TrackClick(string paidAppId) => TrackClick(paidAppId, null);
+
+        public void TrackClick(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"} → delegating to Analytics");
+            Debug.Log($"[CrossPromoModule] TrackClick called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics");
 #if AMZN_ANALYTICS_ENABLED
-            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved);
+            SdkModuleRegistry.Get<AnalyticsModule>()?.TrackClick(resolved, placement);
 #endif
         }
 
@@ -521,15 +548,17 @@ namespace AMZNGoDSDK.Runtime
         /// дождаться перед открытием стора. Живёт на модуле (он переживает закрытие оверлея),
         /// поэтому незавершённые ретраи не обрываются вместе с оверлеем.
         /// </summary>
-        public IEnumerator TrackClickRoutine(string paidAppId)
+        public IEnumerator TrackClickRoutine(string paidAppId) => TrackClickRoutine(paidAppId, null);
+
+        public IEnumerator TrackClickRoutine(string paidAppId, string placement)
         {
             var resolved = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
-            Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"} → delegating to Analytics (awaited)");
+            Debug.Log($"[CrossPromoModule] TrackClickRoutine called, paidAppId={resolved ?? "null"}, placement={placement} → delegating to Analytics (awaited)");
 #if AMZN_ANALYTICS_ENABLED
             var analytics = SdkModuleRegistry.Get<AnalyticsModule>();
             if (analytics == null)
                 yield break;
-            yield return analytics.TrackClickRoutine(resolved);
+            yield return analytics.TrackClickRoutine(resolved, placement);
 #else
             yield break;
 #endif

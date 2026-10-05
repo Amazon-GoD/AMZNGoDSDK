@@ -5,7 +5,7 @@ using UnityEngine;
 namespace AMZNGoDSDK.Editor
 {
     /// <summary>
-    /// Build-time исключение нативных плагинов ВЫКЛЮЧЕННЫХ модулей.
+    /// Build-time исключение нативных плагинов выключенных модулей и запрещённых Android SDK.
     ///
     /// Почему так: Define Constraints в PluginImporter для нативных плагинов
     /// (.jar/.aar/.so/.java/.mm) Unity игнорирует — By Design, поле работает только
@@ -23,8 +23,8 @@ namespace AMZNGoDSDK.Editor
     ///
     /// Требования к делегату: за один билд он опрашивается многократно (~90 раз),
     /// поэтому это константный `path => false` без логики и побочных эффектов.
-    /// Делегат вешается ТОЛЬКО на плагины выключенных модулей — плагины включённых
-    /// не трогаем, чтобы не затирать делегаты, выставленные чужим кодом.
+    /// Делегат вешается только на плагины выключенных модулей или распознанных
+    /// запрещённых Android SDK; остальные плагины сохраняют свои делегаты.
     /// </summary>
     public static class NativePluginBuildFilter
     {
@@ -58,6 +58,10 @@ namespace AMZNGoDSDK.Editor
             }
 
             int excluded = 0;
+#if UNITY_ANDROID
+            var settings = SdkSettingsManager.LoadRuntimeSettings();
+            bool stripProhibited = EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android && settings != null && settings.Enabled;
+#endif
             foreach (var importer in PluginImporter.GetAllImporters())
             {
                 string assetPath = importer.assetPath;
@@ -72,7 +76,11 @@ namespace AMZNGoDSDK.Editor
                     }
                 }
 
-                if (underDisabled)
+                bool prohibited = false;
+#if UNITY_ANDROID
+                prohibited = stripProhibited && AppLovinGradleExclusions.IsRemovableLocalLibrary(assetPath);
+#endif
+                if (underDisabled || prohibited)
                 {
                     importer.SetIncludeInBuildDelegate(ExcludeFromBuild);
                     ManagedPaths.Add(assetPath);
@@ -89,7 +97,7 @@ namespace AMZNGoDSDK.Editor
             if (excluded > 0)
             {
                 Debug.Log($"[AMZN GoD SDK] Native plugin build filter: " +
-                          $"{excluded} plugin(s) of disabled modules excluded from build.");
+                          $"{excluded} disabled or prohibited native plugin(s) excluded from build.");
             }
         }
     }

@@ -7,12 +7,12 @@ using UnityEngine;
 
 namespace AMZNGoDSDK.Editor
 {
-    /// <summary>MAX build plugins need the SDK key before runtime initialization.</summary>
+    /// <summary>Synchronizes MAX settings and disables Android Ad Review before vendor build hooks.</summary>
     [InitializeOnLoad]
     internal sealed class AppLovinSettingsSynchronizer : IPreprocessBuildWithReport
     {
-        private const string ErrorMessage = "[AMZNGoDSDK][AppLovin] Не удалось синхронизировать SDK Key " +
-            "с MAX Integration Manager. Проверьте установленный пакет MAX и его AppLovinSettings.";
+        private const string ErrorMessage = "[AMZNGoDSDK][AppLovin] Не удалось синхронизировать SDK Key / AdMob Android App ID " +
+            "или выключить MAX Ad Review (SafeDK). Проверьте установленный пакет MAX и его AppLovinSettings.";
 
         public int callbackOrder => -100;
 
@@ -38,7 +38,7 @@ namespace AMZNGoDSDK.Editor
         {
             try
             {
-                SynchronizeCore();
+                SynchronizeCore(EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android);
             }
             catch (Exception)
             {
@@ -54,7 +54,7 @@ namespace AMZNGoDSDK.Editor
 
             try
             {
-                SynchronizeCore();
+                SynchronizeCore(report.summary.platform == BuildTarget.Android);
             }
             catch (Exception)
             {
@@ -62,15 +62,16 @@ namespace AMZNGoDSDK.Editor
             }
         }
 
-        private static void SynchronizeCore()
+        private static void SynchronizeCore(bool android)
         {
             var settings = SdkSettingsManager.LoadRuntimeSettings();
-            if (settings == null || !settings.Enabled || settings.AppLovin == null || !settings.AppLovin.Enabled)
+            if (settings == null || !settings.Enabled)
                 return;
 
-            var sdkKey = settings.AppLovin.SdkKey;
-            // Empty means the user manages the key in MAX Integration Manager.
-            if (string.IsNullOrWhiteSpace(sdkKey)) return;
+            bool appLovinEnabled = settings.AppLovin != null && settings.AppLovin.Enabled;
+            var sdkKey = appLovinEnabled ? settings.AppLovin.SdkKey : null;
+            var adMobAndroidAppId = appLovinEnabled ? settings.AppLovin.AdMobAndroidAppId : null;
+            if (!android && string.IsNullOrWhiteSpace(sdkKey) && string.IsNullOrWhiteSpace(adMobAndroidAppId)) return;
 
             Type settingsType = null;
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -83,17 +84,45 @@ namespace AMZNGoDSDK.Editor
             if (settingsType == null) return;
 
             var instanceProperty = settingsType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
-            var keyProperty = settingsType.GetProperty("SdkKey", BindingFlags.Public | BindingFlags.Instance);
             var instance = instanceProperty?.GetValue(null) as ScriptableObject;
-            if (instance == null || keyProperty == null || !keyProperty.CanRead || !keyProperty.CanWrite)
+            if (instance == null)
                 throw new InvalidOperationException();
 
-            if (string.Equals(keyProperty.GetValue(instance) as string, sdkKey, StringComparison.Ordinal)) return;
+            // SafeDK can be injected even when our MAX runtime module is disabled or
+            // the publisher manages the SDK key in MAX. Do this before either early return.
+            if (android)
+            {
+                var qualityProperty = settingsType.GetProperty("QualityServiceEnabled", BindingFlags.Public | BindingFlags.Instance);
+                if (qualityProperty == null || qualityProperty.PropertyType != typeof(bool)
+                    || !qualityProperty.CanRead || !qualityProperty.CanWrite)
+                    throw new InvalidOperationException();
+                if ((bool)qualityProperty.GetValue(instance))
+                {
+                    qualityProperty.SetValue(instance, false);
+                    EditorUtility.SetDirty(instance);
+                    AssetDatabase.SaveAssetIfDirty(instance);
+                    Debug.Log("[AMZNGoDSDK][AppLovin] MAX Ad Review выключен: SafeDK содержит ссылки на запрещённые SDK.");
+                }
+            }
 
-            keyProperty.SetValue(instance, sdkKey);
+            SynchronizeStringProperty(settingsType, instance, "SdkKey", sdkKey, "SDK Key");
+            SynchronizeStringProperty(settingsType, instance, "AdMobAndroidAppId", adMobAndroidAppId, "AdMob Android App ID");
+        }
+
+        private static void SynchronizeStringProperty(Type settingsType, ScriptableObject instance,
+            string propertyName, string value, string displayName)
+        {
+            // Empty means the user manages this value in MAX Integration Manager.
+            if (string.IsNullOrWhiteSpace(value)) return;
+            var property = settingsType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (property == null || property.PropertyType != typeof(string) || !property.CanRead || !property.CanWrite)
+                throw new InvalidOperationException();
+            if (string.Equals(property.GetValue(instance) as string, value, StringComparison.Ordinal)) return;
+
+            property.SetValue(instance, value);
             EditorUtility.SetDirty(instance);
             AssetDatabase.SaveAssetIfDirty(instance);
-            Debug.Log("[AMZNGoDSDK][AppLovin] SDK Key синхронизирован с MAX Integration Manager.");
+            Debug.Log("[AMZNGoDSDK][AppLovin] " + displayName + " синхронизирован с MAX Integration Manager.");
         }
     }
 }

@@ -1,0 +1,65 @@
+{
+  "Weight": 1.0,
+  "Videos": [
+    {
+      "Title": "Croko_V_01",
+      "ButtonText": "Download",
+      "VideoUrl": "https://amzngod.space/gordecod0508/08_Croco_H_01_DEC.mp4",
+      "BannerUrl": "https://amzngod.space/2.png",
+      "TrackingUrl": "https://redirect.appmetrica.yandex.com/serve/29458479915757830?utm_source=Vortex_Gor&utm_medium=Gor&utm_campaign=Basket_Gor_1",
+      "RedirectUrl": "amzn://apps/android?initiatePurchaseFlow=true&asin=B0BNW7XRJP",
+      "OverlayShowDelayInSeconds": 4,
+      "Weight": 0.0625,
+      "cap": 2,
+      "position": 1,
+      "adjust_click_url": "https://app.adjust.com/1zg9870p",
+      "adjust_impression_url": "https://view.adjust.com/impression/1zg9870p",
+      "campaign": "crosspromo_test1",
+      "adgroup": "donor_mygame_free",
+      "creative": "DinoMGHVert",
+      "AppPackageName": [
+        "com.angry.crocodile.attack"
+      ]
+    },
+    {
+      "Title": "Hunting_G_011",
+      "ButtonText": "Download",
+      "VideoUrl": "https://amzngod.space/gordecod0508/03_AnimalHunt_H_01_DEC.mp4",
+      "BannerUrl": "https://amzngod.space/5.png",
+      "TrackingUrl": "https://redirect.appmetrica.yandex.com/serve/29458479915757830?utm_source=Vortex_Gor&utm_medium=Gor&utm_campaign=Basket_Gor_1",
+      "RedirectUrl": "amzn://apps/android?initiatePurchaseFlow=true&asin=B0BN4BXFDX",
+      "OverlayShowDelayInSeconds": 4,
+      "Weight": 0.0625,
+      "cap": 1,
+      "position": 2,
+      "adjust_click_url": "https://app.adjust.com/1z7r52qm",
+      "adjust_impression_url": "https://view.adjust.com/impression/1z7r52qm",
+      "campaign": "crosspromo_testcohort1",
+      "adgroup": "donor_mygame_free",
+      "creative": "PaidcohortVert",
+      "AppPackageName": [
+        "com.FilesTechnologies.JungleAnimalHunterPro"
+      ]
+    },
+    {
+      "Title": "Zombie_V_03",
+      "ButtonText": "Play Now",
+      "VideoUrl": "https://amzngod.space/gordecod0508/07_FlyingLimo_H_01_DEC.mp4",
+      "BannerUrl": "https://amzngod.space/4.png",
+      "TrackingUrl": "https://impression.appmetrica.yandex.com/serve/677977041609450275",
+      "RedirectUrl": "amzn://apps/android?initiatePurchaseFlow=true&asin=B0F2QT89BD",
+      "OverlayShowDelayInSeconds": 4,
+      "Weight": 0.0625,
+      "cap": 1,
+      "position": 3,
+      "adjust_click_url": "https://app.adjust.com/1z9c1h12",
+      "adjust_impression_url": "https://view.adjust.com/impression/1z9c1h12",
+      "campaign": "crosspromo_test1",
+      "adgroup": "donor_mygame_free",
+      "creative": "GotostreetBadCatVert",
+      "AppPackageName": [
+        "com.zombie.shooter.fps.offline.shooting"
+      ]
+    }
+  ]
+}

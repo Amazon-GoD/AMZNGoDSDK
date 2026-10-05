@@ -8,12 +8,15 @@ namespace AdjustSdk
 #if UNITY_IOS
     public class AdjustiOS
     {
-        private const string sdkPrefix = "unity5.4.4";
+        private const string sdkPrefix = "unity5.8.0";
 
         // app callbacks as method parameters
         private static List<Action<bool>> appIsEnabledGetterCallbacks;
-        private static List<Action<AdjustAttribution>> appAttributionGetterCallbacks;
-        private static List<Action<string>> appAdidGetterCallbacks;
+        private static readonly Dictionary<int, Action<AdjustAttribution>> appAttributionGetterCallbacks = new Dictionary<int, Action<AdjustAttribution>>();
+        private static readonly Dictionary<int, Action<AdjustThirdPartySharingResult>> appThirdPartySharingGetterCallbacks = new Dictionary<int, Action<AdjustThirdPartySharingResult>>();
+        private static readonly Dictionary<int, Action<string>> appAdidGetterCallbacks = new Dictionary<int, Action<string>>();
+        private static readonly object getterCallbacksLock = new object();
+        private static int nextGetterCallbackId = 0;
         private static List<Action<string>> appIdfaGetterCallbacks;
         private static List<Action<string>> appIdfvGetterCallbacks;
         private static List<Action<string>> appLastDeeplinkGetterCallbacks;
@@ -33,7 +36,9 @@ namespace AdjustSdk
         private static Action<AdjustEventSuccess> appEventSuccessCallback;
         private static Action<AdjustEventFailure> appEventFailureCallback;
         private static Action<string> appDeferredDeeplinkCallback;
+        private static Action<AdjustRemoteTrigger> appRemoteTriggerCallback;
         private static Action<Dictionary<string, string>> appSkanUpdatedCallback;
+        private static Action<AdjustThirdPartySharingResult> appThirdPartySharingSettingsChangedCallback;
 
         // extenral C methods
         private delegate void AdjustDelegateAttributionCallback(string attribution);
@@ -42,7 +47,10 @@ namespace AdjustSdk
         private delegate void AdjustDelegateEventSuccessCallback(string eventSuccess);
         private delegate void AdjustDelegateEventFailureCallback(string eventFailure);
         private delegate void AdjustDelegateDeferredDeeplinkCallback(string callback);
+        private delegate void AdjustDelegateRemoteTriggerCallback(string callback);
         private delegate void AdjustDelegateSkanUpdatedCallback(string callback);
+        private delegate void AdjustDelegateThirdPartySharingSettingsChangedCallback(string thirdPartySharingSettings);
+
         [DllImport("__Internal")]
         private static extern void _AdjustInitSdk(
             string appToken,
@@ -71,13 +79,17 @@ namespace AdjustSdk
             int isAppTrackingTransparencyUsageEnabled,
             int isFirstSessionDelayEnabled,
             int isDeferredDeeplinkOpeningEnabled,
+            int isFbIdReadingEnabled,
+            int isDeviceIdsReadingEnabled,
             AdjustDelegateAttributionCallback attributionCallback,
             AdjustDelegateEventSuccessCallback eventSuccessCallback,
             AdjustDelegateEventFailureCallback eventFailureCallback,
             AdjustDelegateSessionSuccessCallback sessionSuccessCallback,
             AdjustDelegateSessionFailureCallback sessionFailureCallback,
             AdjustDelegateDeferredDeeplinkCallback deferredDeeplinkCallback,
-            AdjustDelegateSkanUpdatedCallback skanUpdatedCallback);
+            AdjustDelegateRemoteTriggerCallback remoteTriggerCallback,
+            AdjustDelegateSkanUpdatedCallback skanUpdatedCallback,
+            AdjustDelegateThirdPartySharingSettingsChangedCallback thirdPartySharingSettingsChangedCallback);
 
         [DllImport("__Internal")]
         private static extern void _AdjustTrackEvent(
@@ -119,13 +131,21 @@ namespace AdjustSdk
         [DllImport("__Internal")]
         private static extern void _AdjustIsEnabled(AdjustDelegateIsEnabledGetter callback);
 
-        private delegate void AdjustDelegateAttributionGetter(string attribution);
+        private delegate void AdjustDelegateAttributionGetter(string attribution, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAttribution(AdjustDelegateAttributionGetter callback);
+        private static extern void _AdjustGetAttribution(int callbackId, AdjustDelegateAttributionGetter callback);
 
-        private delegate void AdjustDelegateAdidGetter(string adid);
+        private delegate void AdjustDelegateAttributionGetterWithTimeout(string attribution, int callbackId);
         [DllImport("__Internal")]
-        private static extern void _AdjustGetAdid(AdjustDelegateAdidGetter callback);
+        private static extern void _AdjustGetAttributionWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAttributionGetterWithTimeout callback);
+
+        private delegate void AdjustDelegateAdidGetter(string adid, int callbackId);
+        [DllImport("__Internal")]
+        private static extern void _AdjustGetAdid(int callbackId, AdjustDelegateAdidGetter callback);
+
+        private delegate void AdjustDelegateAdidGetterWithTimeout(string adid, int callbackId);
+        [DllImport("__Internal")]
+        private static extern void _AdjustGetAdidWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateAdidGetterWithTimeout callback);
 
         private delegate void AdjustDelegateIdfaGetter(string idfa);
         [DllImport("__Internal")]
@@ -142,6 +162,10 @@ namespace AdjustSdk
         private delegate void AdjustDelegateSdkVersionGetter(string sdkVersion);
         [DllImport("__Internal")]
         private static extern void _AdjustGetSdkVersion(AdjustDelegateSdkVersionGetter callback);
+
+        private delegate void AdjustDelegateThirdPartySharingGetter(string thirdPartySharingSettings, int callbackId);
+        [DllImport("__Internal")]
+        private static extern void _AdjustGetThirdPartySharingSettingsWithTimeout(int timeoutInMilliseconds, int callbackId, AdjustDelegateThirdPartySharingGetter callback);
 
         [DllImport("__Internal")]
         private static extern void _AdjustGdprForgetMe();
@@ -292,6 +316,8 @@ namespace AdjustSdk
             int isAdServicesEnabled = AdjustUtils.ConvertBool(adjustConfig.IsAdServicesEnabled);
             int isIdfaReadingEnabled = AdjustUtils.ConvertBool(adjustConfig.IsIdfaReadingEnabled);
             int isIdfvReadingEnabled = AdjustUtils.ConvertBool(adjustConfig.IsIdfvReadingEnabled);
+            int isFbIdReadingEnabled = AdjustUtils.ConvertBool(adjustConfig.IsFbIdReadingEnabled);
+            int isDeviceIdsReadingEnabled = AdjustUtils.ConvertBool(adjustConfig.IsDeviceIdsReadingEnabled);
             int allowSuppressLogLevel = AdjustUtils.ConvertBool(adjustConfig.AllowSuppressLogLevel);
             int isDeferredDeeplinkOpeningEnabled = AdjustUtils.ConvertBool(adjustConfig.IsDeferredDeeplinkOpeningEnabled);
             int isSkanAttributionEnabled = AdjustUtils.ConvertBool(adjustConfig.IsSkanAttributionEnabled);
@@ -303,11 +329,13 @@ namespace AdjustSdk
             int shouldUseSubdomains = AdjustUtils.ConvertBool(adjustConfig.ShouldUseSubdomains);
             int isDataResidency = AdjustUtils.ConvertBool(adjustConfig.IsDataResidency);
             appAttributionCallback = adjustConfig.AttributionChangedDelegate;
+            appThirdPartySharingSettingsChangedCallback = adjustConfig.ThirdPartySharingSettingsChangedDelegate;
             appEventSuccessCallback = adjustConfig.EventSuccessDelegate;
             appEventFailureCallback = adjustConfig.EventFailureDelegate;
             appSessionSuccessCallback = adjustConfig.SessionSuccessDelegate;
             appSessionFailureCallback = adjustConfig.SessionFailureDelegate;
             appDeferredDeeplinkCallback = adjustConfig.DeferredDeeplinkDelegate;
+            appRemoteTriggerCallback = adjustConfig.RemoteTriggerDelegate;
             appSkanUpdatedCallback = adjustConfig.SkanUpdatedDelegate;
 
             _AdjustInitSdk(
@@ -337,13 +365,17 @@ namespace AdjustSdk
                 isAppTrackingTransparencyUsageEnabled,
                 isFirstSessionDelayEnabled,
                 isDeferredDeeplinkOpeningEnabled,
+                isFbIdReadingEnabled,
+                isDeviceIdsReadingEnabled,
                 AttributionCallbackMonoPInvoke,
                 EventSuccessCallbackMonoPInvoke,
                 EventFailureCallbackMonoPInvoke,
                 SessionSuccessCallbackMonoPInvoke,
                 SessionFailureCallbackMonoPInvoke,
                 DeferredDeeplinkCallbackMonoPInvoke,
-                SkanUpdatedCallbackMonoPInvoke);
+                RemoteTriggerCallbackMonoPInvoke,
+                SkanUpdatedCallbackMonoPInvoke,
+                ThirdPartySharingSettingsChangedCallbackMonoPInvoke);
         }
 
         public static void TrackEvent(AdjustEvent adjustEvent)
@@ -533,22 +565,26 @@ namespace AdjustSdk
 
         public static void GetAttribution(Action<AdjustAttribution> callback)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                appAttributionGetterCallbacks = new List<Action<AdjustAttribution>>();
-            }
-            appAttributionGetterCallbacks.Add(callback);
-            _AdjustGetAttribution(AttributionGetterMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAttributionGetterCallbacks, callback);
+            _AdjustGetAttribution(callbackId, AttributionGetterMonoPInvoke);
+        }
+
+        public static void GetAttributionWithTimeout(int timeoutInMilliseconds, Action<AdjustAttribution> callback)
+        {
+            int callbackId = RegisterGetterCallback(appAttributionGetterCallbacks, callback);
+            _AdjustGetAttributionWithTimeout(timeoutInMilliseconds, callbackId, AttributionGetterWithTimeoutMonoPInvoke);
         }
 
         public static void GetAdid(Action<string> callback)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                appAdidGetterCallbacks = new List<Action<string>>();
-            }
-            appAdidGetterCallbacks.Add(callback);
-            _AdjustGetAdid(AdidGetterMonoPInvoke);
+            int callbackId = RegisterGetterCallback(appAdidGetterCallbacks, callback);
+            _AdjustGetAdid(callbackId, AdidGetterMonoPInvoke);
+        }
+
+        public static void GetAdidWithTimeout(int timeoutInMilliseconds, Action<string> callback)
+        {
+            int callbackId = RegisterGetterCallback(appAdidGetterCallbacks, callback);
+            _AdjustGetAdidWithTimeout(timeoutInMilliseconds, callbackId, AdidGetterWithTimeoutMonoPInvoke);
         }
 
         public static void GetIdfa(Action<string> callback)
@@ -589,6 +625,14 @@ namespace AdjustSdk
             }
             appSdkVersionGetterCallbacks.Add(callback);
             _AdjustGetSdkVersion(SdkVersionGetterMonoPInvoke);
+        }
+
+        public static void GetThirdPartySharingSettingsWithTimeout(
+            int timeoutInMilliseconds,
+            Action<AdjustThirdPartySharingResult> callback)
+        {
+            int callbackId = RegisterGetterCallback(appThirdPartySharingGetterCallbacks, callback);
+            _AdjustGetThirdPartySharingSettingsWithTimeout(timeoutInMilliseconds, callbackId, ThirdPartySharingGetterMonoPInvoke);
         }
 
         public static void GdprForgetMe()
@@ -764,6 +808,32 @@ namespace AdjustSdk
             }
         }
 
+        private static int RegisterGetterCallback<T>(Dictionary<int, Action<T>> callbacks, Action<T> callback)
+        {
+            lock (getterCallbacksLock)
+            {
+                // Never reuse an ID while a late native completion could still arrive.
+                int callbackId = checked(++nextGetterCallbackId);
+                callbacks.Add(callbackId, callback);
+                return callbackId;
+            }
+        }
+
+        private static bool TryTakeGetterCallback<T>(Dictionary<int, Action<T>> callbacks, int callbackId, out Action<T> callback)
+        {
+            lock (getterCallbacksLock)
+            {
+                if (!callbacks.TryGetValue(callbackId, out callback))
+                {
+                    return false;
+                }
+
+                // Remove before invoking user code, which may start another getter.
+                callbacks.Remove(callbackId);
+                return true;
+            }
+        }
+
         // MonoPInvokeCallback methods as method parameters
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateIsEnabledGetter))]
         private static void IsEnabledGetterMonoPInvoke(bool isEnabled)
@@ -787,45 +857,54 @@ namespace AdjustSdk
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAttributionGetter))]
-        private static void AttributionGetterMonoPInvoke(string attribution)
+        private static void AttributionGetterMonoPInvoke(string attribution, int callbackId)
         {
-            if (appAttributionGetterCallbacks == null)
-            {
-                return;
-            }
-
             AdjustThreadDispatcher.RunOnMainThread(() =>
             {
-                foreach (Action<AdjustAttribution> callback in appAttributionGetterCallbacks)
+                Action<AdjustAttribution> callback;
+                if (TryTakeGetterCallback(appAttributionGetterCallbacks, callbackId, out callback) && callback != null)
                 {
-                    if (callback != null)
-                    {
-                        callback.Invoke(new AdjustAttribution(attribution));
-                    }
+                    callback.Invoke(attribution == null ? null : new AdjustAttribution(attribution));
                 }
-                appAttributionGetterCallbacks.Clear();
+            });
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAttributionGetterWithTimeout))]
+        private static void AttributionGetterWithTimeoutMonoPInvoke(string attribution, int callbackId)
+        {
+            AttributionGetterMonoPInvoke(attribution, callbackId);
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AdjustDelegateThirdPartySharingGetter))]
+        private static void ThirdPartySharingGetterMonoPInvoke(string thirdPartySharingSettings, int callbackId)
+        {
+            AdjustThreadDispatcher.RunOnMainThread(() =>
+            {
+                Action<AdjustThirdPartySharingResult> callback;
+                if (TryTakeGetterCallback(appThirdPartySharingGetterCallbacks, callbackId, out callback) && callback != null)
+                {
+                    callback.Invoke(thirdPartySharingSettings == null ? null : new AdjustThirdPartySharingResult(thirdPartySharingSettings));
+                }
             });
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAdidGetter))]
-        private static void AdidGetterMonoPInvoke(string adid)
+        private static void AdidGetterMonoPInvoke(string adid, int callbackId)
         {
-            if (appAdidGetterCallbacks == null)
-            {
-                return;
-            }
-
             AdjustThreadDispatcher.RunOnMainThread(() =>
             {
-                foreach (Action<string> callback in appAdidGetterCallbacks)
+                Action<string> callback;
+                if (TryTakeGetterCallback(appAdidGetterCallbacks, callbackId, out callback) && callback != null)
                 {
-                    if (callback != null)
-                    {
-                        callback.Invoke(adid);
-                    }
+                    callback.Invoke(adid);
                 }
-                appAdidGetterCallbacks.Clear();
             });
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AdjustDelegateAdidGetterWithTimeout))]
+        private static void AdidGetterWithTimeoutMonoPInvoke(string adid, int callbackId)
+        {
+            AdidGetterMonoPInvoke(adid, callbackId);
         }
 
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateIdfaGetter))]
@@ -1100,6 +1179,23 @@ namespace AdjustSdk
             });
         }
 
+        [AOT.MonoPInvokeCallback(typeof(AdjustDelegateRemoteTriggerCallback))]
+        private static void RemoteTriggerCallbackMonoPInvoke(string remoteTrigger)
+        {
+            if (appRemoteTriggerCallback == null)
+            {
+                return;
+            }
+
+            AdjustThreadDispatcher.RunOnMainThread(() =>
+            {
+                if (appRemoteTriggerCallback != null)
+                {
+                    appRemoteTriggerCallback(new AdjustRemoteTrigger(remoteTrigger));
+                }
+            });
+        }
+
         [AOT.MonoPInvokeCallback(typeof(AdjustDelegateSkanUpdatedCallback))]
         private static void SkanUpdatedCallbackMonoPInvoke(string skanData)
         {
@@ -1113,6 +1209,29 @@ namespace AdjustSdk
                 if (appSkanUpdatedCallback != null)
                 {
                     appSkanUpdatedCallback.Invoke(AdjustUtils.GetSkanUpdateDataDictionary(skanData));
+                }
+            });
+        }
+
+        [AOT.MonoPInvokeCallback(typeof(AdjustDelegateThirdPartySharingSettingsChangedCallback))]
+        private static void ThirdPartySharingSettingsChangedCallbackMonoPInvoke(string thirdPartySharingSettings)
+        {
+            if (appThirdPartySharingSettingsChangedCallback == null)
+            {
+                return;
+            }
+
+            AdjustThreadDispatcher.RunOnMainThread(() =>
+            {
+                if (appThirdPartySharingSettingsChangedCallback != null)
+                {
+                    // native SDK can deliver null result, so handle it properly
+                    AdjustThirdPartySharingResult adjustThirdPartySharingResult = null;
+                    if (thirdPartySharingSettings != null)
+                    {
+                        adjustThirdPartySharingResult = new AdjustThirdPartySharingResult(thirdPartySharingSettings);
+                    }
+                    appThirdPartySharingSettingsChangedCallback(adjustThirdPartySharingResult);
                 }
             });
         }

@@ -39,9 +39,8 @@ namespace AMZNGoDSDK.Editor
         /// Вне реестра намеренно:
         /// - Firebase — шаблона нет: в модуле только FirebaseModule.cs, нативные
         ///   Firebase-зависимости потребитель ставит сам; при появлении XML — добавить;
-        /// - AppMetricaAppHudAdapterDependencies.xml — фича-адаптер, его копирует в
-        ///   Assets/Editor собственный механизм AppMetrica
-        ///   (AppMetricaResolver.UpdateDependencyState) по тогглу фичи;
+        /// - AppMetricaAppHudAdapterDependencies.xml — фича-адаптер; always-compiled
+        ///   AppMetricaAppHudDependencies синхронизирует его по SDK/module/feature state;
         /// - IAP, InternetConnection, InGameDebugConsole, Analytics — EDM-зависимостей
         ///   не имеют (IAP — vendored jar'ы).
         /// </summary>
@@ -60,6 +59,14 @@ namespace AMZNGoDSDK.Editor
         /// </summary>
         public static void Regenerate()
         {
+            try
+            {
+                AppMetricaAppHudDependencies.Synchronize();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[AMZN GoD SDK] AppHud dependencies synchronization failed: {e.Message}");
+            }
             try
             {
                 RegenerateInternal();
@@ -138,7 +145,7 @@ namespace AMZNGoDSDK.Editor
             WriteIfChanged(Serialize(output));
         }
 
-        private static string ResolveTemplatePath(string templateRelPath)
+        internal static string ResolveTemplatePath(string templateRelPath)
         {
             foreach (var rootPrefix in NativePluginRegistry.SdkRootPrefixes)
             {

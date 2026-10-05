@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using UnityEditor;
@@ -15,12 +16,130 @@ namespace AMZNGoDSDK.Editor
         private readonly HashSet<string> _delete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _backup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _existed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, byte[]> _replace = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> AdapterPins = new HashSet<string>();
         internal string BackupPath { get; private set; }
 
         internal static AppLovinLegacyInstallation CaptureModuleState() => new AppLovinLegacyInstallation();
 
-        internal static bool HasCore => Files().Any(path => !Preserve(path) && IsCorePath(path) &&
+        internal static bool HasProhibitedAdapters
+        {
+            get
+            {
+                var plan = InspectProhibitedAdapters();
+                return plan._delete.Count > 0 || plan._replace.Count > 0;
+            }
+        }
+
+        private static IEnumerable<string> ProhibitedAdapterFiles()
+        {
+            string mediation = Root + "/Mediation";
+            if (!Directory.Exists(mediation)) return Enumerable.Empty<string>();
+            return Directory.GetDirectories(mediation)
+                .Where(directory => ForbiddenAdNetworks.MatchByAdapterFolder(Path.GetFileName(directory)) != null)
+                .SelectMany(directory => FirebaseUnityPackageUtility.Files(directory.Replace('\\', '/')));
+        }
+
+        private static bool IsAdapterCode(string path)
+        {
+            return Regex.IsMatch(path, @"\.(cs|java|kt|dll|aar|jar|so|a|m|mm|h|asmdef|xml|gradle|androidlib)$", RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>Only Android files/nodes are removed; export labels never grant ownership of iOS/shared content.</summary>
+        internal static AppLovinLegacyInstallation InspectProhibitedAdapters()
+        {
+            var plan = new AppLovinLegacyInstallation();
+            foreach (string path in ProhibitedAdapterFiles())
+            {
+                FirebaseUnityPackageUtility.CheckedPath(path);
+                if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || Preserve(path) || IsIosPath(path)) continue;
+                // Always parse dependency XML, including export-labelled files. It can
+                // contain CocoaPods and unrelated Android dependencies in the same file.
+                if (path.EndsWith("Dependencies.xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    byte[] replacement = RemoveProhibitedAndroidNodes(File.ReadAllBytes(path));
+                    if (replacement != null)
+                    {
+                        plan._replace.Add(path, replacement);
+                        plan._backup.Add(path);
+                        plan._backup.Add(path + ".meta");
+                    }
+                    continue;
+                }
+                if (IsSdkFile(path))
+                {
+                    // C#, asmdefs, editor helpers and resources can be shared with iOS.
+                    // A vendor export label identifies ownership, not the target platform.
+                    if (IsAndroidFile(path))
+                    {
+                        plan._delete.Add(path);
+                        plan._delete.Add(path + ".meta");
+                    }
+                }
+                else if (IsAdapterCode(path))
+                    throw new IOException("Автоочистка сохраняет неизвестный файл запрещённого legacy-адаптера: " +
+                        path + ". Удалите адаптер через Integration Manager либо проверьте файл вручную.");
+            }
+            return plan;
+        }
+
+        private static bool IsIosPath(string path)
+        {
+            if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)) path = path.Substring(0, path.Length - 5);
+            return Regex.IsMatch(path, @"/(iOS|tvOS)/|\.(framework|xcframework|bundle)(/|$)|\.(m|mm|h|a|dylib)$",
+                RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsIosOnlyPath(string path)
+        {
+            if (path.IndexOf("/Android/", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            // Managed code, Android binaries and dependency XML can be shared across platforms.
+            return IsIosPath(path) && !Regex.IsMatch(path, @"\.(cs|dll|asmdef|asmref|aar|jar|so|java|kt|gradle|xml)(\.meta)?$", RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsAndroidFile(string path)
+        {
+            return Regex.IsMatch(path, @"\.(aar|jar|java|kt)$", RegexOptions.IgnoreCase) ||
+                path.IndexOf("/Android/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                Regex.IsMatch(path, @"\.(so|gradle)$", RegexOptions.IgnoreCase);
+        }
+
+        private static byte[] RemoveProhibitedAndroidNodes(byte[] bytes)
+        {
+            string original;
+            Encoding encoding;
+            using (var stream = new MemoryStream(bytes))
+            using (var reader = new StreamReader(stream, new UTF8Encoding(false), true))
+            {
+                original = reader.ReadToEnd();
+                encoding = reader.CurrentEncoding;
+            }
+            var xml = new XmlDocument { XmlResolver = null, PreserveWhitespace = true };
+            using (var reader = XmlReader.Create(new StringReader(original), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit }))
+                xml.Load(reader);
+            var prohibited = xml.SelectNodes("/dependencies/androidPackages/androidPackage").Cast<XmlNode>().Where(node =>
+            {
+                string[] coordinate = (node.Attributes?["spec"]?.Value ?? "").Split(':');
+                return coordinate.Length >= 2 && ForbiddenAdNetworks.MatchMavenCoordinate(coordinate[0], coordinate[1]) != null;
+            }).ToArray();
+            if (prohibited.Length == 0) return null;
+            foreach (var node in prohibited) node.ParentNode.RemoveChild(node);
+            using (var output = new MemoryStream())
+            {
+                var writerSettings = new XmlWriterSettings
+                {
+                    Encoding = encoding,
+                    Indent = false,
+                    OmitXmlDeclaration = !xml.ChildNodes.Cast<XmlNode>().Any(node => node is XmlDeclaration),
+                    NewLineChars = original.Contains("\r\n") ? "\r\n" : original.Contains("\n") ? "\n" : "\r",
+                    NewLineHandling = NewLineHandling.Replace,
+                };
+                using (var writer = XmlWriter.Create(output, writerSettings)) xml.Save(writer);
+                return output.ToArray();
+            }
+        }
+
+        internal static bool HasCore => Files().Any(path => !Preserve(path) && !IsIosOnlyPath(path) && IsCorePath(path) &&
             (IsSdkFile(path) || Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|asmdef)$", RegexOptions.IgnoreCase)));
 
         internal static string Description
@@ -91,6 +210,7 @@ namespace AMZNGoDSDK.Editor
                  Regex.IsMatch(Path.GetFileName(path), @"^MaxSdk.*\.asmdef$")));
             foreach (string path in marked.Concat(signatures).Distinct())
             {
+                if (IsIosOnlyPath(path)) continue;
                 FirebaseUnityPackageUtility.CheckedPath(path);
                 if (!path.StartsWith(Root + "/", StringComparison.Ordinal) && !settings.Contains(path) && !Preserve(path) && File.Exists(path))
                     throw new IOException("Обнаружен перемещённый legacy MAX: " + path + ". Перенесите SDK в Assets/MaxSdk перед заменой.");
@@ -125,8 +245,7 @@ namespace AMZNGoDSDK.Editor
                     string id = "com.applovin.mediation.adapters." + network + ".android";
                     if (replace && AppLovinPackageInstaller.Pins.ContainsKey(id))
                     {
-                        if (xml.SelectNodes("/dependencies/iosPods/iosPod").Count != 0)
-                            throw new IOException("Legacy " + match.Groups[1].Value + " содержит iOS-зависимости. Переведите этот адаптер в UPM перед заменой, чтобы сохранить обе платформы.");
+                        // SDK is Android-only; CocoaPods declarations do not block adapter replacement.
                         plan.AdapterPins.Add(id);
                         pinnedRoots.Add(Root + "/Mediation/" + dependency.Substring((Root + "/Mediation/").Length).Split('/')[0] + "/");
                         plan._delete.Add(dependency);
@@ -148,8 +267,8 @@ namespace AMZNGoDSDK.Editor
                     plan._delete.Add(path);
                     if (!path.EndsWith(".meta", StringComparison.Ordinal)) plan._delete.Add(path + ".meta");
                 }
-                else if (Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|m|mm|asmdef)$", RegexOptions.IgnoreCase) ||
-                         path.EndsWith(".cs", StringComparison.Ordinal) && Regex.IsMatch(File.ReadAllText(path), @"\b(class|namespace|struct|enum|interface)\s+(Max[A-Z]|AppLovin)"))
+                else if (!IsIosOnlyPath(path) && (Regex.IsMatch(path, @"\.(dll|aar|jar|so|a|m|mm|asmdef)$", RegexOptions.IgnoreCase) ||
+                         path.EndsWith(".cs", StringComparison.Ordinal) && Regex.IsMatch(File.ReadAllText(path), @"\b(class|namespace|struct|enum|interface)\s+(Max[A-Z]|AppLovin)")))
                     throw new IOException("Неизвестный код legacy MAX: " + path + ". Проверьте его вручную перед заменой.");
             }
             return plan;
@@ -180,6 +299,11 @@ namespace AMZNGoDSDK.Editor
 
         internal void RemoveLegacy()
         {
+            foreach (var replacement in _replace)
+            {
+                FirebaseUnityPackageUtility.CheckedPath(replacement.Key);
+                File.WriteAllBytes(replacement.Key, replacement.Value);
+            }
             foreach (string path in _delete)
             {
                 FirebaseUnityPackageUtility.CheckedPath(path);

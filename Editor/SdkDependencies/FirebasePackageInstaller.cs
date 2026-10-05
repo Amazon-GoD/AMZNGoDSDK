@@ -13,14 +13,14 @@ using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 namespace AMZNGoDSDK.Editor
 {
     /// <summary>
-    /// Явная установка единого набора Firebase; версии Android соответствуют BoM 33.11.0.
-    /// https://firebase.google.com/support/release-notes/unity#version_1280_-_march_27_2025
-    /// https://firebase.google.com/support/release-notes/android#bom_v33-11-0
+    /// Явная установка единого набора Firebase; версии Android соответствуют BoM 34.19.0.
+    /// https://firebase.google.com/support/release-notes/unity#version_13170_-_september_17_2026
+    /// https://firebase.google.com/support/release-notes/android#bom_v34-19-0
     /// </summary>
     [InitializeOnLoad]
     public static class FirebasePackageInstaller
     {
-        public const string UnityVersion = "12.8.0";
+        public const string UnityVersion = "13.17.0";
         public const int MinimumAndroidSdk = 23;
         private const string StateKey = "AMZNGoDSDK.FirebaseInstaller.Status";
         private const string PendingKey = "AMZNGoDSDK.FirebaseInstaller.Pending";
@@ -107,13 +107,13 @@ namespace AMZNGoDSDK.Editor
             return version.Success ? version.Groups[1].Value : "неизвестная версия";
         }
 
-        [MenuItem("AMZN GoD/Firebase/Install Firebase 12.8.0", false, 310)]
+        [MenuItem("AMZN GoD/Firebase/Install Firebase " + UnityVersion, false, 310)]
         public static void InstallFirebaseMenu()
         {
             ConfirmInstallation(false);
         }
 
-        [MenuItem("AMZN GoD/Firebase/Replace with Firebase 12.8.0", false, 311)]
+        [MenuItem("AMZN GoD/Firebase/Replace with Firebase " + UnityVersion, false, 311)]
         public static void ReplaceFirebaseMenu()
         {
             ConfirmInstallation(true);
@@ -139,7 +139,8 @@ namespace AMZNGoDSDK.Editor
                 if (EditorUtility.DisplayDialog("Firebase " + UnityVersion,
                         details + "Состав: Analytics, Remote Config и Crashlytics. " +
                         "Конфиги google-services и настройки AMZN GoD SDK сохраняются.\n\n" +
-                        "Firebase Unity требует Android minSdk 23. После установки Unity перекомпилирует скрипты.",
+                        "Firebase Unity требует Unity 2021 LTS или новее и Android minSdk " + MinimumAndroidSdk +
+                        ". Для iOS требуется iOS 15+ и Xcode 26.2+. После установки Unity перекомпилирует скрипты.",
                         action, "Отмена"))
                     _ = InstallAsync(replaceExisting);
             }
@@ -175,7 +176,40 @@ namespace AMZNGoDSDK.Editor
                     "После завершения установки повторите загрузку Firebase.");
         }
 
-        private static async Task InstallAsync(bool replaceExisting)
+        /// <summary>Checks pinned versions and every installed file listed by the Firebase manifests.</summary>
+        internal static bool IsRequiredInstallationReady
+        {
+            get
+            {
+                _installedStatus = null;
+                if (!IsRequiredVersionInstalled) return false;
+                try
+                {
+                    FirebaseUnityPackageUtility.ValidatePinned(FirebaseUnityPackageUtility.ResolveInstalledPath);
+                    return true;
+                }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+                catch (System.Xml.XmlException) { return false; }
+            }
+        }
+
+        /// <summary>Installs only an enabled Firebase module, using the same verified transaction as the UI.</summary>
+        public static async Task EnsureRequiredAsync()
+        {
+            var settings = SdkSettingsManager.LoadSettings();
+            if (settings == null || !settings.Enabled || settings.Firebase == null || !settings.Firebase.Enabled) return;
+            if (IsRequiredInstallationReady) return;
+            if (IsBusy || AppLovinPackageInstaller.IsBusy)
+                throw new InvalidOperationException("Другая установка SDK ещё выполняется.");
+            await InstallAsync(HasInstallation, true);
+            FirebaseUnityPackageUtility.ValidatePinned(FirebaseUnityPackageUtility.ResolveInstalledPath);
+            _installedStatus = null;
+            if (!IsRequiredVersionInstalled)
+                throw new IOException("Не подтверждён полный комплект Firebase " + UnityVersion + ". " + Status);
+        }
+
+        private static async Task InstallAsync(bool replaceExisting, bool throwOnError = false)
         {
             if (IsBusy || AppLovinPackageInstaller.IsBusy) return;
             _cancellation = new CancellationTokenSource();
@@ -228,6 +262,8 @@ namespace AMZNGoDSDK.Editor
                 CheckProject();
                 var settings = SdkSettingsManager.LoadSettings();
                 bool enabled = settings != null && settings.Enabled && settings.Firebase != null && settings.Firebase.Enabled;
+                if (throwOnError && !enabled)
+                    throw new OperationCanceledException("Модуль Firebase отключён до завершения установки.");
                 FirebaseUnityPackageUtility.SetDependencyState(files, enabled);
                 var previous = FirebaseUnityPackageUtility.ExistingFiles(files);
                 Progress("Комплект проверен. Установка файлов", 1, cancellation);
@@ -257,12 +293,14 @@ namespace AMZNGoDSDK.Editor
             {
                 SessionState.EraseString(PendingKey);
                 SetStatus("Загрузка отменена. Файлы Firebase не изменены.");
+                if (throwOnError) throw;
             }
             catch (FirebaseUnityPackageUtility.FilesUnavailableException ex)
             {
                 SessionState.EraseString(PendingKey);
                 SetStatus(ex.Message);
                 Debug.LogWarning("[FirebaseInstaller] " + ex.Message);
+                if (throwOnError) throw;
                 EditorUtility.DisplayDialog("Firebase: файлы заняты", ex.Message, "OK");
             }
             catch (Exception ex)
@@ -270,6 +308,7 @@ namespace AMZNGoDSDK.Editor
                 SessionState.EraseString(PendingKey);
                 SetStatus("Ошибка установки: " + ex.Message);
                 Debug.LogError("[FirebaseInstaller] " + ex);
+                if (throwOnError) throw;
             }
             finally
             {

@@ -7,7 +7,8 @@ namespace AMZNGoDSDK.Runtime
 {
     public partial class FirebaseModule
     {
-        private const string AdjustStartupCacheKey = "amzn_sdk.adjust_enable";
+        private string _adjustEnableRemoteConfigKey = FirebaseSettingData.AdjustEnableTestId;
+        private string AdjustStartupCacheKey => "amzn_sdk." + _adjustEnableRemoteConfigKey;
         private bool _adjustStartupRequested;
         private bool _adjustStartupDecisionApplied;
 
@@ -29,13 +30,13 @@ namespace AMZNGoDSDK.Runtime
             _adjustStartupRequested = true;
             _forceRemoteConfigFetchOnStartup = true;
             // This key belongs to the SDK. Replace any configured entry with the fixed contract.
-            RemoveTest(FirebaseSettingData.AdjustEnableTestId);
-            RegisterTest(FirebaseSettingData.AdjustEnableTestId, FirebaseSettingData.AdjustEnabledGroup);
-            RegisterFeature(FirebaseSettingData.AdjustEnableTestId, FirebaseSettingData.AdjustEnabledGroup,
+            RemoveTest(_adjustEnableRemoteConfigKey);
+            RegisterTest(_adjustEnableRemoteConfigKey, FirebaseSettingData.AdjustEnabledGroup);
+            RegisterFeature(_adjustEnableRemoteConfigKey, FirebaseSettingData.AdjustEnabledGroup,
                 () => ApplyAdjustStartupDecision(true, applyDecision));
-            RegisterFeature(FirebaseSettingData.AdjustEnableTestId, FirebaseSettingData.AdjustDisabledGroup,
+            RegisterFeature(_adjustEnableRemoteConfigKey, FirebaseSettingData.AdjustDisabledGroup,
                 () => ApplyAdjustStartupDecision(false, applyDecision));
-            Run(FirebaseSettingData.AdjustEnableTestId);
+            Run(_adjustEnableRemoteConfigKey);
 
             // Fetch has its own native timeout. This also bounds dependency/setup/activation waits.
             float deadline = Time.realtimeSinceStartup + _remoteConfigFetchTimeoutSeconds + 5f;
@@ -56,10 +57,10 @@ namespace AMZNGoDSDK.Runtime
         private void ApplyAdjustStartupFallback()
         {
             if (!_adjustStartupRequested || LastRemoteConfigFetchSucceeded) return;
-            if (_remoteGroups.TryGetValue(FirebaseSettingData.AdjustEnableTestId, out string group)
+            if (_remoteGroups.TryGetValue(_adjustEnableRemoteConfigKey, out string group)
                 && (group == FirebaseSettingData.AdjustEnabledGroup || group == FirebaseSettingData.AdjustDisabledGroup)) return;
 
-            _remoteGroups[FirebaseSettingData.AdjustEnableTestId] = PlayerPrefs.GetInt(AdjustStartupCacheKey, 1) == 0
+            _remoteGroups[_adjustEnableRemoteConfigKey] = PlayerPrefs.GetInt(AdjustStartupCacheKey, 1) == 0
                 ? FirebaseSettingData.AdjustDisabledGroup : FirebaseSettingData.AdjustEnabledGroup;
         }
 
@@ -70,7 +71,7 @@ namespace AMZNGoDSDK.Runtime
             _adjustStartupDecisionApplied = true;
             PlayerPrefs.SetInt(AdjustStartupCacheKey, allow ? 1 : 0);
             PlayerPrefs.Save();
-            Debug.Log($"[FirebaseModule] {FirebaseSettingData.AdjustEnableTestId} = {(allow ? "true" : "false")} for this session.");
+            Debug.Log($"[FirebaseModule] {_adjustEnableRemoteConfigKey} = {(allow ? "true" : "false")} for this session.");
         }
     }
 }

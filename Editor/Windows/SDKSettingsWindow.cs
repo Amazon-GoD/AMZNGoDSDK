@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
+using UnityEditor.PackageManager;
 using UnityEngine;
 using AMZNGoDSDK.Runtime;
 
@@ -9,7 +9,38 @@ namespace AMZNGoDSDK.Editor
 {
     public sealed class SDKSettingsWindow : EditorWindow
     {
-        private static Dictionary<string, bool> _dependenciesInfo = new();
+        // InstalledStatus у установщиков кэшируется на 2 секунды. После изменений
+        // ждём истечения этого кэша; в покое повторных проверок нет.
+        private const double StatusRefreshDelaySeconds = 2.1;
+        private Dictionary<string, bool> _dependenciesInfo = new();
+
+        private bool _windowEnabled;
+        private bool _snapshotReady;
+        private bool _snapshotRefreshPending;
+        private double _snapshotRefreshAt;
+        private string _snapshotError;
+        private bool _registryConfigured;
+        private bool _appLovinSavedEnabled;
+        private bool _hasMax;
+        private bool _maxRequiredVersionInstalled;
+        private string _maxInstalledStatus = "Проверка установки MAX…";
+        private string _maxVersionText = "Проверка версии…";
+        private string _replaceMaxText = "Заменить AppLovin";
+        private string _installAdaptersText = "Install Adapters";
+        private string _pinnedAdaptersText;
+        private string _adapterPolicyText;
+        private bool _hasFirebase;
+        private bool _firebaseRequiredVersionInstalled;
+        private string _firebaseInstalledStatus = "Проверка установки Firebase…";
+
+        private bool _lastAppLovinBusy;
+        private bool _lastFirebaseBusy;
+        private bool _lastDependenciesBusy;
+        private bool _lastDependencyInstallerBusy;
+        private bool _lastEditorBusy;
+        private string _lastAppLovinStatus;
+        private string _lastFirebaseStatus;
+        private string _lastDependenciesStatus;
         
         private static GUIStyle _moduleDescriptionStyle;
 
@@ -22,7 +53,7 @@ namespace AMZNGoDSDK.Editor
         {
             var window = GetWindow<SDKSettingsWindow>("AMZN GoD SDK Settings");
             window.minSize = new Vector2(400, 600);
-            window._currentSettings = SdkSettingsManager.LoadSettings();
+            window._currentSettings ??= SdkSettingsManager.LoadSettings();
         }
         
         //[MenuItem("AMZN GoD/Settings/Open SDK Settings", false, 0)]
@@ -37,7 +68,175 @@ namespace AMZNGoDSDK.Editor
         {
             _currentSettings ??= SdkSettingsManager.LoadSettings();
             SdkSettingsManager.MigrateConfigUrl(_currentSettings);
-            LoadDependenciesAsync();
+            _windowEnabled = true;
+            _snapshotReady = false;
+            _snapshotError = null;
+            _snapshotRefreshPending = true;
+            _snapshotRefreshAt = EditorApplication.timeSinceStartup;
+            EditorApplication.update += UpdateStatus;
+            EditorApplication.projectChanged += OnProjectChanged;
+            Undo.undoRedoPerformed += Repaint;
+            UnityEditor.PackageManager.Events.registeredPackages += OnRegisteredPackages;
+            ReadLiveState();
+
+            if (!IsRefreshBlocked) RefreshSnapshot();
+            // Единственная повторная проверка при открытии: первый снимок мог
+            // получить ещё актуальный по TTL кэш другого окна/установщика.
+            _snapshotRefreshPending = true;
+            _snapshotRefreshAt = EditorApplication.timeSinceStartup + StatusRefreshDelaySeconds;
+        }
+
+        private void OnDisable()
+        {
+            _windowEnabled = false;
+            _snapshotRefreshPending = false;
+            EditorApplication.update -= UpdateStatus;
+            EditorApplication.projectChanged -= OnProjectChanged;
+            Undo.undoRedoPerformed -= Repaint;
+            UnityEditor.PackageManager.Events.registeredPackages -= OnRegisteredPackages;
+        }
+
+        private void OnFocus() => InvalidateStatus();
+
+        private void OnProjectChanged() => InvalidateStatus();
+
+        private void OnRegisteredPackages(PackageRegistrationEventArgs args) => InvalidateStatus();
+
+        private void InvalidateStatus()
+        {
+            if (!_windowEnabled) return;
+            bool changed = _snapshotReady || _snapshotError != null;
+            _snapshotReady = false;
+            _snapshotError = null;
+            _snapshotRefreshPending = true;
+            _snapshotRefreshAt = EditorApplication.timeSinceStartup + StatusRefreshDelaySeconds;
+            if (changed) Repaint();
+        }
+
+        private static bool IsEditorBusy => EditorApplication.isCompiling ||
+            EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode;
+
+        private static bool IsRefreshBlocked => IsEditorBusy || AppLovinPackageInstaller.IsBusy ||
+            FirebasePackageInstaller.IsBusy || SdkDependencyManager.IsBusy || DependencyInstaller.IsBusy;
+
+        private bool WasInstallerBusy => _lastAppLovinBusy || _lastFirebaseBusy ||
+            _lastDependenciesBusy || _lastDependencyInstallerBusy;
+
+        private void UpdateStatus()
+        {
+            if (!_windowEnabled) return;
+            bool wasBusy = WasInstallerBusy;
+            bool liveStateChanged = ReadLiveState();
+            if (wasBusy && !WasInstallerBusy) InvalidateStatus();
+            if (liveStateChanged) Repaint();
+
+            if (IsRefreshBlocked) return;
+            double now = EditorApplication.timeSinceStartup;
+            if (_snapshotRefreshPending && now >= _snapshotRefreshAt) RefreshSnapshot();
+        }
+
+        private bool ReadLiveState()
+        {
+            bool appLovinBusy = AppLovinPackageInstaller.IsBusy;
+            bool firebaseBusy = FirebasePackageInstaller.IsBusy;
+            bool dependenciesBusy = SdkDependencyManager.IsBusy;
+            bool dependencyInstallerBusy = DependencyInstaller.IsBusy;
+            bool editorBusy = IsEditorBusy;
+            string appLovinStatus = AppLovinPackageInstaller.Status;
+            string firebaseStatus = FirebasePackageInstaller.Status;
+            string dependenciesStatus = SdkDependencyManager.Status;
+            bool changed = appLovinBusy != _lastAppLovinBusy || firebaseBusy != _lastFirebaseBusy ||
+                dependenciesBusy != _lastDependenciesBusy || dependencyInstallerBusy != _lastDependencyInstallerBusy ||
+                editorBusy != _lastEditorBusy || appLovinStatus != _lastAppLovinStatus ||
+                firebaseStatus != _lastFirebaseStatus || dependenciesStatus != _lastDependenciesStatus;
+            _lastAppLovinBusy = appLovinBusy;
+            _lastFirebaseBusy = firebaseBusy;
+            _lastDependenciesBusy = dependenciesBusy;
+            _lastDependencyInstallerBusy = dependencyInstallerBusy;
+            _lastEditorBusy = editorBusy;
+            _lastAppLovinStatus = appLovinStatus;
+            _lastFirebaseStatus = firebaseStatus;
+            _lastDependenciesStatus = dependenciesStatus;
+            return changed;
+        }
+
+        private void RefreshSnapshot()
+        {
+            _snapshotRefreshPending = false;
+            try
+            {
+                bool registryConfigured = AppLovinPackageInstaller.IsRegistryConfigured();
+                bool appLovinSavedEnabled = AppLovinPackageInstaller.IsModuleEnabledInSavedSettings;
+                string maxInstalledStatus = AppLovinPackageInstaller.InstalledStatus;
+                bool hasMax = AppLovinPackageInstaller.HasInstalledPlugin;
+                bool maxRequiredVersionInstalled = AppLovinPackageInstaller.IsRequiredVersionInstalled;
+                string firebaseInstalledStatus = FirebasePackageInstaller.InstalledStatus;
+                bool hasFirebase = FirebasePackageInstaller.HasInstallation;
+                bool firebaseRequiredVersionInstalled = FirebasePackageInstaller.IsRequiredVersionInstalled;
+                var dependenciesInfo = DependencyInstaller.GetRegisteredDependenciesInstallInfo();
+                var allowedAdapters = AppLovinPackageInstaller.AllowedAdapterPackageIds();
+                var blockedNetworks = AppLovinPackageInstaller.BlockedNetworkNames();
+                var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
+                bool hasPin = AppLovinPackageInstaller.Pins.TryGetValue(
+                    AppLovinPackageInstaller.MaxPluginPackageId, out var maxPin);
+                string maxVersionText = hasPin ? maxPin + " (закреплена)" : "latest";
+                string replaceMaxText = "Заменить AppLovin на " + maxPin;
+                string installAdaptersText = $"Install Adapters ({allowedAdapters.Count})";
+                string pinnedAdaptersText = pinnedAdapters.Count == 0 ? null :
+                    "Проверенный набор адаптеров: Android minSdk 24, compileSdk 36. " +
+                    "Unity 2022.3 использует отдельные инструменты Gradle 8.13 и JDK 17:\n" +
+                    string.Join("\n", pinnedAdapters);
+                string adapterPolicyText = "Плагин и адаптеры ставятся из scoped registry AppLovin " +
+                    "(" + AppLovinPackageInstaller.RegistryUrl + "), Integration Manager для этого не нужен.\n\n" +
+                    "Исключены по стоп-листу: " +
+                    (blockedNetworks.Count == 0 ? "—" : string.Join(", ", blockedNetworks)) +
+                    ". Тот же список проверяется перед каждым билдом (ForbiddenAdNetworks).";
+
+                bool changed = !_snapshotReady || _snapshotError != null ||
+                    registryConfigured != _registryConfigured || appLovinSavedEnabled != _appLovinSavedEnabled ||
+                    hasMax != _hasMax || maxRequiredVersionInstalled != _maxRequiredVersionInstalled ||
+                    maxInstalledStatus != _maxInstalledStatus || maxVersionText != _maxVersionText ||
+                    replaceMaxText != _replaceMaxText || installAdaptersText != _installAdaptersText ||
+                    pinnedAdaptersText != _pinnedAdaptersText || adapterPolicyText != _adapterPolicyText ||
+                    hasFirebase != _hasFirebase || firebaseRequiredVersionInstalled != _firebaseRequiredVersionInstalled ||
+                    firebaseInstalledStatus != _firebaseInstalledStatus || dependenciesInfo.Count != _dependenciesInfo.Count;
+                if (!changed)
+                {
+                    foreach (var dependency in dependenciesInfo)
+                    {
+                        if (!_dependenciesInfo.TryGetValue(dependency.Key, out bool installed) || installed != dependency.Value)
+                        {
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                _registryConfigured = registryConfigured;
+                _appLovinSavedEnabled = appLovinSavedEnabled;
+                _hasMax = hasMax;
+                _maxRequiredVersionInstalled = maxRequiredVersionInstalled;
+                _maxInstalledStatus = maxInstalledStatus;
+                _maxVersionText = maxVersionText;
+                _replaceMaxText = replaceMaxText;
+                _installAdaptersText = installAdaptersText;
+                _pinnedAdaptersText = pinnedAdaptersText;
+                _adapterPolicyText = adapterPolicyText;
+                _hasFirebase = hasFirebase;
+                _firebaseRequiredVersionInstalled = firebaseRequiredVersionInstalled;
+                _firebaseInstalledStatus = firebaseInstalledStatus;
+                _dependenciesInfo = dependenciesInfo;
+                _snapshotError = null;
+                _snapshotReady = true;
+                if (changed) Repaint();
+            }
+            catch (Exception ex)
+            {
+                string error = "Не удалось обновить состояние пакетов SDK: " + ex.Message;
+                bool changed = _snapshotReady || error != _snapshotError;
+                _snapshotReady = false;
+                _snapshotError = error;
+                if (changed) Repaint();
+            }
         }
 
         /// <summary>
@@ -51,22 +250,19 @@ namespace AMZNGoDSDK.Editor
             foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>())
             {
                 window._currentSettings = SdkSettingsManager.LoadSettings();
+                window.InvalidateStatus();
                 window.Repaint();
             }
         }
         
-        private static async void LoadDependenciesAsync()
-        {
-            _dependenciesInfo =
-                await SdkDependencyManager.GetSdkDependenciesInstallInfoAsync();
-            foreach (var window in Resources.FindObjectsOfTypeAll<SDKSettingsWindow>())
-                window.Repaint();
-        }
-
         private void OnGUI()
         {
             _settingsScrollPosition = EditorGUILayout.BeginScrollView(_settingsScrollPosition);
             GUILayout.Space(10);
+
+            if (!_snapshotReady)
+                EditorGUILayout.HelpBox(_snapshotError ?? "Обновление состояния пакетов SDK…",
+                    _snapshotError == null ? MessageType.Info : MessageType.Error);
 
             _currentSettings.Enabled = EditorGUILayout.Toggle("SDK Enabled:", _currentSettings.Enabled);
 
@@ -108,6 +304,7 @@ namespace AMZNGoDSDK.Editor
                 {
                     if (SdkSettingsManager.SaveSettings(_currentSettings))
                     {
+                        InvalidateStatus();
                         EditorUtility.DisplayDialog("Success", 
                             "Settings saved successfully!\n\n" +
                             "Define symbols have been updated for conditional compilation.\n" +
@@ -128,6 +325,10 @@ namespace AMZNGoDSDK.Editor
 
             // Dependencies section
             GUILayout.Label("Required External Dependencies:", EditorStyles.boldLabel);
+#if UNITY_ANDROID
+            if (GUILayout.Button("Состояние инструментов Android"))
+                AndroidToolchainWindow.ShowWindow();
+#endif
 
             _dependenciesScrollPosition = EditorGUILayout.BeginScrollView(_dependenciesScrollPosition, GUILayout.Height(200));
 
@@ -135,7 +336,7 @@ namespace AMZNGoDSDK.Editor
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-                bool isInstalled = _dependenciesInfo[dependency.Key];
+                bool isInstalled = dependency.Value;
                 EditorGUILayout.LabelField($"{dependency.Key}: {(isInstalled ? "installed" : "missing")}", EditorStyles.boldLabel);
                 
                 EditorGUILayout.EndVertical();
@@ -147,17 +348,14 @@ namespace AMZNGoDSDK.Editor
             GUILayout.Space(20);
 
             EditorGUILayout.HelpBox(
-                $"Total dependencies configured: {_dependenciesInfo.Count}\n\n" +
-                "Dependencies will be automatically checked when Unity starts.\nIf any dependencies are missing, SDK will be install it again.", 
+                "Зависимости включённых модулей и инструменты Android подготавливаются автоматически. " +
+                "Для первой установки нужен интернет.\n\n" + SdkDependencyManager.Status,
                 MessageType.Info);
 
-            if (_dependenciesInfo.Any(x => x.Value == false))
+            using (new EditorGUI.DisabledScope(SdkDependencyManager.IsBusy || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
             {
-                using (new EditorGUI.DisabledScope(AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy))
-                {
-                    if (GUILayout.Button("Install Miss Dependencies", GUILayout.Height(15)))
-                        SdkDependencyManager.InstallMissingDependencies();
-                }
+                if (GUILayout.Button("Проверить / повторить установку зависимостей"))
+                    SdkDependencyManager.Retry();
             }
 
             GUILayout.Space(10);
@@ -261,11 +459,35 @@ namespace AMZNGoDSDK.Editor
                             "Если пусто, используется ключ из Integration Manager."),
                             _currentSettings.AppLovin.SdkKey);
 
+                    _currentSettings.AppLovin.AdMobAndroidAppId = EditorGUILayout
+                        .TextField(new GUIContent("AdMob Android App ID",
+                            "App ID приложения AdMob в формате ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX, не Ad Unit ID. " +
+                            "Непустой ID переносится в MAX при сохранении и перед сборкой. " +
+                            "Если пусто, используется App ID из MAX Integration Manager."),
+                            _currentSettings.AppLovin.AdMobAndroidAppId);
+
                     _currentSettings.AppLovin.InterstitialAdUnitId = EditorGUILayout
                         .TextField("Interstitial Ad Unit", _currentSettings.AppLovin.InterstitialAdUnitId);
 
                     _currentSettings.AppLovin.RewardedAdUnitId = EditorGUILayout
                         .TextField("Rewarded Ad Unit", _currentSettings.AppLovin.RewardedAdUnitId);
+
+                    _currentSettings.AppLovin.BannerAdUnitId = EditorGUILayout
+                        .TextField(new GUIContent("Banner Ad Unit",
+                            "Баннер MAX после исчерпания всех капов JSON-рекламы. Если пусто, остаётся баннер кросс-промо."),
+                            _currentSettings.AppLovin.BannerAdUnitId);
+
+                    GUILayout.Space(6);
+                    EditorGUILayout.LabelField("MAX Placements", EditorStyles.miniBoldLabel);
+                    _currentSettings.AppLovin.InterstitialAdPlacement = EditorGUILayout
+                        .TextField("Interstitial Placement", _currentSettings.AppLovin.InterstitialAdPlacement);
+                    _currentSettings.AppLovin.RewardedAdPlacement = EditorGUILayout
+                        .TextField("Rewarded Placement", _currentSettings.AppLovin.RewardedAdPlacement);
+                    EditorGUILayout.HelpBox(
+                        "Названия передаются только в MAX. В событиях SDK placement всегда 'interstitial' или 'rewarded'. " +
+                        "Если поле пустое, для MAX используется " +
+                        $"'{Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement}' для interstitial и " +
+                        $"'{Runtime.AppLovinSettingData.DefaultRewardedAdPlacement}' для rewarded.", MessageType.None);
 
                     _currentSettings.AppLovin.VerboseLogging = EditorGUILayout
                         .Toggle(new GUIContent("Verbose Logging",
@@ -275,61 +497,43 @@ namespace AMZNGoDSDK.Editor
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
 
-                    bool registryConfigured = AppLovinPackageInstaller.IsRegistryConfigured();
-                    var allowedAdapters = AppLovinPackageInstaller.AllowedAdapterPackageIds();
-                    var blockedNetworks = AppLovinPackageInstaller.BlockedNetworkNames();
-
                     EditorGUILayout.LabelField(
                         "Scoped registry",
-                        registryConfigured ? "прописан в Packages/manifest.json" : "не прописан");
+                        _registryConfigured ? "прописан в Packages/manifest.json" : "не прописан");
 
-                    EditorGUILayout.LabelField(
-                        "Версия плагина",
-                        AppLovinPackageInstaller.Pins.TryGetValue(
-                            AppLovinPackageInstaller.MaxPluginPackageId, out var maxPin)
-                            ? maxPin + " (закреплена)"
-                            : "latest");
+                    EditorGUILayout.LabelField("Версия плагина", _maxVersionText);
 
-                    EditorGUILayout.HelpBox(AppLovinPackageInstaller.InstalledStatus, MessageType.None);
-                    bool hasMax = AppLovinPackageInstaller.HasInstalledPlugin;
-                    bool appLovinSavedEnabled = AppLovinPackageInstaller.IsModuleEnabledInSavedSettings;
-                    if (!appLovinSavedEnabled)
+                    EditorGUILayout.HelpBox(_maxInstalledStatus, MessageType.None);
+                    if (_snapshotReady && !_appLovinSavedEnabled)
                         EditorGUILayout.HelpBox("Сохраните настройки с включёнными SDK и AppLovin перед установкой или заменой пакетов.", MessageType.Info);
-                    using (new EditorGUI.DisabledScope(!appLovinSavedEnabled || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
+                    using (new EditorGUI.DisabledScope(!_snapshotReady || !_appLovinSavedEnabled || AppLovinPackageInstaller.IsBusy || FirebasePackageInstaller.IsBusy ||
                                EditorApplication.isCompiling || EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
                     {
-                        using (new EditorGUI.DisabledScope(hasMax))
+                        using (new EditorGUI.DisabledScope(_hasMax))
                             if (GUILayout.Button("Install MAX Plugin"))
                                 AppLovinPackageInstaller.InstallMaxPluginMenu();
-                        using (new EditorGUI.DisabledScope(!hasMax || AppLovinPackageInstaller.IsRequiredVersionInstalled))
-                            if (GUILayout.Button("Заменить AppLovin на " + maxPin))
+                        using (new EditorGUI.DisabledScope(!_hasMax || _maxRequiredVersionInstalled))
+                            if (GUILayout.Button(_replaceMaxText))
                                 AppLovinPackageInstaller.ReplaceMaxPluginMenu();
-                        using (new EditorGUI.DisabledScope(!hasMax))
-                            if (GUILayout.Button($"Install Adapters ({allowedAdapters.Count})"))
+                        using (new EditorGUI.DisabledScope(!_hasMax))
+                            if (GUILayout.Button(_installAdaptersText))
                                 AppLovinPackageInstaller.InstallAllowedAdaptersMenu();
                     }
                     if (!string.IsNullOrEmpty(AppLovinPackageInstaller.Status))
                         EditorGUILayout.HelpBox(AppLovinPackageInstaller.Status, MessageType.None);
 
-                    var pinnedAdapters = AppLovinPackageInstaller.PinnedSpecsIn(allowedAdapters);
-                    if (pinnedAdapters.Count > 0)
+                    EditorGUILayout.HelpBox(AppLovinPackageInstaller.ObsoleteAdaptersNotice, MessageType.Info);
+                    if (!string.IsNullOrEmpty(_pinnedAdaptersText))
                     {
                         GUILayout.Space(4);
-                        EditorGUILayout.HelpBox(
-                            "Адаптеры с закреплённой версией — свежие релизы требуют compileSdk 35/36 " +
-                            "или minSdk 24, чего проект (minSdk 23, compileSdk 34, AGP 7.4.2) не даёт:\n" +
-                            string.Join("\n", pinnedAdapters),
-                            MessageType.None);
+                        EditorGUILayout.HelpBox(_pinnedAdaptersText, MessageType.None);
                     }
 
-                    GUILayout.Space(6);
-                    EditorGUILayout.HelpBox(
-                        "Плагин и адаптеры ставятся из scoped registry AppLovin " +
-                        "(" + AppLovinPackageInstaller.RegistryUrl + "), Integration Manager для этого не нужен.\n\n" +
-                        "Исключены по стоп-листу: " +
-                        (blockedNetworks.Count == 0 ? "—" : string.Join(", ", blockedNetworks)) +
-                        ". Тот же список проверяется перед каждым билдом (ForbiddenAdNetworks).",
-                        MessageType.Info);
+                    if (!string.IsNullOrEmpty(_adapterPolicyText))
+                    {
+                        GUILayout.Space(6);
+                        EditorGUILayout.HelpBox(_adapterPolicyText, MessageType.Info);
+                    }
                 });
         }
 
@@ -360,8 +564,13 @@ namespace AMZNGoDSDK.Editor
                         .Toggle("Enable Crashlytics", _currentSettings.Firebase.EnableCrashlytics);
                     _currentSettings.Firebase.EnableRemoteConfig = EditorGUILayout
                         .Toggle(new GUIContent("Enable Remote Config",
-                            "Включён по умолчанию для новых установок SDK. Встроенный adjust_enable проверяется до запуска Adjust без ручного добавления A/B-теста."),
+                            "Включён по умолчанию для новых установок SDK. Встроенный флаг с именем из Adjust Remote Config Key проверяется до запуска Adjust без ручного добавления A/B-теста."),
                             _currentSettings.Firebase.EnableRemoteConfig);
+                    _currentSettings.Firebase.AdjustEnableRemoteConfigKey = EditorGUILayout
+                        .TextField(new GUIContent("Adjust Remote Config Key",
+                            "Имя параметра Firebase Remote Config для включения Adjust. Пустое значение использует adjust_enable. " +
+                            "1–100 символов: латиница, цифры, '_'; первый символ — буква или '_'."),
+                            _currentSettings.Firebase.AdjustEnableRemoteConfigKey);
                     using (new EditorGUI.DisabledScope(!_currentSettings.Firebase.EnableRemoteConfig))
                     {
                         var firebase = _currentSettings.Firebase;
@@ -372,6 +581,7 @@ namespace AMZNGoDSDK.Editor
                             "Fetch interval (seconds)", firebase.RemoteConfigMinimumFetchIntervalSeconds > 0
                                 ? firebase.RemoteConfigMinimumFetchIntervalSeconds : FirebaseSettingData.DefaultMinimumFetchIntervalSeconds));
                     }
+
                     EditorGUILayout.HelpBox(
                         "Ключ Remote Config совпадает с ID теста, значение — с именем группы. " +
                         "Без Remote Config используются контрольные группы. Для экспериментов Firebase включите Analytics.", MessageType.Info);
@@ -380,20 +590,19 @@ namespace AMZNGoDSDK.Editor
                     GUILayout.Space(10);
                     EditorGUILayout.LabelField("Установка пакетов", EditorStyles.miniBoldLabel);
                     EditorGUILayout.LabelField("Версия Unity SDK", FirebasePackageInstaller.UnityVersion + " (закреплена)");
-                    EditorGUILayout.HelpBox(FirebasePackageInstaller.InstalledStatus, MessageType.None);
+                    EditorGUILayout.HelpBox(_firebaseInstalledStatus, MessageType.None);
                     EditorGUILayout.HelpBox(
-                        "Analytics 22.4.0; Remote Config 22.1.0; Crashlytics / NDK 19.4.2; Common 21.0.0.\n" +
+                        "Analytics 23.2.0; Remote Config 23.1.0; Crashlytics / NDK 20.1.1; Common 22.2.1.\n" +
                         "Устанавливаются Analytics, Remote Config и Crashlytics. Firebase Unity требует Android minSdk 23.", MessageType.Info);
                     if ((int)PlayerSettings.Android.minSdkVersion < FirebasePackageInstaller.MinimumAndroidSdk)
                         EditorGUILayout.HelpBox("В Player Settings требуется Android Minimum API Level 23 или выше.", MessageType.Warning);
-                    bool hasFirebase = FirebasePackageInstaller.HasInstallation;
-                    using (new EditorGUI.DisabledScope(FirebasePackageInstaller.IsBusy || AppLovinPackageInstaller.IsBusy || EditorApplication.isCompiling ||
+                    using (new EditorGUI.DisabledScope(!_snapshotReady || FirebasePackageInstaller.IsBusy || AppLovinPackageInstaller.IsBusy || EditorApplication.isCompiling ||
                                EditorApplication.isUpdating || EditorApplication.isPlayingOrWillChangePlaymode))
                     {
-                        using (new EditorGUI.DisabledScope(hasFirebase))
+                        using (new EditorGUI.DisabledScope(_hasFirebase))
                             if (GUILayout.Button("Install Firebase " + FirebasePackageInstaller.UnityVersion))
                                 FirebasePackageInstaller.InstallFirebaseMenu();
-                        using (new EditorGUI.DisabledScope(!hasFirebase || FirebasePackageInstaller.IsRequiredVersionInstalled))
+                        using (new EditorGUI.DisabledScope(!_hasFirebase || _firebaseRequiredVersionInstalled))
                             if (GUILayout.Button("Заменить Firebase на " + FirebasePackageInstaller.UnityVersion))
                                 FirebasePackageInstaller.ReplaceFirebaseMenu();
                     }
@@ -426,6 +635,12 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.InAppPurchase.Enabled,
                 () =>
                 {
+                    using (new EditorGUI.DisabledScope(IsEditorBusy))
+                        if (GUILayout.Button("Import from Unity IAP")) ImportUnityIapCatalog();
+                    EditorGUILayout.HelpBox(
+                        "Импорт добавляет новые товары из Unity IAP Catalog. Используется SKU AmazonApps, " +
+                        "если он задан, иначе общий Product ID. Существующие товары сохраняются. " +
+                        "После проверки нажмите Save Settings.", MessageType.Info);
                     GUILayout.Space(10);
 
                     GUILayout.Label("Subscription Products:", EditorStyles.miniBoldLabel);
@@ -555,6 +770,28 @@ namespace AMZNGoDSDK.Editor
                         _currentSettings.InAppPurchase.NonConsumableProducts.Add(new NonConsumableProduct());
                     }
                 });
+        }
+
+        private void ImportUnityIapCatalog()
+        {
+            string path = InAppPurchaseCatalogHelper.FindCatalogPath();
+            if (string.IsNullOrEmpty(path))
+                path = EditorUtility.OpenFilePanel("Выберите Unity IAP Catalog (IAPProductCatalog.json)",
+                    Application.dataPath, "json");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                var result = InAppPurchaseCatalogHelper.ImportFile(_currentSettings.InAppPurchase, path,
+                    () => Undo.RegisterCompleteObjectUndo(this, "Import Unity IAP Catalog"));
+                Repaint();
+                EditorUtility.DisplayDialog("Import from Unity IAP", result.GetSummary(), "OK");
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog("Ошибка импорта Unity IAP",
+                    "Не удалось прочитать каталог Unity IAP. Настройки не изменены.\n\n" + ex.Message, "OK");
+            }
         }
 
         private void DrawDebugConsoleSettings()

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -12,13 +13,15 @@ namespace AMZNGoDSDK.Editor
 {
     public static class DependencyInstaller
     {
+        public const string ExternalDependencyManagerVersion = "1.2.189";
         private static bool _installationInProgress = false;
+        public static bool IsBusy => _installationInProgress;
         
         private static readonly Dictionary<string, string> _dependencies = new()
         {
             {
                 "com.google.external-dependency-manager", 
-                "https://github.com/googlesamples/unity-jar-resolver.git?path=upm"
+                "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v" + ExternalDependencyManagerVersion
             }
         };
         
@@ -29,13 +32,13 @@ namespace AMZNGoDSDK.Editor
 
         public static async Task InstallRequiredDependenciesAsync()
         {
-            if (_installationInProgress)
-            {
-                EditorUtility.DisplayDialog("Installation in Progress", 
-                    "Dependencies are currently being installed. Please wait.", "OK");
-                return;
-            }
-            
+            try { await EnsureRequiredDependenciesAsync(); }
+            catch (Exception ex) { Debug.LogError("[AMZNGoDSDK] Не удалось установить зависимости: " + ex.Message); }
+        }
+
+        public static async Task EnsureRequiredDependenciesAsync()
+        {
+            while (_installationInProgress) await Task.Delay(100);
             _installationInProgress = true;
             try
             {
@@ -47,7 +50,7 @@ namespace AMZNGoDSDK.Editor
                     string packageName = dependency.Key;
                     string packageUrl = dependency.Value;
 
-                    if (!installedPackages.ContainsKey(packageName)) 
+                    if (!IsCompatible(installedPackages, packageName))
                         packagesToInstall.Add(new KeyValuePair<string, string>(packageName, packageUrl));
                 }
 
@@ -62,11 +65,6 @@ namespace AMZNGoDSDK.Editor
                 {
                     Debug.Log("Amzn GoD SDK: All required dependencies are already installed!");
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError(
-                    $"Amzn GoD SDK: Dependencies installation were canceled by error: {ex.Message}");
             }
             finally
             {
@@ -123,10 +121,16 @@ namespace AMZNGoDSDK.Editor
         
         #region Status
 
+        internal static Dictionary<string, bool> GetRegisteredDependenciesInstallInfo()
+        {
+            var packages = PackageInfo.GetAllRegisteredPackages().ToDictionary(package => package.name, package => package);
+            return Dependencies.ToDictionary(dependency => dependency.Key, dependency => IsCompatible(packages, dependency.Key));
+        }
+
         public static async Task<bool> AllDependenciesAreInstalled()
         {
             var installedPackages = await GetInstalledPackagesAsync();
-            return Dependencies.All(x => installedPackages.ContainsKey(x.Key));
+            return Dependencies.All(x => IsCompatible(installedPackages, x.Key));
         }
         
         public static async Task<bool> IsInstalled(string packageName)
@@ -135,7 +139,7 @@ namespace AMZNGoDSDK.Editor
             {
                 var installedPackages = await GetInstalledPackagesAsync();
 
-                return installedPackages.ContainsKey(packageName);
+                return IsCompatible(installedPackages, packageName);
             }
             catch (Exception ex)
             {
@@ -147,5 +151,14 @@ namespace AMZNGoDSDK.Editor
         }
         
         #endregion
+
+        private static bool IsCompatible(Dictionary<string, PackageInfo> packages, string name)
+        {
+            if (!packages.TryGetValue(name, out var package)) return false;
+            if (string.IsNullOrEmpty(package.resolvedPath) || !File.Exists(Path.Combine(package.resolvedPath, "package.json"))) return false;
+            if (name != "com.google.external-dependency-manager") return true;
+            return Version.TryParse(package.version, out var installed) &&
+                   installed >= new Version(ExternalDependencyManagerVersion);
+        }
     }
 }

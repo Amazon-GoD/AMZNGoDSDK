@@ -10,20 +10,42 @@ namespace AMZNGoDSDK.Runtime
     {
         private const string QueueKey = "cp_event_queue";
         private const int MaxQueueSize = 50;
+        private const int MaxBannerImpressions = 10;
         private static readonly object _lock = new object();
 
         public static void Enqueue(string jsonBody)
         {
+            TryEnqueue(jsonBody);
+        }
+
+        /// <summary>Persists the event unless a banner impression would displace a regular event.</summary>
+        public static bool TryEnqueue(string jsonBody)
+        {
             lock (_lock)
             {
                 var events = LoadQueue();
-                if (events.Count >= MaxQueueSize)
-                {
-                    Debug.LogWarning("[Analytics] Event queue full, dropping oldest event");
-                    events.RemoveAt(0);
-                }
-                events.Add(jsonBody);
+                bool added = AddWithCapacity(events, jsonBody);
                 SaveQueueUnlocked(events);
+                return added;
+            }
+        }
+
+        /// <summary>Updates an event still waiting in the queue without re-enqueuing a delivered event.</summary>
+        public static bool ReplaceExact(string originalJson, string replacementJson)
+        {
+            if (string.IsNullOrEmpty(originalJson) || string.IsNullOrEmpty(replacementJson))
+                return false;
+
+            lock (_lock)
+            {
+                var events = LoadQueue();
+                int index = events.IndexOf(originalJson);
+                if (index < 0)
+                    return false;
+
+                events[index] = replacementJson;
+                SaveQueueUnlocked(events);
+                return true;
             }
         }
 
@@ -50,6 +72,15 @@ namespace AMZNGoDSDK.Runtime
             lock (_lock)
             {
                 return LoadQueue();
+            }
+        }
+
+        /// <summary>Checks whether a snapshot entry is still queued and has not been replaced.</summary>
+        public static bool ContainsExact(string json)
+        {
+            lock (_lock)
+            {
+                return LoadQueue().Contains(json);
             }
         }
 
@@ -106,9 +137,6 @@ namespace AMZNGoDSDK.Runtime
                 merged.AddRange(events);
                 merged.AddRange(current);
 
-                if (merged.Count > MaxQueueSize)
-                    merged.RemoveRange(0, merged.Count - MaxQueueSize);
-
                 SaveQueueUnlocked(merged);
             }
         }
@@ -122,7 +150,7 @@ namespace AMZNGoDSDK.Runtime
                 return;
             }
 
-            var wrapper = new QueueWrapper { Items = events };
+            var wrapper = new QueueWrapper { Items = ApplyCapacity(events) };
             PlayerPrefs.SetString(QueueKey, JsonUtility.ToJson(wrapper));
             PlayerPrefs.Save();
         }
@@ -139,12 +167,96 @@ namespace AMZNGoDSDK.Runtime
             try
             {
                 var wrapper = JsonUtility.FromJson<QueueWrapper>(raw);
-                return wrapper?.Items ?? new List<string>();
+                return ApplyCapacity(wrapper?.Items);
             }
             catch
             {
                 return new List<string>();
             }
+        }
+
+        private static List<string> ApplyCapacity(List<string> events)
+        {
+            var bounded = new List<string>();
+            if (events == null)
+                return bounded;
+
+            if (events.Count <= MaxQueueSize
+                && events.FindAll(IsBannerImpression).Count <= MaxBannerImpressions)
+                return new List<string>(events);
+
+            foreach (string json in events)
+                AddWithCapacity(bounded, json);
+            return bounded;
+        }
+
+        private static bool AddWithCapacity(List<string> events, string json)
+        {
+            bool isBannerImpression = IsBannerImpression(json);
+            int firstBanner = -1;
+            int bannerCount = 0;
+            for (int i = 0; i < events.Count; i++)
+            {
+                if (!IsBannerImpression(events[i]))
+                    continue;
+
+                if (firstBanner < 0)
+                    firstBanner = i;
+                bannerCount++;
+            }
+
+            // Only the frequent banner stream has lower priority. Legacy, malformed and
+            // unknown payloads keep the regular budget, as do clicks/revenue/identity events.
+            if (isBannerImpression && bannerCount >= MaxBannerImpressions)
+            {
+                events.RemoveAt(firstBanner);
+                Debug.LogWarning("[Analytics] Banner impression budget full, dropping oldest banner impression");
+            }
+            else if (events.Count >= MaxQueueSize)
+            {
+                if (firstBanner >= 0)
+                {
+                    events.RemoveAt(firstBanner);
+                    Debug.LogWarning("[Analytics] Event queue full, dropping oldest banner impression");
+                }
+                else if (isBannerImpression)
+                {
+                    Debug.LogWarning("[Analytics] Event queue full of regular events, banner impression not queued");
+                    return false;
+                }
+                else
+                {
+                    events.RemoveAt(0);
+                    Debug.LogWarning("[Analytics] Event queue full of regular events, dropping oldest regular event");
+                }
+            }
+
+            events.Add(json);
+            return true;
+        }
+
+        private static bool IsBannerImpression(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            try
+            {
+                var envelope = JsonUtility.FromJson<EventEnvelope>(json);
+                return envelope != null && envelope.event_name == "cp_impression"
+                    && envelope.placement == "banner";
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        [Serializable]
+        private class EventEnvelope
+        {
+            public string event_name;
+            public string placement;
         }
 
         [Serializable]

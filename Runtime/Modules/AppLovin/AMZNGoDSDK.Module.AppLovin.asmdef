@@ -6,7 +6,8 @@
         "AMZNGoDSDK.Module.Analytics",
         "AMZNGoDSDK.Module.AppMetrica",
         "AMZNGoDSDK.Module.Adjust",
-        "AdjustSdk.Scripts"
+        "AdjustSdk.Scripts",
+        "MaxSdk.Scripts"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -215,8 +215,8 @@ namespace AMZNGoDSDK.Editor
         {
             var expected = new Dictionary<string, string>
             {
-                { "App", "firebase-common:21.0.0" }, { "Analytics", "firebase-analytics:22.4.0" },
-                { "RemoteConfig", "firebase-config:22.1.0" }, { "Crashlytics", "firebase-crashlytics-ndk:19.4.2" }
+                { "App", "firebase-common:22.2.1" }, { "Analytics", "firebase-analytics:23.2.0" },
+                { "RemoteConfig", "firebase-config:23.1.0" }, { "Crashlytics", "firebase-crashlytics-ndk:20.1.1" }
             };
             foreach (var product in expected)
             {
