@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace AMZNGoDSDK.Editor.Deploy
@@ -55,6 +56,17 @@ namespace AMZNGoDSDK.Editor.Deploy
             "Runtime/Modules/AppLovin/AMZNGoDSDK.Module.AppLovin.asmdef",
         };
 
+        /// <summary>
+        /// Файл с версией пакета для рантайма (поле sdk_version событий аналитики и
+        /// AmznGoDSDKCore.SdkVersion). package.json в сборку игры не попадает, поэтому релизный
+        /// пайплайн проставляет версию и сюда, а верификатор требует совпадения с версией релиза.
+        /// </summary>
+        public const string SdkVersionSourcePath = "Runtime/Utlts/SdkPackageVersion.cs";
+
+        /// <summary>Константа версии в <see cref="SdkVersionSourcePath"/>; группа 2 — значение.</summary>
+        public static readonly Regex SdkVersionConstantRegex =
+            new Regex("(const\\s+string\\s+Value\\s*=\\s*\")([^\"]*)(\")", RegexOptions.Compiled);
+
         public const string ExpectedPackageName = "com.amzngod.amzngodsdk";
         public const string ExpectedUnityVersion = "2022.3";
         public const string HiddenSamplePathFragment = "AmznGoDSDK~/SDKPrefab";
@@ -94,6 +106,7 @@ namespace AMZNGoDSDK.Editor.Deploy
 
             CheckForbiddenFragments(relativePaths, problems);
             CheckPackageJson(treeRoot, expectedVersion, problems);
+            CheckSdkVersionConstant(treeRoot, expectedVersion, problems);
             CheckRequiredAsmdefs(treeRoot, problems);
             CheckOrphanTildeMetas(treeRoot, relativePaths, problems);
             CheckMissingMetas(treeRoot, relativePaths, problems);
@@ -173,6 +186,26 @@ namespace AMZNGoDSDK.Editor.Deploy
 
             CheckSample(treeRoot, manifest, HiddenSamplePathFragment, "AmznGoDSDK.prefab", problems);
             CheckSample(treeRoot, manifest, HiddenBannerSamplePathFragment, "CrossPromoBanner.prefab", problems);
+        }
+
+        /// <summary>
+        /// Версия, которую рантайм шлёт в sdk_version, обязана совпасть с версией релиза: иначе
+        /// события сборок нового релиза будут помечены старой версией.
+        /// </summary>
+        private static void CheckSdkVersionConstant(string treeRoot, string expectedVersion, List<string> problems)
+        {
+            string path = Path.Combine(treeRoot, SdkVersionSourcePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                problems.Add($"runtime version file is missing: {SdkVersionSourcePath}");
+                return;
+            }
+
+            var match = SdkVersionConstantRegex.Match(File.ReadAllText(path));
+            if (!match.Success)
+                problems.Add($"{SdkVersionSourcePath} has no version constant");
+            else if (!string.IsNullOrEmpty(expectedVersion) && match.Groups[2].Value != expectedVersion)
+                problems.Add($"{SdkVersionSourcePath} version is '{match.Groups[2].Value}', expected '{expectedVersion}'");
         }
 
         private static void CheckSample(string treeRoot, PackageManifest manifest, string path,

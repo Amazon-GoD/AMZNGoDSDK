@@ -5,7 +5,84 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] (1.0.9)
+
+### Changed
+
+- Batch backend banner impressions. Counted Cross-Promo banner impressions are
+  sent per `paid_app_id` as one `cp_impression` with `placement: "banner"` and
+  `"n": <count>`. MAX banner revenue callbacks are sent per network, ad unit and
+  revenue precision as one `mediation_impression` with `placement: "banner"`,
+  `n`, and `revenue` = the sum in USD for those `n` impressions. Impressions
+  with unknown revenue (MAX `-1`) form a separate batch sent with
+  `"revenue": -1`. A batch closes 5 minutes after its first impression; earlier
+  only at 1000 impressions, at the UTC day boundary, when the device clock moves
+  back, and on quit. Focus loss and pause do not close open batches (a pause
+  only queues batches whose 5 minutes are already up), because they happen on
+  every full-screen ad and purchase. With the usual 7-10 creatives in rotation
+  the Cross-Promo banner sends about 1.2-1.8 requests per minute instead of 7.5
+  (about K/5 for K creatives), plus about 0.2 per minute per MAX banner ad unit
+  instead of one per refresh. The window
+  closes a batch only while the device is online and no earlier banner event is
+  still undelivered; otherwise impressions keep accumulating in the same batch.
+  Its `ts` is the first impression's time and each batch has its own
+  `event_id`. The banner visibility rules are unchanged. Interstitial and
+  rewarded impressions and all clicks are still sent one event each.
+- Open batches are persisted in PlayerPrefs (`amzn_banner_impression_batches`)
+  after every impression and survive pause, process kill and crash. A batch is
+  moved into the event queue only when one of the 10 banner slots is free
+  (oldest batch first), so queuing a batch never evicts another one; the rest
+  wait in the store. The store holds at most 64 batches; past that the oldest
+  is dropped with a warning (only reachable after days without delivery).
+- MAX banner `mediation_impression` events share the 10-slot low-priority queue
+  budget with Cross-Promo banner impressions, so they can no longer evict
+  clicks, first opens or IAP links. As before, queued banner events still yield
+  to regular events once 50 regular events fill the queue.
+- `AmznGoDSDKCore.SdkVersion` reports the package version instead of the stale
+  `0.5.0`. Its single source is `SdkPackageVersion.Value`
+  (`Runtime/Utlts/SdkPackageVersion.cs`). The release pipeline stamps it together
+  with `package.json`, and the release-tree verifier rejects a mismatch.
+
+### Added
+
+- Every backend event (`first_open`, `cp_*`, `mediation_*`, `iap_link`,
+  `attribution`) carries `sdk_version` and `app_version` (`Application.version`)
+  as JSON strings immediately before `ts`.
+
+### Fixed
+
+- Debounce Cross-Promo banner taps. A second tap on the same banner within 2.5
+  seconds (the up to 1.5 s wait before the store opens, plus one second) no
+  longer sends a second `cp_click` or opens the store twice.
+- A non-finite revenue passed to the manual `TrackMediationImpression` overloads
+  is sent as `-1` instead of a bare `NaN`/`Infinity` literal, which made the body
+  invalid JSON.
+
+### Upgrade notes
+
+- **Deploy the backend first.** Before any game ships 1.0.9, the backend must
+  accept `placement: "banner"`, the `mediation_impression`/`mediation_click`
+  events, and an integer `n` (1..1000, absent = 1) on `cp_impression` and
+  `mediation_impression`, where `revenue` is the sum for `n` impressions. The
+  current production backend rejects `placement: "banner"` and both
+  `mediation_*` events with HTTP 400, so the SDK drops them. A backend that only
+  strips unknown fields would count each batch as a single impression.
+  `sdk_version` and `app_version` are ignored by older backends. The new
+  backend stores them on clicks and first opens; it keeps only allowlisted
+  top-level fields, so a new field needs a backend change before it is stored.
+- **What a batch costs when something goes wrong.** One event now carries up to
+  1000 impressions, so:
+  - a backend answer of `422 not_stored` (a database error or a database that
+    does not answer within 10 s on the counter streams; the SDK treats any
+    non-transient 4xx as rejected) drops the whole batch, not one impression;
+  - the backend deduplicates banner and MAX batches in its process memory for
+    6 hours. A batch re-sent after a lost response more than 6 hours later, or
+    after a backend restart or deploy, is counted twice, whole;
+  - impressions in a batch that is still open when the player leaves are sent
+    on the next launch. A player who never opens the game again never sends
+    them (up to 5 minutes of impressions per creative).
+- Wire examples are in `Documentation~/README.md`, section "Backend banner
+  batching and version fields".
 
 ## [1.0.8] - 2026-10-05
 

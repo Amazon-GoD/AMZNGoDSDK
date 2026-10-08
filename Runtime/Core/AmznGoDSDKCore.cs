@@ -8,7 +8,8 @@ namespace AMZNGoDSDK.Runtime
 {
     public sealed class AmznGoDSDKCore : MonoBehaviourSingletonPersistent<AmznGoDSDKCore>
     {
-        public const string SdkVersion = "0.5.0";
+        // Версия пакета: единый источник — SdkPackageVersion (его же проставляет релизный пайплайн).
+        public const string SdkVersion = SdkPackageVersion.Value;
 
 
 #if AMZN_ADJUST_ENABLED

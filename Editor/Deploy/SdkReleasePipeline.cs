@@ -298,6 +298,26 @@ namespace AMZNGoDSDK.Editor.Deploy
             // package.json релизного дерева: версия из UI + скрытый sample path.
             // Dev-дерево НЕ меняется.
             PatchPackageJson(Path.Combine(tree, "package.json"), version);
+
+            // Та же версия — в рантайм-константу (sdk_version событий): package.json в сборку
+            // игры не попадает.
+            PatchSdkVersionConstant(tree, version);
+        }
+
+        private static void PatchSdkVersionConstant(string tree, string version)
+        {
+            string path = Path.Combine(tree,
+                SdkReleaseTreeVerifier.SdkVersionSourcePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+                throw new Exception($"{SdkReleaseTreeVerifier.SdkVersionSourcePath} not found in release tree.");
+
+            string text = File.ReadAllText(path);
+            var constant = SdkReleaseTreeVerifier.SdkVersionConstantRegex;
+            if (!constant.IsMatch(text))
+                throw new Exception($"{SdkReleaseTreeVerifier.SdkVersionSourcePath} has no version constant to patch.");
+            text = constant.Replace(text, "${1}" + version + "${3}", 1);
+
+            File.WriteAllText(path, text, new UTF8Encoding(false));
         }
 
         private static void PatchPackageJson(string packageJsonPath, string version)
