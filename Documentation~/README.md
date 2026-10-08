@@ -207,8 +207,10 @@ placement `banner`, set in MAX immediately after banner creation.
 
 MAX banner clicks emit `mediation_banner_clicked` and backend
 `mediation_click`. Each banner revenue callback, including auto-refreshes,
-emits `mediation_banner_displayed`, `mediation_ad_revenue`, backend
-`mediation_impression`, and native revenue reports. Loading, showing or hiding
+emits `mediation_banner_displayed`, `mediation_ad_revenue`, native revenue
+reports, and counts one impression toward the next batched backend
+`mediation_impression` (see [Backend banner batching and version
+fields](#backend-banner-batching-and-version-fields)). Loading, showing or hiding
 the banner does not synthesize an impression. Late revenue after hiding is
 retained. Load errors emit `mediation_banner_load_failed` in AppMetrica with
 `placement`, `ad_unit`, `reason`, and `error_code` when available.
@@ -238,13 +240,116 @@ URLs are unchanged.
 MAX API references: [banner callbacks](https://support.applovin.com/en/max/unity/ad-formats/banner-and-mrec-ads)
 and [placement configuration](https://support.applovin.com/en/max/unity/overview/advanced-settings).
 
+### Backend banner batching and version fields
+
+Since 1.0.9 banner impressions are not sent to `POST /v1/events` one by one.
+The visibility rules that decide whether a Cross-Promo banner rotation counts
+as an impression are unchanged; only counted impressions are aggregated.
+
+- **Cross-Promo banner:** counted impressions are aggregated per
+  `paid_app_id` and sent as one `cp_impression` with `placement: "banner"` and
+  `"n": <count>`.
+- **MAX banner:** revenue callbacks are aggregated per `network`, `ad_unit` and
+  `revenue_precision`, and sent as one `mediation_impression` with
+  `placement: "banner"`, `"n": <count>`, and `revenue` = the **sum** in USD for
+  those `n` impressions. Impressions whose revenue is unknown (MAX reports `-1`;
+  also NaN, infinity, a negative value or more than 10 USD for one impression)
+  are counted in a separate batch sent with `"revenue": -1`, so a batch's
+  `revenue` always covers all of its `n` impressions.
+- Interstitial and rewarded impressions, every click (`cp_click`,
+  `mediation_click`) and all other events are still sent one per occurrence,
+  without `n`.
+
+A batch closes 5 minutes after its first impression. It closes earlier only
+when it reaches 1000 impressions, when the UTC day changes (a batch never spans
+two UTC days), when the device clock moves back, and on quit. Focus loss and
+pause do not close open batches: they happen on every full-screen ad, purchase
+dialog and store visit, and closing every key each time would send almost as
+many requests as 1.0.8. A pause only queues batches whose 5 minutes are already
+up, so they are in the pause flush. The banner rotates through every creative
+of the config, so each `paid_app_id` is its own key: with K creatives the
+Cross-Promo banner sends about K/5 requests per minute (8 creatives: about 1.5
+per minute, against 7.5 in 1.0.8). Open batches are checked every 5 seconds, so
+a batch also closes after the banner has been hidden. Its `ts` is the time of
+its first impression; each batch gets a new `event_id`, and a retry of the
+same batch reuses it.
+
+The 5-minute window closes a batch only while the device is online and while no
+earlier banner event waits undelivered in the queue (in flight, or kept after a
+transient failure). Otherwise impressions keep accumulating in the open batch
+instead of producing more queued events.
+
+Pending batches are persisted in PlayerPrefs (`amzn_banner_impression_batches`)
+after every impression, so a pause, process kill or crash does not lose counts:
+batches still open when the process dies are sent after the next launch. A
+batch moves from that store into the event queue in a single PlayerPrefs write,
+and only into a free banner slot of the queue (10 slots, oldest batch first), so
+queuing a batch never evicts a batch already queued; the others wait in the
+store. The store holds at most 64 batches; past that the oldest one is dropped
+with a warning, which only happens after days without delivery. An impression
+counted before the Fire ID resolves joins the batch for the identity resolved
+in the same session. One left from a previous process is sent as
+`unattributed`, matching how queued events are handled. Disabled Analytics does
+not aggregate banner impressions.
+
+What can still lose or double-count banner impressions, now a whole batch (up
+to 1000 impressions) at a time:
+
+- The backend answers `422 not_stored` when it cannot write a banner or MAX
+  counter (a database error, or no database answer within 10 seconds; it never
+  answers 5xx for these, so they cannot stall the queue). The SDK treats any
+  non-transient 4xx as rejected and drops the batch.
+- When 50 regular events fill the queue (a long backend outage with many
+  clicks), queued banner events still yield to them, as in 1.0.8.
+- The backend deduplicates banner and MAX batches by `event_id` in its process
+  memory for 6 hours. A batch re-sent after a lost response more than 6 hours
+  later, or after a backend restart or deploy, is counted twice.
+- A player who never opens the game again never sends the batches that were
+  still open (up to 5 minutes of impressions per key).
+- Not a loss, but late: the backend never rejects a batch for its age and counts
+  it on the UTC day of its `ts` (the first impression). A batch that arrives
+  days later (offline, or left open until the next launch) lands on that past
+  day, and reports that already read that day see it only after a re-sync.
+
+Every event the SDK builds also carries `sdk_version` (the package version,
+`AmznGoDSDKCore.SdkVersion`) and `app_version` (`Application.version`) as
+strings, immediately before `ts`. Field order is fixed:
+
+```json
+{"event_name":"cp_impression","event_id":"5e0c2a4f9b7d4c1e8a3f6b2d9c0e1f47","paid_app_id":"com.example.paid","donor_app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","placement":"banner","n":7,"sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+{"event_name":"mediation_impression","event_id":"0b6f1d2c3e4a4b5c9d8e7f6a5b4c3d2e","app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","network":"AppLovin","ad_unit":"abcd1234abcd1234","placement":"banner","revenue":0.000912,"revenue_precision":"exact","n":2,"sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+{"event_name":"cp_click","event_id":"9a8b7c6d5e4f40312a1b0c9d8e7f6a5b","paid_app_id":"com.example.paid","donor_app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","placement":"banner","sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+```
+
+The backend must accept `n` (an integer from 1 to 1000; absent means 1) on
+`cp_impression` and `mediation_impression`, treat `revenue` of a
+`mediation_impression` as the sum for `n` impressions, accept
+`placement: "banner"`, and accept `mediation_*` events. Deploy such a backend
+before shipping 1.0.9 in a game: a backend that rejects `banner` drops the
+batches, and one that ignores `n` counts each batch as a single impression.
+Unknown top-level fields such as `sdk_version` and `app_version` are ignored by
+older backends. The backend that accepts `n` stores them on clicks and first
+opens (`events_raw.extra`). It keeps only allowlisted top-level fields
+(`sdk_version`, `app_version`, `unity_version`, `os_version`, `build`,
+`locale`) and only short version-like values, so a new field needs a backend
+change before it is stored.
+
+Cross-Promo banner taps are debounced: a second tap on the same banner within
+2.5 seconds is ignored (the store opens up to 1.5 seconds after the tap while
+the click is being tracked, and nothing is visible until then), so it neither
+sends a second `cp_click` nor opens the store twice.
+
 ### Analytics persistence and identity
 
-The persisted queue holds up to 50 events. At most 10 are Cross-Promo banner
-impressions (`cp_impression`, `placement: "banner"`); this stream cannot evict
-clicks, revenue or other regular events. When 50 regular events fill the queue,
-the oldest regular event can still be evicted. The existing PlayerPrefs key
-and payload format are retained.
+The persisted queue holds up to 50 events. At most 10 are banner events:
+Cross-Promo banner impressions (`cp_impression`, `placement: "banner"`) and,
+since 1.0.9, MAX banner impressions (`mediation_impression`,
+`placement: "banner"`). These streams cannot evict clicks, full-screen revenue
+or other regular events. Since 1.0.9 a banner batch is queued only into a free
+banner slot, so batches do not evict each other either. When 50 regular events
+fill the queue, the oldest regular event can still be evicted and a new banner
+event is not queued. The existing PlayerPrefs key and payload format are
+retained.
 
 Cross-Promo clicks are persisted before waiting for a Fire ID. ExoPlayer starts
 backend and Adjust click requests independently and retains its four-second

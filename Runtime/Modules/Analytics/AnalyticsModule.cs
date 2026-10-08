@@ -19,6 +19,10 @@ namespace AMZNGoDSDK.Runtime
     // Идемпотентность first_open и кэш device_id_hash через PlayerPrefs с историческими
     // ключами cp_* — это намеренно: апгрейд не должен повторять first_open.
     // Сохранённый device_id используется только после проверки текущего Fire ID.
+    // С 1.0.9 баннерные показы (CP-баннер и MAX-баннер) не уходят по одному: они копятся в
+    // BannerImpressionBatcher и отправляются одним событием с полем "n" не чаще раза в 5 минут на
+    // ключ; до окна пачка закрывается только на смене суток UTC, при n = 1000 и на выходе.
+    // Каждое событие несёт sdk_version и app_version.
     public class AnalyticsModule : ModuleBase
     {
         private const long MinTimestampMs = 1577836800000L;
@@ -53,6 +57,16 @@ namespace AMZNGoDSDK.Runtime
         private const int AttributionMaxAttempts = 15;
         private const float AttributionRetryIntervalSeconds = 2f;
 
+        // Баннерные показы склеиваются (см. BannerImpressionBatcher). Буфер незакрытых пачек
+        // лежит на диске так же, как очередь: показы переживают паузу, убийство процесса и
+        // падение. Проверка окна — по таймеру, потому что скрытый баннер новых показов не даёт.
+        private const string BannerPlacement = "banner";
+        private const string BannerBatchesKey = "amzn_banner_impression_batches";
+        private const float BannerBatchCheckIntervalSeconds = 5f;
+
+        // Неизвестная выручка показа в протоколе — -1, как её отдаёт MAX.
+        private const double UnknownRevenue = -1d;
+
         private string _baseUrl;
         private string _apiKey;
         private string _appType;
@@ -67,6 +81,12 @@ namespace AMZNGoDSDK.Runtime
         private bool _resumeAfterActivation;
         private readonly HashSet<string> _preparingEventBodies = new HashSet<string>(StringComparer.Ordinal);
 
+        // Незакрытые пачки баннерных показов. Не транзиентное состояние: ResetTransientState их
+        // не трогает, а с диска они читаются один раз за процесс.
+        private readonly BannerImpressionBatcher _bannerBatches = new BannerImpressionBatcher();
+        private bool _bannerBatchesLoaded;
+        private bool _bannerBudgetFullLogged;
+
         // Связка, отправка которой уже в полёте: сверка IAP может завершиться несколько
         // раз подряд (init + после покупки), и без этой защёлки одна и та же связка ушла
         // бы параллельно дважды до того, как первая доставка запишет хеш в PlayerPrefs.
@@ -78,6 +98,8 @@ namespace AMZNGoDSDK.Runtime
 
         private static string AppId => Application.identifier;
 
+        private static string AppVersion => Application.version;
+
         // Отсутствующий Fire ID — легальное состояние: фолбэков на adid / android_id больше нет.
         // Готовность определяется фактом резолва, а не непустым хэшем, иначе такие устройства
         // молча перестали бы слать события; в payload вместо хэша уходит UnattributedDeviceId.
@@ -85,6 +107,10 @@ namespace AMZNGoDSDK.Runtime
 
         private string EventDeviceIdHash =>
             string.IsNullOrEmpty(_deviceIdHash) ? UnattributedDeviceId : _deviceIdHash;
+
+        // Идентичность для баннерной пачки: null, пока device_id не резолвился, — такая пачка
+        // привяжется к первому резолву (BannerImpressionBatcher.BindIdentity) и до него не уйдёт.
+        private string BannerBatchIdentity => _deviceIdResolved ? EventDeviceIdHash : null;
 
         public void Construct(bool enable, string baseUrl, string apiKey, AnalyticsAppType appType, string defaultPromotedAppId)
         {
@@ -120,7 +146,9 @@ namespace AMZNGoDSDK.Runtime
             _runtimeStarted = true;
             _resumeAfterActivation = false;
             DeviceIdProvider.BeginSession();
+            EnsureBannerBatchesLoaded();
             StartCoroutine(InitializeRoutine());
+            StartCoroutine(BannerBatchRoutine());
         }
 
         public override void Cleanup()
@@ -266,6 +294,11 @@ namespace AMZNGoDSDK.Runtime
 
         public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
 
+        /// <summary>
+        /// Показ кросс-промо. Полноэкранный (и без плейсмента) уходит отдельным событием, как
+        /// раньше; показ баннера (<c>placement = "banner"</c>) с 1.0.9 копится в пачке и уходит
+        /// одним <c>cp_impression</c> с <c>n</c> (см. <see cref="BannerImpressionBatcher"/>).
+        /// </summary>
         public void TrackImpression(string paidAppId, string placement)
         {
             // ts фиксируем СРАЗУ, в момент показа: если device_id ещё резолвится, отправка
@@ -273,6 +306,13 @@ namespace AMZNGoDSDK.Runtime
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
+
+            if (IsBannerPlacement(placement))
+            {
+                AddBannerImpression(paidAppId, ts);
+                return;
+            }
+
             StartCoroutine(TrackCrossPromoEvent("cp_impression", paidAppId, ts, placement));
         }
 
@@ -311,6 +351,10 @@ namespace AMZNGoDSDK.Runtime
         /// <para>Зовётся из обработчика <c>OnAdRevenuePaidEvent</c>: MAX присылает его ровно один
         /// раз на показ, и это единственное событие, где есть выручка. Отправка по
         /// <c>OnAdDisplayedEvent</c> дала бы показ без денег и второй запрос ради revenue.</para>
+        ///
+        /// <para>Interstitial и rewarded — по событию на показ, как раньше. Показы MAX-баннера
+        /// (<c>placement = "banner"</c>, каждый автоповтор) с 1.0.9 копятся в пачке: одно событие с
+        /// <c>n</c> и суммой выручки этих n показов (см. <see cref="BannerImpressionBatcher"/>).</para>
         /// </summary>
         public void TrackMediationImpression(string network, string adUnit, string placement, double revenue, string precision)
         {
@@ -319,6 +363,12 @@ namespace AMZNGoDSDK.Runtime
             long ts = GetTimestampMs();
             if (ts < MinTimestampMs)
                 return;
+
+            if (IsBannerPlacement(placement))
+            {
+                AddBannerMediationImpression(network, adUnit, revenue, precision, ts);
+                return;
+            }
 
             StartCoroutine(TrackMediationEvent("mediation_impression", network, adUnit, placement, revenue, precision, ts));
         }
@@ -403,6 +453,213 @@ namespace AMZNGoDSDK.Runtime
 
             Debug.Log($"{Tag} >>> {eventName}: paid_app_id={resolvedPaidAppId}, donor_app_id={AppId}, placement={placement}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
             yield return SendEventWithRetry(json, eventId, enqueue: pendingJson == null);
+        }
+
+        private static bool IsBannerPlacement(string placement) =>
+            placement != null && string.Equals(placement.Trim(), BannerPlacement, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Видимый показ CP-баннера (решение «засчитать» принимает CrossPromoBanner, здесь оно не
+        /// меняется). Показ только добавляется в пачку; отправляет её BannerBatchRoutine или пауза.
+        /// </summary>
+        private void AddBannerImpression(string paidAppId, long ts)
+        {
+            // Выключенная аналитика ничего не копит: таймер пачек живёт только после Initialize.
+            if (!Enabled)
+                return;
+
+            string resolvedPaidAppId = !string.IsNullOrEmpty(paidAppId) ? paidAppId : _defaultPromotedAppId;
+            if (string.IsNullOrEmpty(resolvedPaidAppId))
+            {
+                Debug.LogWarning($"{Tag} cp_impression skipped — no paid_app_id (param={paidAppId}, default={_defaultPromotedAppId})");
+                return;
+            }
+
+            EnsureBannerBatchesLoaded();
+            WarnIfBannerBufferFull(_bannerBatches.AddCrossPromo(BannerBatchIdentity, resolvedPaidAppId, ts));
+            SaveBannerBatches();
+        }
+
+        /// <summary>Показ MAX-баннера (колбэк выручки): в пачку вместе с выручкой.</summary>
+        private void AddBannerMediationImpression(string network, string adUnit, double revenue, string precision, long ts)
+        {
+            if (!Enabled)
+                return;
+
+            EnsureBannerBatchesLoaded();
+            WarnIfBannerBufferFull(_bannerBatches.AddMediation(BannerBatchIdentity, network, adUnit, precision, revenue, ts));
+            SaveBannerBatches();
+        }
+
+        private static void WarnIfBannerBufferFull(int lostImpressions)
+        {
+            if (lostImpressions > 0)
+                Debug.LogWarning($"{Tag} Pending banner batch buffer full ({BannerImpressionBatcher.MaxPendingBatches} batches), " +
+                                 $"dropped the oldest batch ({lostImpressions} impression(s))");
+        }
+
+        /// <summary>
+        /// Закрывает пачки по окну, в том числе когда баннер уже скрыт и новых показов нет.
+        /// WaitForSecondsRealtime — timeScale=0 на интерстишеле не должен останавливать отправку.
+        /// </summary>
+        private IEnumerator BannerBatchRoutine()
+        {
+            while (true)
+            {
+                yield return new WaitForSecondsRealtime(BannerBatchCheckIntervalSeconds);
+
+                try
+                {
+                    FlushBannerBatches(BannerBatchFlush.Due, sendNow: true);
+                }
+                catch (Exception e)
+                {
+                    // Исключение не должно навсегда остановить таймер: пачки останутся в буфере.
+                    Debug.LogWarning($"{Tag} Banner batch flush failed: {e.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Забирает из буфера пачки (<paramref name="mode"/>), строит по событию на пачку и ставит
+        /// их в очередь; при <paramref name="sendNow"/> сразу отправляет, как любое свежее событие.
+        ///
+        /// <para>Закрывает не больше пачек, чем есть свободных баннерных мест в очереди (10 минус
+        /// уже стоящие там баннерные события), самые старые первыми; остальные ждут в буфере на
+        /// диске. Иначе очередь молча вытеснила бы стоящие в ней пачки — до 1000 показов каждая.
+        /// Пока в очереди есть недоставленное баннерное событие (в полёте или после транзиентной
+        /// ошибки), пачки по окну не закрываются: показы копятся дальше, как без сети.</para>
+        /// </summary>
+        private void FlushBannerBatches(BannerBatchFlush mode, bool sendNow)
+        {
+            if (!Enabled)
+                return;
+
+            EnsureBannerBatchesLoaded();
+            if (_bannerBatches.IsEmpty)
+                return;
+
+            bool changed = _deviceIdResolved && _bannerBatches.BindIdentity(EventDeviceIdHash);
+
+            // Без сети по окну не закрываем: продолжаем копить в той же пачке.
+            if (mode == BannerBatchFlush.Due && !IsInternetAvailable())
+                mode = BannerBatchFlush.Required;
+
+            long now = GetTimestampMs();
+            List<BannerImpressionBatch> batches = null;
+            if (_bannerBatches.CountDue(now, mode) > 0)
+            {
+                AnalyticsEventQueue.GetBannerBudget(out int queuedBanner, out int freeSlots);
+
+                // Недоставленное баннерное событие в очереди: бэкенд не отвечает или ответ ещё в
+                // пути. Закрывать по окну новые пачки незачем — копим в тех же.
+                if (mode == BannerBatchFlush.Due && queuedBanner > 0)
+                    mode = BannerBatchFlush.Required;
+
+                if (freeSlots > 0)
+                {
+                    batches = _bannerBatches.TakeDue(now, mode, freeSlots);
+                    _bannerBudgetFullLogged = false;
+                }
+                else if (!_bannerBudgetFullLogged && _bannerBatches.CountDue(now, mode) > 0)
+                {
+                    _bannerBudgetFullLogged = true;
+                    Debug.Log($"{Tag} Banner queue budget full ({queuedBanner} undelivered), {_bannerBatches.Count} batch(es) wait in the pending store");
+                }
+            }
+
+            if (batches == null || batches.Count == 0)
+            {
+                if (changed)
+                    SaveBannerBatches();
+                return;
+            }
+
+            var bodies = new List<string>(batches.Count);
+            var eventIds = new List<string>(batches.Count);
+            foreach (var batch in batches)
+            {
+                // Новый event_id на каждую пачку: повтор этой же пачки снимается дедупом бэкенда.
+                string eventId = NewEventId();
+                bodies.Add(BuildBannerBatchJson(batch, eventId));
+                eventIds.Add(eventId);
+                Debug.Log($"{Tag} >>> {batch.EventName} banner batch: n={batch.N}, " +
+                          (batch.EventName == BannerImpressionBatcher.CrossPromoEventName
+                              ? $"paid_app_id={batch.PaidAppId}, "
+                              : $"network={batch.Network}, ad_unit={batch.AdUnit}, revenue_known={batch.RevenueKnown}, ") +
+                          $"device_id_hash={batch.DeviceIdHash}, ts={batch.FirstTs}, event_id={eventId}");
+            }
+
+            // Убрать пачки из буфера и поставить события в очередь — одной записью на диск:
+            // TryEnqueueAll сохраняет PlayerPrefs целиком, и падение между двумя шагами не
+            // потеряет и не удвоит показы.
+            SaveBannerBatches(save: false);
+            int queued = AnalyticsEventQueue.TryEnqueueAll(bodies, out int evicted);
+            if (queued < bodies.Count)
+                Debug.LogWarning($"{Tag} Event queue full of regular events, {bodies.Count - queued} banner batch event(s) not queued");
+            if (evicted > 0)
+                Debug.LogWarning($"{Tag} Queuing banner batches evicted {evicted} queued event(s)");
+
+            if (!sendNow || !IsInternetAvailable())
+                return;
+
+            for (int i = 0; i < bodies.Count; i++)
+                StartCoroutine(SendEventWithRetry(bodies[i], eventIds[i], enqueue: false));
+        }
+
+        private void EnsureBannerBatchesLoaded()
+        {
+            if (_bannerBatchesLoaded)
+                return;
+            _bannerBatchesLoaded = true;
+
+            string raw = PlayerPrefs.GetString(BannerBatchesKey, "");
+            if (string.IsNullOrEmpty(raw))
+                return;
+
+            try
+            {
+                var state = JsonUtility.FromJson<BannerBatchState>(raw);
+                // Пачка прошлого процесса без идентичности не получает идентичность новой сессии —
+                // как ранний клик в очереди: уходит с 'unattributed'.
+                int dropped = _bannerBatches.Restore(state?.Items, UnattributedDeviceId, MinTimestampMs);
+                Debug.Log($"{Tag} Restored {_bannerBatches.Count} pending banner batch(es), dropped {dropped} (invalid or over the cap)");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"{Tag} Pending banner batches unreadable, dropped: {e.Message}");
+                PlayerPrefs.DeleteKey(BannerBatchesKey);
+                PlayerPrefs.Save();
+            }
+        }
+
+        private void SaveBannerBatches(bool save = true)
+        {
+            if (_bannerBatches.IsEmpty)
+                PlayerPrefs.DeleteKey(BannerBatchesKey);
+            else
+                PlayerPrefs.SetString(BannerBatchesKey,
+                    JsonUtility.ToJson(new BannerBatchState { Items = _bannerBatches.Snapshot() }));
+
+            if (save)
+                PlayerPrefs.Save();
+        }
+
+        private static string BuildBannerBatchJson(BannerImpressionBatch batch, string eventId)
+        {
+            if (batch.EventName == BannerImpressionBatcher.MediationEventName)
+            {
+                // revenue — сумма за все n показов. Показы с неизвестной выручкой собраны в
+                // отдельную пачку и уходят с -1, как одиночный показ MAX без выручки.
+                double revenue = batch.RevenueKnown
+                    ? BannerImpressionBatcher.ToUsd(batch.RevenuePicoUsd)
+                    : UnknownRevenue;
+                return BuildMediationEventJson(batch.EventName, batch.Network, batch.AdUnit, BannerPlacement,
+                    revenue, batch.RevenuePrecision, AppId, batch.DeviceIdHash, batch.FirstTs, eventId, batch.N);
+            }
+
+            return BuildCrossPromoEventJson(batch.EventName, batch.PaidAppId, AppId, batch.DeviceIdHash,
+                batch.FirstTs, eventId, BannerPlacement, batch.N);
         }
 
         /// <summary>
@@ -807,6 +1064,10 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnApplicationFocus(bool hasFocus)
         {
+            // Пачки баннерных показов на потере фокуса не закрываются. Каждая уже привязана к
+            // идентичности момента показа, так что перепроверка Fire ID на возврате их не трогает,
+            // и они на диске. Закрытие всех ключей на каждом интерстишеле, диалоге или шторке
+            // давало бы по запросу на paid_app_id с n≈1 — почти столько же запросов, сколько в 1.0.8.
             if (hasFocus && IsReady && !_identityRefreshRunning)
             {
                 // The user may have reset the advertising ID while outside the app.
@@ -839,11 +1100,25 @@ namespace AMZNGoDSDK.Runtime
             // очередь прямо сейчас: возврата (focus) можно не дождаться — ушедший в стор
             // часто не возвращается. Даже если запрос не успеет — событие уже на диске
             // (enqueue-first), так что не потеряется.
+            // Пачки баннерных показов с истёкшим окном закрываются ДО флаша, чтобы попасть в его
+            // снимок очереди (таймер на паузе стоит). Остальные не закрываются досрочно: пауза
+            // случается на каждом полноэкранном объявлении и покупке, а незакрытая пачка и так на
+            // диске и уйдёт по окну после возврата или на следующем запуске.
+            if (pauseStatus)
+                FlushBannerBatches(BannerBatchFlush.Due, sendNow: false);
+
             if (pauseStatus && IsReady && IsInternetAvailable())
             {
                 Debug.Log($"{Tag} App paused — flushing queued events");
                 StartCoroutine(FlushQueue());
             }
+        }
+
+        private void OnApplicationQuit()
+        {
+            // Отправить уже не успеем: закрываем привязанные пачки в очередь, её дошлёт следующий
+            // запуск. Непривязанные остаются в буфере на диске.
+            FlushBannerBatches(BannerBatchFlush.All, sendNow: false);
         }
 
         /// <summary>
@@ -876,6 +1151,18 @@ namespace AMZNGoDSDK.Runtime
         /// на бэкенде (в т.ч. чтобы enqueue-first не породил дубли при повторной отправке).</summary>
         private static string NewEventId() => Guid.NewGuid().ToString("N");
 
+        /// <summary>
+        /// Версии сборки — в каждом событии с 1.0.9: по ним бэкенд и BI отличают сборки игр.
+        /// Стоят непосредственно перед <c>ts</c>, который остаётся последним полем.
+        /// </summary>
+        private static string BuildVersionFields() =>
+            $"\"sdk_version\":\"{EscapeJson(SdkPackageVersion.Value)}\"," +
+            $"\"app_version\":\"{EscapeJson(AppVersion)}\",";
+
+        /// <summary>Поле <c>n</c> склеенных баннерных показов; у одиночных событий его нет.</summary>
+        private static string BuildCountField(int count) =>
+            count > 0 ? $"\"n\":{count.ToString(CultureInfo.InvariantCulture)}," : string.Empty;
+
         private static string BuildFirstOpenJson(
             string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId)
         {
@@ -885,12 +1172,15 @@ namespace AMZNGoDSDK.Runtime
                    $"\"app_id\":\"{EscapeJson(appId)}\"," +
                    $"\"app_type\":\"{EscapeJson(appType)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";
         }
 
+        /// <param name="count">Число показов в склеенном баннерном событии (поле <c>n</c>); 0 — одиночное событие без поля.</param>
         private static string BuildCrossPromoEventJson(
-            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement)
+            string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement,
+            int count = 0)
         {
             // Старые вызовы без плейсмента сохраняют прежний payload. Очередь хранит
             // готовый JSON, поэтому плейсмент баннера сохранится и при повторной отправке.
@@ -905,6 +1195,8 @@ namespace AMZNGoDSDK.Runtime
                    $"\"donor_app_id\":\"{EscapeJson(donorAppId)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
                    placementField +
+                   BuildCountField(count) +
+                   BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -913,14 +1205,19 @@ namespace AMZNGoDSDK.Runtime
         /// Схема показа/клика медиации. <c>revenue</c> — числом, а не строкой: на бэкенде это
         /// сумма, и приводить её из строки к числу пришлось бы в каждом запросе.
         /// InvariantCulture обязателен — локаль с запятой сломала бы JSON.
+        /// У склеенного показа MAX-баннера (<paramref name="count"/> &gt; 0) <c>revenue</c> — сумма за все n показов.
         /// </summary>
         private static string BuildMediationEventJson(
             string eventName, string network, string adUnit, string placement, double revenue, string precision,
-            string appId, string deviceIdHash, long ts, string eventId)
+            string appId, string deviceIdHash, long ts, string eventId, int count = 0)
         {
             // Форматируем до интерполяции — как в BuildAttributionJson: InvariantCulture
-            // обязателен, локаль с запятой в разделителе сломала бы JSON.
-            string revenueText = revenue.ToString("R", CultureInfo.InvariantCulture);
+            // обязателен, локаль с запятой в разделителе сломала бы JSON. NaN и бесконечность
+            // (возможны только из ручного вызова) дали бы голый литерал и невалидный JSON —
+            // в протоколе неизвестная выручка это -1, как у MAX.
+            string revenueText = double.IsNaN(revenue) || double.IsInfinity(revenue)
+                ? UnknownRevenue.ToString("R", CultureInfo.InvariantCulture)
+                : revenue.ToString("R", CultureInfo.InvariantCulture);
 
             return "{" +
                    $"\"event_name\":\"{EscapeJson(eventName)}\"," +
@@ -932,6 +1229,8 @@ namespace AMZNGoDSDK.Runtime
                    $"\"placement\":\"{EscapeJson(placement ?? string.Empty)}\"," +
                    $"\"revenue\":{revenueText}," +
                    $"\"revenue_precision\":\"{EscapeJson(precision ?? string.Empty)}\"," +
+                   BuildCountField(count) +
+                   BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -946,6 +1245,7 @@ namespace AMZNGoDSDK.Runtime
                    $"\"app_id\":\"{EscapeJson(AppId)}\"," +
                    $"\"amazon_user_id\":\"{EscapeJson(amazonUserId)}\"," +
                    $"\"receipt_ids\":{BuildJsonStringArray(receiptIds)}," +
+                   BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -974,6 +1274,7 @@ namespace AMZNGoDSDK.Runtime
                    $"\"tracker_token\":{JsonStringOrNull(trackerToken)}," +
                    $"\"cost_amount\":{cost}," +
                    $"\"cost_currency\":{JsonStringOrNull(costCurrency)}," +
+                   BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";
         }
@@ -1041,6 +1342,13 @@ namespace AMZNGoDSDK.Runtime
                 }
             }
             return sb.ToString();
+        }
+
+        /// <summary>Формат буфера незакрытых баннерных пачек в PlayerPrefs (<see cref="BannerBatchesKey"/>).</summary>
+        [Serializable]
+        private class BannerBatchState
+        {
+            public List<BannerImpressionBatch> Items = new();
         }
     }
 }

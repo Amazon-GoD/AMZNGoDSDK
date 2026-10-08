@@ -24,9 +24,67 @@ namespace AMZNGoDSDK.Runtime
             lock (_lock)
             {
                 var events = LoadQueue();
-                bool added = AddWithCapacity(events, jsonBody);
+                bool added = AddWithCapacity(events, jsonBody, out _);
                 SaveQueueUnlocked(events);
                 return added;
+            }
+        }
+
+        /// <summary>
+        /// Persists several events with a single PlayerPrefs write. Sealed banner batches use it so
+        /// that removing them from the pending-batch store and queuing them land in the same save.
+        /// Returns how many were queued (a banner event is refused when regular events fill the queue).
+        /// </summary>
+        public static int TryEnqueueAll(List<string> jsonBodies) => TryEnqueueAll(jsonBodies, out _);
+
+        /// <summary>
+        /// Same, and reports through <paramref name="evicted"/> how many events already in the queue
+        /// were dropped to make room (the oldest banner event first, see the capacity rules below).
+        /// A caller that sizes its batch with <see cref="GetBannerBudget"/> never causes an eviction.
+        /// </summary>
+        public static int TryEnqueueAll(List<string> jsonBodies, out int evicted)
+        {
+            evicted = 0;
+            if (jsonBodies == null || jsonBodies.Count == 0)
+                return 0;
+
+            lock (_lock)
+            {
+                var events = LoadQueue();
+                int added = 0;
+                foreach (string json in jsonBodies)
+                {
+                    if (AddWithCapacity(events, json, out bool dropped))
+                        added++;
+                    if (dropped)
+                        evicted++;
+                }
+
+                SaveQueueUnlocked(events);
+                return added;
+            }
+        }
+
+        /// <summary>
+        /// Banner events (CP and MAX banner impressions) waiting in the queue, and how many more can
+        /// be added without evicting anything: the 10-slot banner budget and the 50-event total both
+        /// have to have room. A queued banner event is one not yet confirmed by the backend — sent
+        /// and in flight, or kept after a transient failure.
+        /// </summary>
+        public static void GetBannerBudget(out int queuedBannerEvents, out int freeBannerSlots)
+        {
+            lock (_lock)
+            {
+                var events = LoadQueue();
+                int banner = 0;
+                foreach (string json in events)
+                {
+                    if (IsBannerImpression(json))
+                        banner++;
+                }
+
+                queuedBannerEvents = banner;
+                freeBannerSlots = Math.Max(0, Math.Min(MaxBannerImpressions - banner, MaxQueueSize - events.Count));
             }
         }
 
@@ -186,12 +244,14 @@ namespace AMZNGoDSDK.Runtime
                 return new List<string>(events);
 
             foreach (string json in events)
-                AddWithCapacity(bounded, json);
+                AddWithCapacity(bounded, json, out _);
             return bounded;
         }
 
-        private static bool AddWithCapacity(List<string> events, string json)
+        /// <param name="evicted">true when a queued event was dropped to make room.</param>
+        private static bool AddWithCapacity(List<string> events, string json, out bool evicted)
         {
+            evicted = false;
             bool isBannerImpression = IsBannerImpression(json);
             int firstBanner = -1;
             int bannerCount = 0;
@@ -205,11 +265,14 @@ namespace AMZNGoDSDK.Runtime
                 bannerCount++;
             }
 
-            // Only the frequent banner stream has lower priority. Legacy, malformed and
-            // unknown payloads keep the regular budget, as do clicks/revenue/identity events.
+            // Only the frequent banner streams have lower priority: CP banner impressions and
+            // MAX banner mediation impressions (since 1.0.9 both arrive batched with "n").
+            // Legacy, malformed and unknown payloads keep the regular budget, as do clicks,
+            // full-screen revenue and identity events.
             if (isBannerImpression && bannerCount >= MaxBannerImpressions)
             {
                 events.RemoveAt(firstBanner);
+                evicted = true;
                 Debug.LogWarning("[Analytics] Banner impression budget full, dropping oldest banner impression");
             }
             else if (events.Count >= MaxQueueSize)
@@ -217,6 +280,7 @@ namespace AMZNGoDSDK.Runtime
                 if (firstBanner >= 0)
                 {
                     events.RemoveAt(firstBanner);
+                    evicted = true;
                     Debug.LogWarning("[Analytics] Event queue full, dropping oldest banner impression");
                 }
                 else if (isBannerImpression)
@@ -227,6 +291,7 @@ namespace AMZNGoDSDK.Runtime
                 else
                 {
                     events.RemoveAt(0);
+                    evicted = true;
                     Debug.LogWarning("[Analytics] Event queue full of regular events, dropping oldest regular event");
                 }
             }
@@ -243,7 +308,8 @@ namespace AMZNGoDSDK.Runtime
             try
             {
                 var envelope = JsonUtility.FromJson<EventEnvelope>(json);
-                return envelope != null && envelope.event_name == "cp_impression"
+                return envelope != null
+                    && (envelope.event_name == "cp_impression" || envelope.event_name == "mediation_impression")
                     && envelope.placement == "banner";
             }
             catch
