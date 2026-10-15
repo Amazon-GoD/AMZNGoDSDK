@@ -64,6 +64,11 @@ namespace AMZNGoDSDK.Runtime
         private const string BannerBatchesKey = "amzn_banner_impression_batches";
         private const float BannerBatchCheckIntervalSeconds = 5f;
 
+        // Повтор недоставленного баннерного события внутри сессии. Пока оно в очереди, пачки по
+        // окну не закрываются, а FlushQueue сама зовётся только на старте, паузе и фокусе. Минута,
+        // а не тик таймера: среди транзиентных ошибок есть 429, его нельзя долбить каждые 5 секунд.
+        private const float BannerQueueRetryIntervalSeconds = 60f;
+
         // Неизвестная выручка показа в протоколе — -1, как её отдаёт MAX.
         private const double UnknownRevenue = -1d;
 
@@ -86,6 +91,10 @@ namespace AMZNGoDSDK.Runtime
         private readonly BannerImpressionBatcher _bannerBatches = new BannerImpressionBatcher();
         private bool _bannerBatchesLoaded;
         private bool _bannerBudgetFullLogged;
+
+        // Пачки, отправленные таймером и ещё ждущие ответа. Они уже в очереди, и повтор очереди
+        // в это время отправил бы их второй раз.
+        private int _bannerSendsInFlight;
 
         // Связка, отправка которой уже в полёте: сверка IAP может завершиться несколько
         // раз подряд (init + после покупки), и без этой защёлки одна и та же связка ушла
@@ -185,6 +194,7 @@ namespace AMZNGoDSDK.Runtime
             _attributionRoutineRunning = false;
             _identityRefreshRunning = false;
             _iapLinkInFlightHash = null;
+            _bannerSendsInFlight = 0;
             _deviceIdHash = null;
             _deviceIdResolved = false;
         }
@@ -501,16 +511,30 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>
         /// Закрывает пачки по окну, в том числе когда баннер уже скрыт и новых показов нет.
         /// WaitForSecondsRealtime — timeScale=0 на интерстишеле не должен останавливать отправку.
+        /// Раз в <see cref="BannerQueueRetryIntervalSeconds"/> досылает недоставленное баннерное
+        /// событие, иначе после одного транзиентного сбоя окно стояло бы до паузы или фокуса.
         /// </summary>
         private IEnumerator BannerBatchRoutine()
         {
+            // Один экземпляр на запуск корутины: WaitForSecondsRealtime сбрасывается после
+            // каждого ожидания, а новый объект каждые 5 секунд — лишняя аллокация.
+            var wait = new WaitForSecondsRealtime(BannerBatchCheckIntervalSeconds);
+            // Первый повтор не раньше чем через интервал: InitializeRoutine сам флашит очередь.
+            float nextQueueRetryAt = Time.realtimeSinceStartup + BannerQueueRetryIntervalSeconds;
+
             while (true)
             {
-                yield return new WaitForSecondsRealtime(BannerBatchCheckIntervalSeconds);
+                yield return wait;
 
                 try
                 {
                     FlushBannerBatches(BannerBatchFlush.Due, sendNow: true);
+
+                    if (Time.realtimeSinceStartup >= nextQueueRetryAt)
+                    {
+                        nextQueueRetryAt = Time.realtimeSinceStartup + BannerQueueRetryIntervalSeconds;
+                        RetryUndeliveredBannerEvents();
+                    }
                 }
                 catch (Exception e)
                 {
@@ -604,7 +628,33 @@ namespace AMZNGoDSDK.Runtime
                 return;
 
             for (int i = 0; i < bodies.Count; i++)
-                StartCoroutine(SendEventWithRetry(bodies[i], eventIds[i], enqueue: false));
+                StartCoroutine(SendBannerBatchEvent(bodies[i], eventIds[i]));
+        }
+
+        private IEnumerator SendBannerBatchEvent(string json, string eventId)
+        {
+            // Без finally: остановленная корутина его не выполнит, счётчик обнуляет ResetTransientState.
+            _bannerSendsInFlight++;
+            yield return SendEventWithRetry(json, eventId, enqueue: false);
+            _bannerSendsInFlight--;
+        }
+
+        /// <summary>
+        /// Досылает очередь, если в ней застряло баннерное событие после транзиентного сбоя. Пока
+        /// оно там, <see cref="FlushBannerBatches"/> не закрывает пачки по окну. Ничего не делает,
+        /// если отправка таймера ещё в полёте (это не застрявшее событие) или флаш уже идёт.
+        /// </summary>
+        private void RetryUndeliveredBannerEvents()
+        {
+            if (!Enabled || !IsReady || _flushing || _bannerSendsInFlight > 0 || !IsInternetAvailable())
+                return;
+
+            AnalyticsEventQueue.GetBannerBudget(out int queuedBanner, out _);
+            if (queuedBanner == 0)
+                return;
+
+            Debug.Log($"{Tag} {queuedBanner} undelivered banner event(s) in queue — retrying queue flush");
+            StartCoroutine(FlushQueue());
         }
 
         private void EnsureBannerBatchesLoaded()

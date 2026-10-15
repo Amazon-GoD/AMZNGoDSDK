@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of one per refresh. The window
   closes a batch only while the device is online and no earlier banner event is
   still undelivered; otherwise impressions keep accumulating in the same batch.
+  An undelivered banner event (transient failure: network, 5xx, 401/403/408/429)
+  is retried once a minute during the session, so a single failure no longer
+  stalls the window until the next pause, focus change or launch.
   Its `ts` is the first impression's time and each batch has its own
   `event_id`. The banner visibility rules are unchanged. Interstitial and
   rewarded impressions and all clicks are still sent one event each.
