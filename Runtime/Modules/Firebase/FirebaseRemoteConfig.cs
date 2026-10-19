@@ -27,7 +27,7 @@ namespace AMZNGoDSDK.Runtime
             try
             {
                 remoteConfig = FirebaseRemoteConfig.DefaultInstance;
-                await remoteConfig.EnsureInitializedAsync();
+                await EnsureRemoteConfigInitializedAsync(remoteConfig);
                 if (!IsCurrentInitialization(version) || IsRemoteConfigReady) return;
                 cacheReady = true;
                 // Make activated cached values available if the startup deadline expires during fetch.
@@ -40,20 +40,21 @@ namespace AMZNGoDSDK.Runtime
                 });
                 if (!IsCurrentInitialization(version) || IsRemoteConfigReady) return;
 
+                // Failed or throttled fetches fault these tasks on Android and iOS, so the catch below
+                // handles them; reaching the next line means the fetch succeeded.
                 if (_forceRemoteConfigFetchOnStartup)
                 {
                     await remoteConfig.FetchAsync(TimeSpan.Zero);
                     if (!IsCurrentInitialization(version) || IsRemoteConfigReady) return;
-                    if (remoteConfig.Info.LastFetchStatus == LastFetchStatus.Success)
-                        await remoteConfig.ActivateAsync();
+                    await remoteConfig.ActivateAsync();
                 }
                 else
                 {
+                    // A false result means nothing new was activated, not a failed fetch.
                     await remoteConfig.FetchAndActivateAsync();
                 }
                 if (!IsCurrentInitialization(version) || IsRemoteConfigReady) return;
-                // A false result means nothing new was activated, not a failed fetch.
-                LastRemoteConfigFetchSucceeded = remoteConfig.Info.LastFetchStatus == LastFetchStatus.Success;
+                LastRemoteConfigFetchSucceeded = true;
             }
             catch (Exception exception)
             {
@@ -76,6 +77,21 @@ namespace AMZNGoDSDK.Runtime
                         Debug.LogWarning($"[FirebaseModule] Cannot read Remote Config: {exception.Message}. Using local groups.");
                     }
                 }
+            }
+        }
+
+        private static async Task EnsureRemoteConfigInitializedAsync(FirebaseRemoteConfig remoteConfig)
+        {
+            try
+            {
+                await remoteConfig.EnsureInitializedAsync();
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Native initialization has already succeeded here. Firebase Android leaves
+                // ConfigInfo.throttled_end_time uninitialized in EnsureInitialized, so the C# wrapper
+                // may fail converting it to DateTime (firebase-unity-sdk#1481). The result is unused.
+                Debug.LogWarning("[FirebaseModule] Remote Config returned unreadable ConfigInfo on initialization; continuing.");
             }
         }
 
