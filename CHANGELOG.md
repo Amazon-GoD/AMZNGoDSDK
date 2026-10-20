@@ -5,7 +5,12 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] (1.0.9)
+## [Unreleased]
+
+## [1.0.9-beta.1] - 2026-10-20
+
+First 1.0.9 beta. Includes all changes on safety since 1.0.8. Read the
+upgrade notes below before shipping: the backend must be updated first.
 
 ### Changed
 

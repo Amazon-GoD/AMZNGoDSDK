@@ -9,6 +9,6 @@ namespace AMZNGoDSDK.Runtime
     /// </summary>
     public static class SdkPackageVersion
     {
-        public const string Value = "1.0.9";
+        public const string Value = "1.0.9-beta.1";
     }
 }

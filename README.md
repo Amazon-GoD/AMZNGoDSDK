@@ -1,15 +1,30 @@
-# AMZN GoD SDK for Unity — 1.0.8
+# AMZN GoD SDK for Unity — 1.0.9-beta.1
 
-Стабильная версия от 5 октября 2026 года. В Unity Package Manager можно
-закрепить пакет ссылкой:
+Бета-релиз от 20 октября 2026 года, собранный из ветки `safety`.
 
-`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.8`
+Установка через Unity Package Manager:
 
-Ветка `#Releases` содержит последний стабильный релиз. Для приватного
-репозитория необходим настроенный доступ к GitHub.
+```text
+https://github.com/Amazon-GoD/AMZNGoDSDK.git#beta
+```
 
-[Изменения 1.0.8](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
+Для фиксации этой версии используйте `#v1.0.9-beta.1`. Канал `#Releases`
+содержит стабильный релиз 1.0.8. Для приватного репозитория необходим
+настроенный доступ к GitHub.
+
+[Изменения 1.0.9-beta.1](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
 · [Android-зависимости и миграция](Documentation~/ANDROID-DEPENDENCIES.md)
+
+**Перед выпуском игры на 1.0.9 обновите бэкенд.** Текущий production-бэкенд
+отклоняет пакетные события баннеров (`placement: "banner"`, `n`,
+`mediation_*`) с HTTP 400, и SDK их отбрасывает. Подробности — раздел
+Upgrade notes в CHANGELOG.
+
+В beta.1: показы баннеров Cross-Promo и MAX отправляются пакетами, во всех
+событиях есть `sdk_version` и `app_version`, недоставленные события баннеров
+повторяются раз в минуту, debug APK собирается одной кнопкой в SDK Settings.
+Исправлены повторный `cp_click` при двойном нажатии, `NaN` в revenue и пропуск
+загрузки Remote Config на Android.
 
 Unity 2022.3 LTS; при включённом MAX минимальная Android API — 24.
 Подробные результаты ревью и границы проверки:

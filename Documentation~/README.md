@@ -31,13 +31,15 @@ Add the package to `Packages/manifest.json` (or through
 ```json
 {
   "dependencies": {
-    "com.amzngod.amzngodsdk": "https://github.com/Amazon-GoD/AMZNGoDSDK.git#Releases"
+    "com.amzngod.amzngodsdk": "https://github.com/Amazon-GoD/AMZNGoDSDK.git#beta"
   }
 }
 ```
 
-- `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.8`) — pin an exact release version.
+- `#beta` — the latest beta package; this snapshot is **1.0.9-beta.1**.
+- `#v1.0.9-beta.1` — pin this exact beta version.
+- `#Releases` — the stable release channel (currently 1.0.8).
+- `#vX.Y.Z` (e.g. `#v1.0.8`) — pin an exact release version.
 
 Version 1.0.8 includes both 1.0.8 beta releases and the subsequent review
 fixes. Read [the changelog](../CHANGELOG.md) and
