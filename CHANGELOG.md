@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A non-finite revenue passed to the manual `TrackMediationImpression` overloads
   is sent as `-1` instead of a bare `NaN`/`Infinity` literal, which made the body
   invalid JSON.
+- Firebase Remote Config fetches on Android again. Firebase could throw
+  `ArgumentOutOfRangeException` from `EnsureInitializedAsync` while building
+  `ConfigInfo` after native initialization succeeded, which skipped the fetch on
+  every launch. The SDK now ignores that exception, continues with the fetch and
+  takes fetch success from the task result instead of reading `ConfigInfo`.
 
 ### Upgrade notes
 
