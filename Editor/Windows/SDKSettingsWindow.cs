@@ -41,7 +41,8 @@ namespace AMZNGoDSDK.Editor
         private string _lastAppLovinStatus;
         private string _lastFirebaseStatus;
         private string _lastDependenciesStatus;
-        
+        private int _lastApkBuildRevision = -1;
+
         private static GUIStyle _moduleDescriptionStyle;
 
         private Vector2 _settingsScrollPosition;
@@ -129,6 +130,11 @@ namespace AMZNGoDSDK.Editor
             bool liveStateChanged = ReadLiveState();
             if (wasBusy && !WasInstallerBusy) InvalidateStatus();
             if (liveStateChanged) Repaint();
+            if (_lastApkBuildRevision != OneClickAndroidBuild.Revision)
+            {
+                _lastApkBuildRevision = OneClickAndroidBuild.Revision;
+                Repaint();
+            }
 
             if (IsRefreshBlocked) return;
             double now = EditorApplication.timeSinceStartup;
@@ -358,8 +364,142 @@ namespace AMZNGoDSDK.Editor
                     SdkDependencyManager.Retry();
             }
 
+            DrawApkBuildSection();
+
             GUILayout.Space(10);
             EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawApkBuildSection()
+        {
+            GUILayout.Space(20);
+            GUILayout.Label("Сборка APK (debug-подпись):", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Сохраняет настройки SDK и проходит весь чек-лист: проверка проекта, App Type, переключение на Android, " +
+                "установка зависимостей и инструментов Android, EDM Force Resolve, проверка настроек и сборка APK " +
+                "в Builds/Android. Подпись — debug keystore Unity: такой APK только для тестов, не для загрузки в стор.",
+                MessageType.Info);
+
+            bool active = OneClickAndroidBuild.IsActive;
+            using (new EditorGUI.DisabledScope(active))
+            {
+                OneClickAndroidBuild.DevelopmentPreference =
+                    EditorGUILayout.Toggle("Development Build", OneClickAndroidBuild.DevelopmentPreference);
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(active || BuildPipeline.isBuildingPlayer || IsEditorBusy))
+            {
+                // Dialogs and SaveSettings run after OnGUI: a modal window inside a layout group breaks the layout.
+                if (GUILayout.Button("Сохранить и собрать APK", GUILayout.Height(30)))
+                    EditorApplication.delayCall += StartApkBuild;
+            }
+
+            if (active && GUILayout.Button("Отменить", GUILayout.Height(30), GUILayout.Width(120)))
+                OneClickAndroidBuild.Cancel();
+            EditorGUILayout.EndHorizontal();
+
+            if (!OneClickAndroidBuild.HasReport)
+                return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            for (int step = 0; step < OneClickAndroidBuild.StepCount; step++)
+            {
+                var status = OneClickAndroidBuild.GetStatus(step);
+                string marker = status switch
+                {
+                    OneClickAndroidBuild.StepStatus.Done => "[OK]",
+                    OneClickAndroidBuild.StepStatus.Running => "[..]",
+                    OneClickAndroidBuild.StepStatus.Failed => "[X]",
+                    _ => "[  ]"
+                };
+                EditorGUILayout.LabelField(marker + "  " + OneClickAndroidBuild.StepTitles[step],
+                    status == OneClickAndroidBuild.StepStatus.Running ? EditorStyles.boldLabel : EditorStyles.label);
+
+                string message = OneClickAndroidBuild.GetMessage(step);
+                if (string.IsNullOrEmpty(message))
+                    continue;
+                if (status == OneClickAndroidBuild.StepStatus.Failed)
+                    EditorGUILayout.HelpBox(message, MessageType.Error);
+                else
+                    EditorGUILayout.LabelField(message, EditorStyles.wordWrappedMiniLabel);
+            }
+            EditorGUILayout.EndVertical();
+
+            const int maxShownErrors = 10;
+            var errors = OneClickAndroidBuild.Errors;
+            for (int i = 0; i < errors.Count && i < maxShownErrors; i++)
+                EditorGUILayout.HelpBox(errors[i], MessageType.Error);
+            if (errors.Count > maxShownErrors)
+                EditorGUILayout.HelpBox("…и ещё " + (errors.Count - maxShownErrors) + ". Полный список в Console.", MessageType.Error);
+
+            foreach (string warning in OneClickAndroidBuild.Warnings)
+                EditorGUILayout.HelpBox(warning, MessageType.Warning);
+
+            if (!OneClickAndroidBuild.Finished)
+                return;
+
+            if (OneClickAndroidBuild.Succeeded)
+            {
+                EditorGUILayout.HelpBox(
+                    "APK собран за " + OneClickAndroidBuild.FormatDuration(OneClickAndroidBuild.DurationSeconds) + ":\n" +
+                    OneClickAndroidBuild.ArtifactPath + "\n" +
+                    (OneClickAndroidBuild.ArtifactSize / (1024f * 1024f)).ToString("0.0") + " MB",
+                    MessageType.Info);
+                if (GUILayout.Button("Показать в проводнике"))
+                    EditorUtility.RevealInFinder(OneClickAndroidBuild.ArtifactPath);
+            }
+            else
+            {
+                EditorGUILayout.LabelField(
+                    "Остановлено через " + OneClickAndroidBuild.FormatDuration(OneClickAndroidBuild.DurationSeconds) + ".",
+                    EditorStyles.miniLabel);
+            }
+        }
+
+        private void StartApkBuild()
+        {
+            // delayCall may fire after the window was closed.
+            if (this == null || _currentSettings == null)
+                return;
+
+            if (_currentSettings.Enabled && _currentSettings.Analytics != null && _currentSettings.Analytics.Enabled &&
+                _currentSettings.Analytics.AppType == AnalyticsAppType.None)
+            {
+                int choice = EditorUtility.DisplayDialogComplex(
+                    "App Type",
+                    "Для сборки нужен App Type модуля Analytics. Он сбрасывается при каждом запуске Unity Editor.\n\n" +
+                    "Какой тип у этой сборки?",
+                    "Free", "Отмена", "Paid");
+                if (choice == 1)
+                    return;
+                _currentSettings.Analytics.AppType = choice == 0 ? AnalyticsAppType.Free : AnalyticsAppType.Paid;
+            }
+
+            if (!SdkSettingsManager.ValidateInAppPurchaseProductIds(_currentSettings.InAppPurchase, out var iapMessage))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", iapMessage, "OK");
+                return;
+            }
+
+            if (!SdkSettingsManager.ValidateABTests(_currentSettings.Firebase, out var abMessage))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", abMessage, "OK");
+                return;
+            }
+
+            // The build reads the config from disk, so unsaved window edits must be saved first.
+            if (!SdkSettingsManager.SaveSettings(_currentSettings))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", "Настройки SDK не сохранены. Подробности в Console.", "OK");
+                return;
+            }
+
+            InvalidateStatus();
+
+            var options = new OneClickAndroidBuild.Options { Development = OneClickAndroidBuild.DevelopmentPreference };
+            if (!OneClickAndroidBuild.Start(options, out string error))
+                EditorUtility.DisplayDialog("Сборка не запущена", error, "OK");
         }
 
         private void DrawInternetConnectionSettings()

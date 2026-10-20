@@ -38,25 +38,16 @@ namespace AMZNGoDSDK.Editor
             if (settings == null || !settings.Enabled)
                 return;
 
-            // A queued cleanup can be completed by the synchronous native build pass.
-            // Only an operation already changing packages makes the project unstable.
-            if (SdkDependencyBootstrap.IsRunning || DependencyInstaller.IsBusy ||
-                AppLovinPackageInstaller.IsOperationRunning || FirebasePackageInstaller.IsBusy)
-                throw new BuildFailedException("Подготовка зависимостей SDK ещё выполняется. Дождитесь её завершения в AMZN GoD / SDK Settings.");
-            if (settings.AppLovin != null && settings.AppLovin.Enabled && !AppLovinPackageInstaller.IsRequiredBuildSetInstalled)
-                throw new BuildFailedException("Комплект AppLovin ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");
-            if (settings.Firebase != null && settings.Firebase.Enabled && !FirebasePackageInstaller.IsRequiredInstallationReady)
-                throw new BuildFailedException("Комплект Firebase ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.");
+            string dependencyError = GetDependencyError(settings);
+            if (dependencyError != null)
+                throw new BuildFailedException(dependencyError);
 
             var errors = new List<string>();
             var warnings = new List<string>();
 
             AndroidToolchainInstaller.EnsureInstalled();
-            AndroidToolchainSettings.CollectValidationErrors(errors);
-            CheckTargetSdk(errors);
             EnsureMinSdk(settings);
-            CheckInternetPermission(warnings);
-            CheckAppLovinConfiguration(settings, errors, warnings);
+            CollectProjectIssues(settings, errors, warnings);
 
             foreach (var warning in warnings)
                 Debug.LogWarning($"{LogTag} {warning}");
@@ -79,6 +70,36 @@ namespace AMZNGoDSDK.Editor
             }
 
             throw new BuildFailedException(message.ToString());
+        }
+
+        /// <summary>
+        /// Ошибка готовности зависимостей или null. Вынесено из хука, чтобы кнопка сборки APK
+        /// (<see cref="OneClickAndroidBuild"/>) проверяла то же самое до старта сборки.
+        /// </summary>
+        internal static string GetDependencyError(Runtime.SdkSettingsData settings)
+        {
+            // A queued cleanup can be completed by the synchronous native build pass.
+            // Only an operation already changing packages makes the project unstable.
+            if (SdkDependencyBootstrap.IsRunning || DependencyInstaller.IsBusy ||
+                AppLovinPackageInstaller.IsOperationRunning || FirebasePackageInstaller.IsBusy)
+                return "Подготовка зависимостей SDK ещё выполняется. Дождитесь её завершения в AMZN GoD / SDK Settings.";
+            if (settings.AppLovin != null && settings.AppLovin.Enabled && !AppLovinPackageInstaller.IsRequiredBuildSetInstalled)
+                return "Комплект AppLovin ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.";
+            if (settings.Firebase != null && settings.Firebase.Enabled && !FirebasePackageInstaller.IsRequiredInstallationReady)
+                return "Комплект Firebase ещё не готов. Проверьте автоматическую установку в AMZN GoD / SDK Settings.";
+            return null;
+        }
+
+        /// <summary>
+        /// Проверки настроек проекта без изменений в нём (Minimum API Level и Gradle
+        /// хук меняет отдельно). Общие для хука и кнопки сборки APK.
+        /// </summary>
+        internal static void CollectProjectIssues(Runtime.SdkSettingsData settings, List<string> errors, List<string> warnings)
+        {
+            AndroidToolchainSettings.CollectValidationErrors(errors);
+            CheckTargetSdk(errors);
+            CheckInternetPermission(warnings);
+            CheckAppLovinConfiguration(settings, errors, warnings);
         }
 
         /// <summary>

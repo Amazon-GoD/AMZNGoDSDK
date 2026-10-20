@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every backend event (`first_open`, `cp_*`, `mediation_*`, `iap_link`,
   `attribution`) carries `sdk_version` and `app_version` (`Application.version`)
   as JSON strings immediately before `ts`.
+- One-click debug APK build: **Сохранить и собрать APK** in `AMZN GoD > SDK Settings`
+  saves the settings, asks for the Analytics App Type when it is not set,
+  switches the project to Android, installs and verifies module dependencies
+  and Android build tools (including EDM Force Resolve), runs the same checks as
+  the build hooks, and builds an APK signed with Unity's debug keystore into
+  `Builds/Android`. Progress survives domain reloads. CI entry point:
+  `-executeMethod AMZNGoDSDK.Editor.OneClickAndroidBuildCli.Run` (see README).
 
 ### Fixed
 

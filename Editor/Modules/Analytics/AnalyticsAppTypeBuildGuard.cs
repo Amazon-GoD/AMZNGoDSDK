@@ -21,27 +21,34 @@ namespace AMZNGoDSDK.Editor
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            var settings = SdkSettingsManager.LoadRuntimeSettings();
+            string error = GetBuildError(SdkSettingsManager.LoadRuntimeSettings());
+            if (error != null)
+                throw new BuildFailedException(error);
+        }
 
+        /// <summary>
+        /// Текст ошибки сборки или null, если App Type в порядке. Вынесено из хука, чтобы
+        /// кнопка сборки APK (<see cref="OneClickAndroidBuild"/>) проверяла то же самое до старта.
+        /// </summary>
+        internal static string GetBuildError(Runtime.SdkSettingsData settings)
+        {
             // Конфига нет или SDK целиком выключен — модуля Analytics в сборке не будет.
             if (settings == null || !settings.Enabled)
-                return;
+                return null;
 
             if (settings.Analytics == null || !settings.Analytics.Enabled)
-                return;
+                return null;
 
             // Полная квалификация обязательна: в AMZNGoDSDK.Editor лежит одноимённое
             // зеркало enum'а, и без Runtime. компилятор выберет его.
             if (settings.Analytics.AppType != Runtime.AnalyticsAppType.None)
-                return;
+                return null;
 
-            throw new BuildFailedException(
-                "[AMZNGoDSDK] Analytics: не выбран App Type — сборка остановлена.\n" +
-                "App Type сбрасывается при каждом запуске Unity Editor, чтобы free/paid не " +
-                "унаследовался от прошлой сессии и не сломал разбивку событий на бэкенде.\n" +
-                "Как починить: AMZN GoD → SDK Settings → блок Analytics → App Type (Free или Paid) " +
-                "→ Save Settings, затем собрать заново."
-            );
+            return "[AMZNGoDSDK] Analytics: не выбран App Type — сборка остановлена.\n" +
+                   "App Type сбрасывается при каждом запуске Unity Editor, чтобы free/paid не " +
+                   "унаследовался от прошлой сессии и не сломал разбивку событий на бэкенде.\n" +
+                   "Как починить: AMZN GoD → SDK Settings → блок Analytics → App Type (Free или Paid) " +
+                   "→ Save Settings, затем собрать заново.";
         }
     }
 }

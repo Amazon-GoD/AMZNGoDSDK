@@ -391,6 +391,41 @@ versions, installation behavior and verification limits.
   the `AMZNGoDSDK.Module.CrossPromo` assembly referenced from the package
   `link.xml`.
 
+### One-click debug APK build
+
+`AMZN GoD > SDK Settings` → **Сохранить и собрать APK** (save and build APK) runs the whole build checklist:
+
+1. Project checks: not in Play Mode, no compile errors, Android Build Support
+   installed, SDK config present, at least one enabled scene in Build Settings.
+2. Analytics App Type: asked in a dialog when it is not set.
+3. Active platform switched to Android (assets are reimported once).
+4. Module dependencies, Android build tools and EDM Force Resolve — the same
+   pass as **Проверить / повторить установку зависимостей**.
+5. The checks of the SDK build hooks (App Type, IAP terms, Android toolchain,
+   target API, AdMob App ID, disabled-module artifacts), reported as one list.
+6. `BuildPipeline.BuildPlayer` into
+   `Builds/Android/<product>_<version>_<time>.apk`.
+
+The APK is always signed with Unity's debug keystore and is meant for testing,
+not for store upload. The project's keystore, App Bundle and Export Project
+settings are restored after the build. Progress and the result are shown in
+the same section and survive domain reloads; **Отменить** (cancel) stops the checklist
+between steps (a running package installation or Gradle build is not
+interrupted).
+
+CI (run **without** `-quit`; the editor exits with code 0 on success, 1 on
+failure):
+
+```
+Unity.exe -batchmode -nographics -projectPath <project> -buildTarget Android ^
+  -executeMethod AMZNGoDSDK.Editor.OneClickAndroidBuildCli.Run ^
+  -amznAppType Free [-amznOutput Builds/Android/game.apk] [-amznDevelopment] ^
+  -logFile build.log
+```
+
+`-amznAppType` (`Free` or `Paid`) is required when the Analytics module is
+enabled, because App Type is reset on every editor start.
+
 ## Verified configurations
 
 Android gradle exports from a clean Unity 2022.3.60f1 consumer project with
