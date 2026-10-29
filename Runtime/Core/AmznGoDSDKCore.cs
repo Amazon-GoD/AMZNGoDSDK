@@ -132,12 +132,15 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
 #if AMZN_ANALYTICS_ENABLED
+            // Токен Adjust уходит в first_open, только если модуль Adjust включён в настройках.
             _analyticsModule.Construct(
                 analyticsSettings.Enabled,
                 analyticsSettings.BaseUrl,
                 analyticsSettings.ApiKey,
                 analyticsSettings.AppType,
-                crossPromoSettings.DefaultPromotedAppId);
+                crossPromoSettings.DefaultPromotedAppId,
+                analyticsSettings.ConsoleId,
+                adjustSettings != null && adjustSettings.Enabled ? adjustSettings.Key : null);
 #endif
 
 #if AMZN_FIREBASE_ENABLED

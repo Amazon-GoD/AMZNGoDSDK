@@ -19,7 +19,7 @@ namespace AMZNGoDSDK.Editor
     /// но не перезапуск редактора), а работа продолжается из <see cref="EditorApplication.update"/>.</para>
     ///
     /// <para>Проверки не дублируются: используются те же методы, что и в build-хуках
-    /// (<see cref="AnalyticsAppTypeBuildGuard"/>, <see cref="IapSubscriptionTermBuildGuard"/>,
+    /// (<see cref="AnalyticsAppTypeBuildGuard"/>, <see cref="ConsoleIdBuildGuard"/>, <see cref="IapSubscriptionTermBuildGuard"/>,
     /// <see cref="DisabledModuleBuildGuard"/>, AndroidBuildPreflight). Хуки всё равно отработают
     /// внутри BuildPlayer — кнопка лишь ловит ошибки заранее и показывает их списком.</para>
     /// </summary>
@@ -444,6 +444,7 @@ namespace AMZNGoDSDK.Editor
             if (settings != null && settings.Enabled)
             {
                 AddIfPresent(errors, AnalyticsAppTypeBuildGuard.GetBuildError(settings));
+                ConsoleIdBuildGuard.CollectIssues(settings, ConsoleIdBuildGuard.ProjectBundle, _state.Development, errors, warnings);
                 AddIfPresent(errors, IapSubscriptionTermBuildGuard.GetBuildError(settings));
 #if UNITY_ANDROID
                 AddIfPresent(errors, AndroidBuildPreflight.GetDependencyError(settings));

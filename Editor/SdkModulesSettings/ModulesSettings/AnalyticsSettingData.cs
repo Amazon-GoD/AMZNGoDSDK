@@ -17,5 +17,8 @@ namespace AMZNGoDSDK.Editor
         public string BaseUrl = Runtime.AnalyticsSettingData.DefaultBaseUrl;
         public string ApiKey = Runtime.AnalyticsSettingData.DefaultApiKey;
         public AnalyticsAppType AppType;
+        // Зеркала полей Runtime.AnalyticsSettingData — смысл описан там.
+        public string ConsoleId = string.Empty;
+        public string ConsoleIdBundle = string.Empty;
     }
 }
