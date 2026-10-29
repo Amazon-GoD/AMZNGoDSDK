@@ -344,8 +344,9 @@ sends a second `cp_click` nor opens the store twice.
 ### Console ID and first_open fields
 
 Since 1.0.10 a new game can map itself in BI (bundle ↔ Adjust token ↔ ASIN)
-through one **Console ID** issued by the BI admin (**Генератор ID**), for
-example `F000042-0`:
+through one **Console ID** issued by the BI admin on the **Игры** page (with the
+game on **+ Добавить игру**, or in an existing game's card), for example
+`F000042-0`:
 
 - the letter is the listing type in Amazon: `F` free, `P` paid;
 - six digits are the game number, one sequence across all Amazon accounts;
@@ -354,11 +355,13 @@ example `F000042-0`:
   `2`, … (no leading zeros, up to 999).
 
 Format: `^[FP][0-9]{6}-(0|[1-9][0-9]{0,2})$`. Type the ID in three places (the
-generator shows each string with a copy button): the Amazon console App title
-(`F000042-0 Рабочее имя`; customers see the Display title, which ASO renames),
+admin shows each string with a copy button, after the game is created and in its
+card): the Amazon console App title (`F000042-0 Название игры`; customers see the
+Display title, which ASO renames),
 the Amazon console SKU (the bundle id), and `AMZN GoD > SDK Settings >
-Analytics > Console ID`. Existing games have no ID; the field stays empty and
-everything works as before.
+Analytics > Console ID`. A game without an ID leaves the field empty and works
+as before; an existing game gets one in its card on **Игры** when it moves to
+this version.
 
 The SDK Settings window validates the format as you type. Changing the ID
 records the Android bundle (Package Name,
