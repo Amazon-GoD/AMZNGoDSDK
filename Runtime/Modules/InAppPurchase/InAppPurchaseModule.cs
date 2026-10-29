@@ -1078,7 +1078,57 @@ namespace AMZNGoDSDK.Runtime
             SdkTrustedTime.OnFirstFreshTime -= OnTrustedTimeAvailable;
             _gateway?.ReleaseListeners();
             CompleteRestoreCallbacks(false);
+            HideSubscriptionBanner();
         }
+
+        #endregion
+
+        #region Subscription Banner
+
+        private SubscriptionBannerPresenter _bannerPresenter;
+
+        /// <summary>
+        /// SKU настроен как включённая подписка. Сверяем с настройками, а не с каталогом:
+        /// каталог заполняется в Initialize, а баннер просят и раньше — на старте игры.
+        /// </summary>
+        internal bool IsSubscriptionProduct(string sku)
+        {
+            if (string.IsNullOrWhiteSpace(sku) || settings?.SubscriptionProducts == null)
+                return false;
+
+            sku = sku.Trim();
+            foreach (var product in settings.SubscriptionProducts)
+            {
+                if (product != null && product.Enabled
+                    && string.Equals(product.ProductId?.Trim(), sku, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Баннер подписки — правила показа см. <see cref="SubscriptionBannerPresenter"/>.</summary>
+        public bool ShowSubscriptionBanner(string sku, string placement, Action<bool> onClosed)
+        {
+            if (!Enabled)
+                return false;
+
+            if (_bannerPresenter == null)
+            {
+                _bannerPresenter = gameObject.AddComponent<SubscriptionBannerPresenter>();
+                _bannerPresenter.Bind(this);
+            }
+
+            return _bannerPresenter.Show(sku, placement, onClosed);
+        }
+
+        public void HideSubscriptionBanner()
+        {
+            if (_bannerPresenter != null)
+                _bannerPresenter.Hide();
+        }
+
+        public bool IsSubscriptionBannerVisible => _bannerPresenter != null && _bannerPresenter.IsVisible;
 
         #endregion
 

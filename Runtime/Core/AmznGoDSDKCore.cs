@@ -659,6 +659,35 @@ namespace AMZNGoDSDK.Runtime
             if (_inAppPurchaseModule != null)
                 _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
         }
+
+        /// <summary>
+        /// Показать баннер подписки <paramref name="sku"/> с картинкой плейсмента
+        /// <paramref name="placement"/> (SDK Settings → In-App Purchase → Subscription Banner).
+        /// Плейсмент не указан — плейсменты подписки идут по кругу. Префаб выбирается по
+        /// ориентации экрана, «купить» покупает этот SKU, крестик появляется через 4 с.
+        ///
+        /// Можно ли показывать, баннер решает сам по <see cref="IsSubscribed"/>: при активной
+        /// подписке не показывается, а открытый закрывается, как только подписка стала активной.
+        ///
+        /// Возвращает false, если показа не будет: подписка уже активна, SKU не настроен, нет
+        /// картинок или уже открыт другой баннер. При true баннер показан или будет показан, как
+        /// только станет известно состояние подписки, и <paramref name="onClosed"/> придёт ровно
+        /// один раз: true — подписка активна (куплена из баннера или уже была), false — баннер
+        /// закрыли без покупки или показ не состоялся.
+        /// </summary>
+        public bool ShowSubBanner(string sku, string placement = null, Action<bool> onClosed = null) =>
+            IapReady && _inAppPurchaseModule.ShowSubscriptionBanner(sku, placement, onClosed);
+
+        /// <summary>Закрыть баннер подписки (onClosed придёт с false) и отменить ожидающий показа.</summary>
+        public void HideSubBanner()
+        {
+            if (_inAppPurchaseModule != null)
+                _inAppPurchaseModule.HideSubscriptionBanner();
+        }
+
+        /// <summary>Баннер подписки сейчас на экране.</summary>
+        public bool IsSubBannerVisible =>
+            _inAppPurchaseModule != null && _inAppPurchaseModule.IsSubscriptionBannerVisible;
 #else
         public bool IsIAPInitialized => false;
         public bool IsIAPRestored => false;
@@ -680,6 +709,9 @@ namespace AMZNGoDSDK.Runtime
         public void RemoveIAPPeriodStartedListener(Action<IapPeriodStarted> listener) { }
         public void SetIAPPurchaseCompleteCallback(Action<string> callback) { }
         public void SetIAPPurchaseFailedCallback(Action<string> callback) { }
+        public bool ShowSubBanner(string sku, string placement = null, Action<bool> onClosed = null) => false;
+        public void HideSubBanner() { }
+        public bool IsSubBannerVisible => false;
 #endif
 
         #endregion
