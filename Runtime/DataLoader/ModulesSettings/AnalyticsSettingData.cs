@@ -27,8 +27,8 @@ namespace AMZNGoDSDK.Runtime
         public AnalyticsAppType AppType;
 
         /// <summary>
-        /// Console ID из админки BI (Генератор ID), например F000042-0; уходит в first_open как
-        /// <c>console_id</c> (см. <see cref="Runtime.ConsoleId"/>). Пусто у старых игр и в конфигах
+        /// Console ID из админки BI (страница «Игры»), например F000042-0; уходит в first_open как
+        /// <c>console_id</c> (см. <see cref="Runtime.ConsoleId"/>). Пусто у игр без ID и в конфигах
         /// версий до 1.0.10.
         /// </summary>
         public string ConsoleId = string.Empty;

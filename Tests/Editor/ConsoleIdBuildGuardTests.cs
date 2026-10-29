@@ -73,7 +73,7 @@ namespace AMZNGoDSDK.Editor.Tests
 
             Assert.That(errors, Is.Empty);
             Assert.That(warnings, Has.Count.EqualTo(1));
-            Assert.That(warnings[0], Does.Contain("Генератор ID"));
+            Assert.That(warnings[0], Does.Contain("админка BI → «Игры»"));
         }
 
         [Test]

@@ -76,7 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Builds/Android`. Progress survives domain reloads. CI entry point:
   `-executeMethod AMZNGoDSDK.Editor.OneClickAndroidBuildCli.Run` (see README).
 - **Console ID.** `AMZN GoD > SDK Settings > Analytics > Console ID` takes the
-  game's ID from the BI admin (**Генератор ID**), for example `F000042-0`: `F`
+  game's ID from the BI admin (the **Игры** page: issued with the game on
+  **+ Добавить игру**, or in an existing game's card), for example `F000042-0`: `F`
   (free) or `P` (paid) listing, a 6-digit game number, and the copy number
   after the dash (`0` is the original). The same ID starts the App title in the
   Amazon console, so BI can map a new game's bundle, Adjust token and ASIN by
@@ -150,6 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently, and `first_open` is sent once per install, so those installs never
   report them.
 - Existing games need no changes for the Console ID: an empty ID is a warning.
+  An existing game that moves to this version can get an ID in its card on
+  **Игры** («Выдать Console ID»).
   The Adjust checks apply to every game with Adjust enabled: any build with
   an invalid key, and a release build with Sandbox, now stops. Switch to
   Production, or turn on **Allow Sandbox in release** for a test build.

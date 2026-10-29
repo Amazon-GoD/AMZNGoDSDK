@@ -91,8 +91,9 @@ namespace AMZNGoDSDK.Editor
         {
             if (string.IsNullOrEmpty(consoleId))
             {
-                warnings.Add("[AMZNGoDSDK] Analytics: Console ID не задан. Для старых игр это нормально. " +
-                             "Новой игре выдайте ID в админке BI → Генератор ID и впишите его до первой сборки " +
+                warnings.Add("[AMZNGoDSDK] Analytics: Console ID не задан. Для игры без ID это нормально. " +
+                             "ID выдаёт админка BI → «Игры» (новой игре — «+ Добавить игру», существующей — " +
+                             "«Выдать Console ID» в её карточке); впишите его до первой сборки " +
                              "(AMZN GoD → SDK Settings → Analytics → Console ID): без него BI не свяжет бандл, " +
                              "токен Adjust и ASIN игры автоматически.");
                 return;
@@ -101,7 +102,7 @@ namespace AMZNGoDSDK.Editor
             if (!Runtime.ConsoleId.IsValid(consoleId))
             {
                 errors.Add($"[AMZNGoDSDK] Analytics: Console ID «{consoleId}» не по формату — сборка остановлена.\n" +
-                           "Нужен ID из админки BI → Генератор ID: буква F (free) или P (paid), 6 цифр, дефис " +
+                           "Нужен ID из админки BI → «Игры»: буква F (free) или P (paid), 6 цифр, дефис " +
                            $"и номер копии, например {Runtime.ConsoleId.Example}.\n" +
                            "Как починить: AMZN GoD → SDK Settings → блок Analytics → Console ID → Save Settings.");
                 return;
@@ -120,9 +121,11 @@ namespace AMZNGoDSDK.Editor
                 errors.Add($"[AMZNGoDSDK] Analytics: Console ID вводили для {consoleIdBundle}, а собираете " +
                            $"{applicationIdentifier}. Это копия шаблона? Выдайте новый ID — сборка остановлена.\n" +
                            "Один Console ID — один листинг в Amazon: по нему BI связывает бандл, токен Adjust и ASIN.\n" +
-                           "Как починить: новой игре выдайте ID в админке BI → Генератор ID и впишите его в " +
-                           "AMZN GoD → SDK Settings → Analytics → Console ID → Save Settings. Если бандл этой же " +
-                           "игры сменили намеренно — сотрите Console ID и введите его заново.");
+                           "Как починить: новой игре (в том числе из шаблона) выдайте ID в админке BI: «Игры» → " +
+                           "«+ Добавить игру»; «Копия игры» — только для перезалива, платной версии или той же " +
+                           "игры в другом аккаунте. Впишите ID в AMZN GoD → SDK Settings → Analytics → Console ID " +
+                           "→ Save Settings. Если бандл этой же игры сменили намеренно — сотрите Console ID и " +
+                           "введите его заново.");
             }
 
             // None ловит AnalyticsAppTypeBuildGuard — второй ошибкой про то же не дублируем.
