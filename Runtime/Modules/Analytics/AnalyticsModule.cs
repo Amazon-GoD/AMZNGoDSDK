@@ -23,6 +23,8 @@ namespace AMZNGoDSDK.Runtime
     // BannerImpressionBatcher и отправляются одним событием с полем "n" не чаще раза в 5 минут на
     // ключ; до окна пачка закрывается только на смене суток UTC, при n = 1000 и на выходе.
     // Каждое событие несёт sdk_version и app_version.
+    // С 1.0.10 first_open дополнительно «заявляет» игру для BI: console_id, adjust_app_token,
+    // is_debug, installer (см. FirstOpenClaim). Остальные события не меняются.
     public class AnalyticsModule : ModuleBase
     {
         private const long MinTimestampMs = 1577836800000L;
@@ -76,6 +78,8 @@ namespace AMZNGoDSDK.Runtime
         private string _apiKey;
         private string _appType;
         private string _defaultPromotedAppId;
+        private string _consoleId;
+        private string _adjustAppToken;
         private string _deviceIdHash;
         private bool _deviceIdResolved;
         private bool _flushing;
@@ -121,13 +125,18 @@ namespace AMZNGoDSDK.Runtime
         // привяжется к первому резолву (BannerImpressionBatcher.BindIdentity) и до него не уйдёт.
         private string BannerBatchIdentity => _deviceIdResolved ? EventDeviceIdHash : null;
 
-        public void Construct(bool enable, string baseUrl, string apiKey, AnalyticsAppType appType, string defaultPromotedAppId)
+        /// <param name="consoleId">Console ID из настроек Analytics; пусто — поле console_id не отправляется.</param>
+        /// <param name="adjustAppToken">Ключ Adjust, если модуль Adjust включён, иначе null.</param>
+        public void Construct(bool enable, string baseUrl, string apiKey, AnalyticsAppType appType, string defaultPromotedAppId,
+            string consoleId = null, string adjustAppToken = null)
         {
             Enabled = enable;
             _baseUrl = baseUrl?.TrimEnd('/');
             _apiKey = apiKey;
             _appType = appType == AnalyticsAppType.Paid ? "paid" : "free";
             _defaultPromotedAppId = defaultPromotedAppId;
+            _consoleId = consoleId;
+            _adjustAppToken = adjustAppToken;
 
             // В билд None попасть не может — его отсекает AnalyticsAppTypeBuildGuard. Остаётся
             // Play mode после старта редактора, когда тип ещё сброшен: слать события с
@@ -144,8 +153,11 @@ namespace AMZNGoDSDK.Runtime
                 Debug.LogWarning($"{Tag} Construct: baseUrl is empty — events will not be sent");
             if (Enabled && string.IsNullOrWhiteSpace(_apiKey))
                 Debug.LogWarning($"{Tag} Construct: apiKey is empty — events will not be sent");
+            // В сборку такой ID не пропустит ConsoleIdBuildGuard; остаётся Play mode с правленым конфигом.
+            if (Enabled && !string.IsNullOrEmpty(_consoleId) && !ConsoleId.IsValid(_consoleId))
+                Debug.LogWarning($"{Tag} Console ID '{_consoleId}' is not in the {ConsoleId.Example} format — first_open will be sent without console_id");
 
-            Debug.Log($"{Tag} Constructed — enabled={Enabled}, baseUrl={_baseUrl}, appId={AppId}, appType={_appType}, defaultPromotedAppId={_defaultPromotedAppId}");
+            Debug.Log($"{Tag} Constructed — enabled={Enabled}, baseUrl={_baseUrl}, appId={AppId}, appType={_appType}, consoleId={_consoleId}, defaultPromotedAppId={_defaultPromotedAppId}");
         }
 
         public override void Initialize()
@@ -268,7 +280,10 @@ namespace AMZNGoDSDK.Runtime
 
             string deviceIdHash = EventDeviceIdHash;
             string eventId = NewEventId();
-            string json = BuildFirstOpenJson(eventName, AppId, _appType, deviceIdHash, ts, eventId);
+            // Заявка собирается на каждой попытке, а не хранится: first_open не лежит в очереди,
+            // повтор на фокусе и следующем запуске строит событие заново.
+            string claimFields = FirstOpenClaim.BuildJsonFields(_consoleId, _adjustAppToken, Debug.isDebugBuild, GetInstallerName());
+            string json = BuildFirstOpenJson(eventName, AppId, _appType, deviceIdHash, ts, eventId, claimFields);
             Debug.Log($"{Tag} Sending {eventName}: app_id={AppId}, app_type={_appType}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
 
             var outcome = SendOutcome.Retry;
@@ -1197,6 +1212,21 @@ namespace AMZNGoDSDK.Runtime
         private static long GetTimestampMs() =>
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        // installerName на Android ходит в PackageManager через JNI. Сбой не должен стоить
+        // first_open — тогда событие просто уйдёт без поля installer.
+        private static string GetInstallerName()
+        {
+            try
+            {
+                return Application.installerName;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"{Tag} Application.installerName failed: {e.Message}");
+                return null;
+            }
+        }
+
         /// <summary>Случайный идентификатор события: и для удаления из очереди, и для дедупа
         /// на бэкенде (в т.ч. чтобы enqueue-first не породил дубли при повторной отправке).</summary>
         private static string NewEventId() => Guid.NewGuid().ToString("N");
@@ -1213,8 +1243,9 @@ namespace AMZNGoDSDK.Runtime
         private static string BuildCountField(int count) =>
             count > 0 ? $"\"n\":{count.ToString(CultureInfo.InvariantCulture)}," : string.Empty;
 
+        /// <param name="claimFields">Готовый фрагмент <see cref="FirstOpenClaim.BuildJsonFields"/> (поля с запятой на конце).</param>
         private static string BuildFirstOpenJson(
-            string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId)
+            string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId, string claimFields)
         {
             return "{" +
                    $"\"event_name\":\"{EscapeJson(eventName)}\"," +
@@ -1222,6 +1253,7 @@ namespace AMZNGoDSDK.Runtime
                    $"\"app_id\":\"{EscapeJson(appId)}\"," +
                    $"\"app_type\":\"{EscapeJson(appType)}\"," +
                    $"\"device_id_hash\":\"{EscapeJson(deviceIdHash)}\"," +
+                   claimFields +
                    BuildVersionFields() +
                    $"\"ts\":{ts}" +
                    "}";

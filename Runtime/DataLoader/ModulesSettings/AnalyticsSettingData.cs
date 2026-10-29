@@ -25,5 +25,19 @@ namespace AMZNGoDSDK.Runtime
         public string BaseUrl = DefaultBaseUrl;
         public string ApiKey = DefaultApiKey;
         public AnalyticsAppType AppType;
+
+        /// <summary>
+        /// Console ID из админки BI (Генератор ID), например F000042-0; уходит в first_open как
+        /// <c>console_id</c> (см. <see cref="Runtime.ConsoleId"/>). Пусто у старых игр и в конфигах
+        /// версий до 1.0.10.
+        /// </summary>
+        public string ConsoleId = string.Empty;
+
+        /// <summary>
+        /// Бандл (Android), для которого вводили <see cref="ConsoleId"/>: окно настроек проставляет его
+        /// при каждом изменении ID. Build-гард сверяет его с бандлом сборки — так ловится копия
+        /// шаблона, унёсшая чужой ID. Только для редактора, в рантайме не читается.
+        /// </summary>
+        public string ConsoleIdBundle = string.Empty;
     }
 }
