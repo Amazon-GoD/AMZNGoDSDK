@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as 1.0.10. Deploy the backend first (see Upgrade notes).
+
+### Added
+
+- **Console ID.** `AMZN GoD > SDK Settings > Analytics > Console ID` takes the
+  game's ID from the BI admin (the **Игры** page: issued with the game on
+  **+ Добавить игру**, or in an existing game's card), for example `F000042-0`: `F`
+  (free) or `P` (paid) listing, a 6-digit game number, and the copy number
+  after the dash (`0` is the original). The same ID starts the App title in the
+  Amazon console, so BI can map a new game's bundle, Adjust token and ASIN by
+  itself. The field validates the format as you type. Changing the ID records
+  the Android bundle (Package Name, even when another platform is active) in
+  `Analytics.ConsoleIdBundle` and shows «ID введён для <bundle>». Games without an ID keep working as before.
+- `free_first_open` / `paid_first_open` carry four new top-level fields right
+  before `sdk_version`: `console_id` (only when the ID is valid),
+  `adjust_app_token` (only when the Adjust module is enabled and its key is a
+  12-character `[a-z0-9]` app token), `is_debug` (`Debug.isDebugBuild`, always
+  sent) and `installer` (`Application.installerName`, only when it matches
+  `^[0-9A-Za-z._+:-]{1,64}$`). Other events, the once-per-install flag and the
+  retry logic are unchanged.
+- `AdjustSettingData.AllowSandboxInRelease` (default off) and the matching
+  **Allow Sandbox in release** toggle, shown when Environment is Sandbox.
+- Build checks (`ConsoleIdBuildGuard`, also run by **Сохранить и собрать APK**):
+  - with Analytics enabled and a Console ID set, the build stops when the ID is
+    malformed, when it was entered for another bundle («Console ID вводили для
+    X, а собираете Y. Это копия шаблона? Выдайте новый ID»), or when its letter
+    does not match App Type (`F` = Free, `P` = Paid); an empty Console ID is
+    only a warning;
+  - with Adjust enabled, the build stops when the key is not a 12-character
+    `[a-z0-9]` app token, and when a non-development build uses the Sandbox
+    environment without **Allow Sandbox in release**.
+- EditMode tests (`Tests/Editor`, assembly `AMZNGoDSDK.Editor.Tests`) for the
+  ID format, the first_open fields and the build checks. They compile only in
+  a project that lists `com.amzngod.amzngodsdk` in `testables`.
+
+### Upgrade notes
+
+- **Deploy the backend first.** The backend keeps only allowlisted top-level
+  fields: it must accept `console_id`, `adjust_app_token`, `is_debug` and
+  `installer` before any game ships this version. An older backend drops them
+  silently, and `first_open` is sent once per install, so those installs never
+  report them.
+- Existing games need no changes for the Console ID: an empty ID is a warning.
+  An existing game that moves to this version can get an ID in its card on
+  **Игры** («Выдать Console ID»).
+  The Adjust checks apply to every game with Adjust enabled: any build with
+  an invalid key, and a release build with Sandbox, now stops. Switch to
+  Production, or turn on **Allow Sandbox in release** for a test build.
+- Wire example: `Documentation~/README.md`, section "Console ID and first_open
+  fields".
+
 ## [1.0.9-beta.1] - 2026-10-20
 
 First 1.0.9 beta. Includes all changes on safety since 1.0.8. Read the

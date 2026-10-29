@@ -137,7 +137,8 @@ namespace AMZNGoDSDK.Editor
             AssetDatabase.ImportAsset(ConfigAssetPath, ImportAssetOptions.ForceUpdate);
         }
 
-        private static SdkSettingsData ConvertToEditorSettings(Runtime.SdkSettingsData runtimeSettings)
+        // Internal ради EditMode-тестов: забытое в конвертере поле молча теряется при Save Settings.
+        internal static SdkSettingsData ConvertToEditorSettings(Runtime.SdkSettingsData runtimeSettings)
         {
             var editorSettings = new SdkSettingsData
             {
@@ -166,7 +167,8 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = runtimeSettings.Enabled,
                 Key = runtimeSettings.Key,
-                Environment = adjustEnvironment
+                Environment = adjustEnvironment,
+                AllowSandboxInRelease = runtimeSettings.AllowSandboxInRelease
             };
         }
 
@@ -426,7 +428,7 @@ namespace AMZNGoDSDK.Editor
             }).ToList();
         }
 
-        private static Runtime.SdkSettingsData ConvertToRuntimeSettings(SdkSettingsData editorSettings)
+        internal static Runtime.SdkSettingsData ConvertToRuntimeSettings(SdkSettingsData editorSettings)
         {
             var runtimeSettings = new Runtime.SdkSettingsData
             {
@@ -455,7 +457,8 @@ namespace AMZNGoDSDK.Editor
             {
                 Enabled = editorSettings.Enabled,
                 Key = editorSettings.Key,
-                Environment = adjustEnvironment
+                Environment = adjustEnvironment,
+                AllowSandboxInRelease = editorSettings.AllowSandboxInRelease
             };
         }
 
@@ -617,7 +620,10 @@ namespace AMZNGoDSDK.Editor
                 ApiKey = string.IsNullOrWhiteSpace(runtimeSettings.ApiKey)
                     ? Runtime.AnalyticsSettingData.DefaultApiKey
                     : runtimeSettings.ApiKey,
-                AppType = appType
+                AppType = appType,
+                // Конфиг до 1.0.10 полей не знает — у старых игр ID и штамп пустые.
+                ConsoleId = runtimeSettings.ConsoleId ?? string.Empty,
+                ConsoleIdBundle = runtimeSettings.ConsoleIdBundle ?? string.Empty
             };
         }
 
@@ -637,7 +643,11 @@ namespace AMZNGoDSDK.Editor
                 Enabled = editorSettings.Enabled,
                 BaseUrl = editorSettings.BaseUrl,
                 ApiKey = editorSettings.ApiKey,
-                AppType = appType
+                AppType = appType,
+                // Пробелы вокруг вставленного из админки ID формат не меняют — срезаем их, а не
+                // роняем билд. Штамп бандла пишет только окно настроек, здесь он лишь переносится.
+                ConsoleId = editorSettings.ConsoleId?.Trim() ?? string.Empty,
+                ConsoleIdBundle = editorSettings.ConsoleIdBundle ?? string.Empty
             };
         }
     }

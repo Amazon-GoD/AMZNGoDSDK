@@ -341,6 +341,68 @@ Cross-Promo banner taps are debounced: a second tap on the same banner within
 the click is being tracked, and nothing is visible until then), so it neither
 sends a second `cp_click` nor opens the store twice.
 
+### Console ID and first_open fields
+
+Since 1.0.10 a new game can map itself in BI (bundle ↔ Adjust token ↔ ASIN)
+through one **Console ID** issued by the BI admin on the **Игры** page (with the
+game on **+ Добавить игру**, or in an existing game's card), for example
+`F000042-0`:
+
+- the letter is the listing type in Amazon: `F` free, `P` paid;
+- six digits are the game number, one sequence across all Amazon accounts;
+- the number after the dash is the copy: `0` is the original, re-uploads, the
+  paid version of a free game and the same game in another account get `1`,
+  `2`, … (no leading zeros, up to 999).
+
+Format: `^[FP][0-9]{6}-(0|[1-9][0-9]{0,2})$`. Type the ID in three places (the
+admin shows each string with a copy button, after the game is created and in its
+card): the Amazon console App title (`F000042-0 Название игры`; customers see the
+Display title, which ASO renames),
+the Amazon console SKU (the bundle id), and `AMZN GoD > SDK Settings >
+Analytics > Console ID`. A game without an ID leaves the field empty and works
+as before; an existing game gets one in its card on **Игры** when it moves to
+this version.
+
+The SDK Settings window validates the format as you type. Changing the ID
+records the Android bundle (Package Name,
+`PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android)`, even when
+another platform is active) in `Analytics.ConsoleIdBundle` and shows
+«ID введён для <bundle>». A project copied from a template keeps the
+template's ID and bundle stamp, so its build stops until it gets its own ID
+(see below).
+
+`free_first_open` / `paid_first_open` carry these top-level fields between
+`device_id_hash` and `sdk_version`; no other event changes:
+
+| Field | Sent when | Value |
+|---|---|---|
+| `console_id` | the Console ID is valid | the ID |
+| `adjust_app_token` | the Adjust module is enabled and its key is 12 `[a-z0-9]` characters | the Adjust app token |
+| `is_debug` | always | `Debug.isDebugBuild` (true in development builds and in the editor) |
+| `installer` | `Application.installerName` matches `^[0-9A-Za-z._+:-]{1,64}$` | e.g. `com.amazon.venezia` |
+
+```json
+{"event_name":"free_first_open","event_id":"3f2a1b0c9d8e4f7a6b5c4d3e2f1a0b9c","app_id":"com.example.game","app_type":"free","device_id_hash":"<64 hex | unattributed>","console_id":"F000042-0","adjust_app_token":"abcd1234efgh","is_debug":false,"installer":"com.amazon.venezia","sdk_version":"1.0.10","app_version":"1.0.0","ts":1791480000000}
+```
+
+`first_open` is still sent once per installation and app type, with the same
+retry rules; the fields are built on every attempt. The backend stores them in
+`events_raw.extra` only after `console_id`, `adjust_app_token`, `is_debug` and
+`installer` are on its allowlist: deploy that backend before a game ships
+1.0.10, otherwise the fields are dropped and never resent for those installs.
+
+Build checks (`ConsoleIdBuildGuard`; **Сохранить и собрать APK** runs the same
+checks):
+
+- Analytics enabled, Console ID set: a malformed ID, an ID entered for another
+  bundle («Console ID вводили для X, а собираете Y. Это копия шаблона? Выдайте
+  новый ID»), or a letter that does not match App Type stops the build. If the
+  bundle of the same game was changed on purpose, clear the ID and type it
+  again. An empty Console ID is only a warning.
+- Adjust enabled: a key that is not a 12-character `[a-z0-9]` app token stops
+  the build; so does Environment = Sandbox in a non-development build, unless
+  **Allow Sandbox in release** (`Adjust.AllowSandboxInRelease`) is on.
+
 ### Analytics persistence and identity
 
 The persisted queue holds up to 50 events. At most 10 are banner events:
@@ -389,6 +451,10 @@ versions, installation behavior and verification limits.
   `AMZN GoD > SDK Settings` before building — otherwise the build stops with a
   clear error message.
 - Enabled IAP subscriptions must have `Term (days)` set, or the build stops.
+- A set Console ID must be well-formed, entered for the bundle being built and
+  match App Type; with Adjust enabled, the key must be a 12-character app token
+  and a release build must not use Sandbox (see [Console ID and first_open
+  fields](#console-id-and-first_open-fields)).
 - With Cross-Promo disabled, IL2CPP builds may log a harmless warning about
   the `AMZNGoDSDK.Module.CrossPromo` assembly referenced from the package
   `link.xml`.
@@ -403,8 +469,9 @@ versions, installation behavior and verification limits.
 3. Active platform switched to Android (assets are reimported once).
 4. Module dependencies, Android build tools and EDM Force Resolve — the same
    pass as **Проверить / повторить установку зависимостей**.
-5. The checks of the SDK build hooks (App Type, IAP terms, Android toolchain,
-   target API, AdMob App ID, disabled-module artifacts), reported as one list.
+5. The checks of the SDK build hooks (App Type, Console ID and Adjust, IAP
+   terms, Android toolchain, target API, AdMob App ID, disabled-module
+   artifacts), reported as one list.
 6. `BuildPipeline.BuildPlayer` into
    `Builds/Android/<product>_<version>_<time>.apk`.
 

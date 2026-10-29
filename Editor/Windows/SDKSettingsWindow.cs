@@ -759,10 +759,35 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Adjust.Enabled,
                 () =>
                 {
-                    _currentSettings.Adjust.Key = EditorGUILayout
-                        .TextField("Key", _currentSettings.Adjust.Key);
-                    _currentSettings.Adjust.Environment = (AdjustSettingData.AdjustEnvironment)EditorGUILayout
-                        .EnumPopup("Environment", _currentSettings.Adjust.Environment);
+                    var adjust = _currentSettings.Adjust;
+                    adjust.Key = EditorGUILayout
+                        .TextField(new GUIContent("Key", "App token приложения в Adjust: 12 символов, строчная латиница и цифры."),
+                            adjust.Key);
+                    if (!FirstOpenClaim.IsValidAdjustAppToken(adjust.Key))
+                    {
+                        EditorGUILayout.HelpBox(
+                            "Key — app token Adjust: ровно 12 символов a–z и 0–9, без пробелов " +
+                            "(Adjust → приложение → App token). С другим значением билд не соберётся.",
+                            MessageType.Error);
+                    }
+
+                    adjust.Environment = (AdjustSettingData.AdjustEnvironment)EditorGUILayout
+                        .EnumPopup("Environment", adjust.Environment);
+                    if (adjust.Environment == AdjustSettingData.AdjustEnvironment.Sandbox)
+                    {
+                        adjust.AllowSandboxInRelease = EditorGUILayout.Toggle(
+                            new GUIContent("Allow Sandbox in release",
+                                "Разрешить Sandbox в сборке без Development Build. Только для тестов: такие установки " +
+                                "не попадут в продовую статистику Adjust."),
+                            adjust.AllowSandboxInRelease);
+                        EditorGUILayout.HelpBox(
+                            adjust.AllowSandboxInRelease
+                                ? "Sandbox разрешён и в релизных сборках. Не загружайте такую сборку в стор: её установки " +
+                                  "не попадут в продовую статистику Adjust."
+                                : "Sandbox — только для Development Build: релизная сборка с Sandbox остановится. " +
+                                  "Для стора выберите Production.",
+                            MessageType.Warning);
+                    }
                 });
         }
 
@@ -969,7 +994,90 @@ namespace AMZNGoDSDK.Editor
                             "выбери Free или Paid и нажми Save Settings, иначе билд не соберётся.",
                             MessageType.Error);
                     }
+
+                    DrawConsoleIdField();
                 });
+        }
+
+        /// <summary>
+        /// Console ID из админки BI. Проверки — те же, что у <see cref="ConsoleIdBuildGuard"/>,
+        /// но сразу при вводе, короткими подсказками.
+        /// </summary>
+        private void DrawConsoleIdField()
+        {
+            var analytics = _currentSettings.Analytics;
+            string previous = analytics.ConsoleId ?? string.Empty;
+            // Бандл Android, даже если активна другая платформа: с ним сверяет и сборка APK.
+            string bundle = ConsoleIdBuildGuard.ProjectBundle;
+
+            // Пробелы срезаем сразу: ID вставляют из админки копированием, и лишний пробел
+            // не должен выглядеть как ошибка формата.
+            string consoleId = EditorGUILayout.TextField(
+                new GUIContent("Console ID",
+                    "ID игры из админки BI → «Игры» (выдаётся вместе с игрой или в её карточке), например " +
+                    ConsoleId.Example + ". Тот же ID стоит в начале App title в консоли Amazon. Пусто, пока игре " +
+                    "не выдали ID."),
+                previous).Trim();
+
+            if (consoleId != previous)
+            {
+                // Штамп бандла: ID принадлежит одной игре, и копия шаблона с другим бандлом
+                // не соберётся, пока ей не выдадут свой ID.
+                analytics.ConsoleIdBundle = ConsoleIdBuildGuard.StampAfterEdit(
+                    previous, consoleId, analytics.ConsoleIdBundle, bundle);
+                analytics.ConsoleId = consoleId;
+            }
+
+            if (consoleId.Length == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "Console ID не задан. Его выдаёт админка BI на странице «Игры»: новой игре — вместе с ней " +
+                    "(«+ Добавить игру»), существующей — в её карточке («Выдать Console ID»). Впишите его до первой " +
+                    "сборки: по нему BI сам свяжет бандл, токен Adjust и ASIN. Без ID игра работает как раньше.",
+                    MessageType.Info);
+                return;
+            }
+
+            if (!ConsoleId.IsValid(consoleId))
+            {
+                EditorGUILayout.HelpBox(
+                    "Формат: F (free) или P (paid), 6 цифр, дефис и номер копии — например " + ConsoleId.Example + ". " +
+                    "С таким ID билд не соберётся.",
+                    MessageType.Error);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(analytics.ConsoleIdBundle))
+            {
+                EditorGUILayout.HelpBox(
+                    "ID не привязан к бандлу (конфиг правили вручную?). Сотрите ID и введите его заново, " +
+                    "иначе билд не соберётся.",
+                    MessageType.Error);
+            }
+            else if (analytics.ConsoleIdBundle != bundle)
+            {
+                EditorGUILayout.HelpBox(
+                    "Console ID вводили для " + analytics.ConsoleIdBundle + ", а текущий бандл Android — " + bundle + ". " +
+                    "Это копия шаблона? Новой игре (в том числе из шаблона) выдайте ID в админке BI: «Игры» → " +
+                    "«+ Добавить игру»; «Копия игры» — только для перезалива, платной версии или той же игры в " +
+                    "другом аккаунте. Если бандл этой же игры сменили намеренно — сотрите ID и введите его " +
+                    "заново. Иначе билд не соберётся.",
+                    MessageType.Error);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("ID введён для " + analytics.ConsoleIdBundle, MessageType.None);
+            }
+
+            // Зеркальный enum редактора совпадает с рантаймовым по числам (см. AnalyticsSettingData).
+            char expected = ConsoleId.LetterFor((Runtime.AnalyticsAppType)(int)analytics.AppType);
+            if (expected != '\0' && consoleId[0] != expected)
+            {
+                EditorGUILayout.HelpBox(
+                    "Буква " + consoleId[0] + " — " + (consoleId[0] == 'F' ? "free" : "paid") + "-листинг, а App Type = " +
+                    analytics.AppType + ". Выставьте верный App Type или впишите ID этой версии, иначе билд не соберётся.",
+                    MessageType.Error);
+            }
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)
