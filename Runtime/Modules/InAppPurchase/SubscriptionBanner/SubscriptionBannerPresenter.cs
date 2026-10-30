@@ -1,6 +1,7 @@
 #if AMZN_IAP_ENABLED
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -18,7 +19,11 @@ namespace AMZNGoDSDK.Runtime
     ///  * Пока неизвестно, есть ли подписка, запрос ждёт (до <see cref="StateWaitTimeoutSeconds"/>):
     ///    SDK читает сохранённые права только после инициализации модуля, а на устройстве честный
     ///    ответ даёт лишь сверка с Amazon. Без ожидания баннер мелькал бы у подписчика.
-    ///  * Плейсмент не указан — плейсменты подписки идут по кругу; если он один, показывается он.
+    ///  * Какую подписку показать: SKU указан — её; не указан — включённые подписки из SDK
+    ///    Settings по кругу; передан набор пар (SKU, плейсмент) — эти пары по кругу. Уже
+    ///    оформленные подписки в круге пропускаются.
+    ///  * Плейсмент не указан — плейсменты подписки идут по кругу (у каждой подписки свой круг);
+    ///    если он один, показывается он.
     ///  * Ориентация — по экрану устройства (ширина ≥ высоты — горизонтальный префаб). Повернули
     ///    экран при открытом баннере — баннер пересобирается под новую ориентацию.
     ///  * «Купить» покупает SKU этого баннера. Отказ и отмена покупки баннер не закрывают —
@@ -44,19 +49,22 @@ namespace AMZNGoDSDK.Runtime
 
         private const float StateWaitTimeoutSeconds = 10f;
 
-        /// <summary>
-        /// Тестовая среда (Testing/IAPTestPanel) подставляет сюда симуляцию покупки там, где нет
-        /// настоящего Appstore: в редакторе BuyProduct уходит в заглушку плагина и не отвечает.
-        /// В релизном пакете Testing вырезан — поле всегда null, «купить» зовёт BuyProduct.
-        /// </summary>
-        internal static Action<string> PurchaseOverride;
+        // Ключ круга «все включённые подписки» (к нему добавляется запрошенный плейсмент).
+        private const string AllSubscriptionsKey = "*";
 
         private sealed class Request
         {
-            public string Sku;
-            public string RequestedPlacement;
-            public SubscriptionBannerPlacement Placement;
+            // Кандидаты в порядке круга: SKU и плейсмент (null — плейсменты подписки по кругу).
+            public List<(string Sku, string Placement)> Candidates;
+
+            // Ключ круга между кандидатами; null — кандидат один, крутить нечего.
+            public string RotationKey;
+
             public Action<bool> OnClosed;
+
+            // Выбрано при показе.
+            public string Sku;
+            public SubscriptionBannerPlacement Placement;
         }
 
         private InAppPurchaseModule _module;
@@ -64,8 +72,10 @@ namespace AMZNGoDSDK.Runtime
         private SubscriptionBannerSettings _settings;
         private bool _settingsLoaded;
 
-        // Следующий плейсмент по кругу для каждой подписки. Живёт до перезапуска игры.
-        private readonly Dictionary<string, int> _rotation = new(StringComparer.Ordinal);
+        // Круги живут до перезапуска игры и сдвигаются только при показе: следующий кандидат
+        // по ключу набора и следующий плейсмент каждой подписки.
+        private readonly Dictionary<string, int> _candidateRotation = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _placementRotation = new(StringComparer.Ordinal);
 
         private Request _pending;
         private float _pendingDeadline;
@@ -81,46 +91,91 @@ namespace AMZNGoDSDK.Runtime
         private void OnDestroy() => DestroyView();
 
         /// <summary>
-        /// Запрос показа. true — баннер показан или будет показан, как только станет известно
-        /// состояние подписки; тогда onClosed обязательно придёт. false — показа не будет и
-        /// onClosed не вызывается (подписка уже активна, SKU не настроен, уже открыт баннер).
+        /// Запрос показа. SKU не указан — включённые подписки из SDK Settings по кругу; плейсмент
+        /// не указан — плейсменты подписки по кругу.
+        ///
+        /// true — баннер показан или будет показан, как только станет известно состояние подписки;
+        /// тогда onClosed обязательно придёт. false — показа не будет и onClosed не вызывается
+        /// (подписки уже активны, не настроены, уже открыт баннер).
         /// </summary>
         public bool Show(string sku, string placement, Action<bool> onClosed)
         {
-            sku = sku?.Trim();
-            if (string.IsNullOrEmpty(sku))
+            placement = Normalize(placement);
+
+            if (string.IsNullOrWhiteSpace(sku))
             {
-                Debug.LogWarning($"{Tag} SKU не задан.");
+                var all = new List<(string Sku, string Placement)>();
+                foreach (string id in _module.GetSubscriptionProductIds())
+                    all.Add((id, placement));
+
+                return TryShow(all, AllSubscriptionsKey + "|" + placement, explicitCandidates: false, onClosed);
+            }
+
+            var single = new List<(string Sku, string Placement)> { (sku.Trim(), placement) };
+            return TryShow(single, null, explicitCandidates: true, onClosed);
+        }
+
+        /// <summary>
+        /// Запрос показа одной из пар (SKU, плейсмент) — по кругу между вызовами с тем же набором.
+        /// Пустой набор — все включённые подписки, как <see cref="Show(string, string, Action{bool})"/>
+        /// без SKU.
+        /// </summary>
+        public bool Show(IReadOnlyList<(string sku, string placement)> banners, Action<bool> onClosed)
+        {
+            if (banners == null || banners.Count == 0)
+                return Show(null, null, onClosed);
+
+            var candidates = new List<(string Sku, string Placement)>(banners.Count);
+            var key = new StringBuilder();
+            foreach (var (sku, placement) in banners)
+            {
+                var candidate = (Sku: sku?.Trim(), Placement: Normalize(placement));
+                candidates.Add(candidate);
+
+                // Ключ круга — сам набор пар: повторные вызовы с тем же набором идут по одному кругу.
+                key.Append(candidate.Sku).Append('|').Append(candidate.Placement).Append(';');
+            }
+
+            return TryShow(candidates, key.ToString(), explicitCandidates: true, onClosed);
+        }
+
+        private bool TryShow(List<(string Sku, string Placement)> candidates, string rotationKey,
+                             bool explicitCandidates, Action<bool> onClosed)
+        {
+            // Отсеиваем то, что показать нельзя в принципе. Явно запрошенное — с предупреждением;
+            // в круге по всем подпискам подписка без картинок просто не участвует.
+            var usable = new List<(string Sku, string Placement)>(candidates.Count);
+            foreach (var candidate in candidates)
+            {
+                string problem = DescribeUnusable(candidate.Sku);
+                if (problem == null)
+                    usable.Add(candidate);
+                else if (explicitCandidates)
+                    Debug.LogWarning($"{Tag} {problem}");
+            }
+
+            if (usable.Count == 0)
+            {
+                if (!explicitCandidates)
+                    Debug.LogWarning($"{Tag} Нет ни одной включённой подписки с картинками баннера " +
+                                     "(SDK Settings → In-App Purchase → Subscription Banner).");
                 return false;
             }
 
-            if (!_module.IsSubscriptionProduct(sku))
-            {
-                Debug.LogWarning($"{Tag} '{sku}' не настроен как включённая подписка (SDK Settings → In-App Purchase).");
-                return false;
-            }
-
-            // Подписка активна — баннер не нужен. Тот же ответ, что AmznGoDSDKCore.IsSubscribed.
-            if (_module.IsSubscribed(sku))
+            // Все подписки уже активны — баннер не нужен. Тот же ответ, что AmznGoDSDKCore.IsSubscribed.
+            if (AllSubscribed(usable))
                 return false;
 
             if (IsVisible)
             {
-                Debug.LogWarning($"{Tag} Уже открыт баннер '{_current.Sku}' — запрос '{sku}' пропущен.");
-                return false;
-            }
-
-            SubscriptionBannerProduct config = LoadSettings()?.Find(sku);
-            if (config == null || config.Placements == null || config.Placements.Count == 0)
-            {
-                Debug.LogWarning($"{Tag} Для '{sku}' не настроены картинки баннера (SDK Settings → In-App Purchase → Subscription Banner).");
+                Debug.LogWarning($"{Tag} Уже открыт баннер '{_current.Sku}' — новый запрос пропущен.");
                 return false;
             }
 
             var request = new Request
             {
-                Sku = sku,
-                RequestedPlacement = string.IsNullOrWhiteSpace(placement) ? null : placement.Trim(),
+                Candidates = usable,
+                RotationKey = rotationKey,
                 OnClosed = onClosed,
             };
 
@@ -133,12 +188,47 @@ namespace AMZNGoDSDK.Runtime
 
                 _pending = request;
                 _pendingDeadline = Time.unscaledTime + StateWaitTimeoutSeconds;
-                Debug.Log($"{Tag} '{sku}': ждём, пока станет известно состояние подписки.");
+                Debug.Log($"{Tag} {Describe(request)}: ждём, пока станет известно состояние подписки.");
                 return true;
             }
 
-            return Present(request, config);
+            return Present(request);
         }
+
+        /// <summary>Почему для SKU баннер не показать вовсе; null — показать можно.</summary>
+        private string DescribeUnusable(string sku)
+        {
+            if (string.IsNullOrEmpty(sku))
+                return "SKU не задан.";
+
+            if (!_module.IsSubscriptionProduct(sku))
+                return $"'{sku}' не настроен как включённая подписка (SDK Settings → In-App Purchase).";
+
+            SubscriptionBannerProduct config = LoadSettings()?.Find(sku);
+            if (config?.Placements == null || config.Placements.Count == 0)
+                return $"Для '{sku}' не настроены картинки баннера (SDK Settings → In-App Purchase → Subscription Banner).";
+
+            return null;
+        }
+
+        private bool AllSubscribed(List<(string Sku, string Placement)> candidates)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (!_module.IsSubscribed(candidate.Sku))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static string Normalize(string placement) =>
+            string.IsNullOrWhiteSpace(placement) ? null : placement.Trim();
+
+        private static string Describe(Request request) =>
+            request.Candidates.Count == 1
+                ? $"'{request.Candidates[0].Sku}'"
+                : $"Подписки ({request.Candidates.Count})";
 
         /// <summary>Закрывает открытый баннер и отменяет ожидающий показа запрос.</summary>
         public void Hide()
@@ -177,7 +267,7 @@ namespace AMZNGoDSDK.Runtime
         {
             Request request = _pending;
 
-            if (_module.IsSubscribed(request.Sku))
+            if (AllSubscribed(request.Candidates))
             {
                 _pending = null;
                 Finish(request, true);
@@ -187,8 +277,7 @@ namespace AMZNGoDSDK.Runtime
             if (IsSubscriptionStateKnown())
             {
                 _pending = null;
-                SubscriptionBannerProduct config = LoadSettings()?.Find(request.Sku);
-                if (config == null || IsVisible || !Present(request, config))
+                if (IsVisible || !Present(request))
                     Finish(request, false);
                 return;
             }
@@ -196,7 +285,7 @@ namespace AMZNGoDSDK.Runtime
             if (Time.unscaledTime >= _pendingDeadline)
             {
                 _pending = null;
-                Debug.LogWarning($"{Tag} '{request.Sku}': состояние подписки так и не стало известно " +
+                Debug.LogWarning($"{Tag} {Describe(request)}: состояние подписки так и не стало известно " +
                                  $"за {StateWaitTimeoutSeconds:0} с (нет сети или стор не ответил) — баннер не показан.");
                 Finish(request, false);
             }
@@ -219,14 +308,10 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        private bool Present(Request request, SubscriptionBannerProduct config)
+        private bool Present(Request request)
         {
-            request.Placement = ResolvePlacement(config, request.RequestedPlacement);
-            if (request.Placement == null)
-            {
-                Debug.LogWarning($"{Tag} У '{request.Sku}' нет ни одного плейсмента.");
+            if (!PickCandidate(request, out SubscriptionBannerProduct config))
                 return false;
-            }
 
             if (!Spawn(request, config))
                 return false;
@@ -234,6 +319,41 @@ namespace AMZNGoDSDK.Runtime
             _current = request;
             Debug.Log($"{Tag} Показан баннер '{request.Sku}', плейсмент '{request.Placement.Name}'.");
             return true;
+        }
+
+        /// <summary>
+        /// Следующий по кругу кандидат с неоформленной подпиской; плейсмент у него — запрошенный
+        /// или следующий по кругу этой подписки. false — показывать некого.
+        /// </summary>
+        private bool PickCandidate(Request request, out SubscriptionBannerProduct config)
+        {
+            int count = request.Candidates.Count;
+            int start = 0;
+            if (request.RotationKey != null && _candidateRotation.TryGetValue(request.RotationKey, out int next))
+                start = next % count;
+
+            for (int i = 0; i < count; i++)
+            {
+                int index = (start + i) % count;
+                var (sku, placement) = request.Candidates[index];
+
+                if (_module.IsSubscribed(sku))
+                    continue;
+
+                config = LoadSettings()?.Find(sku);
+                if (config?.Placements == null || config.Placements.Count == 0)
+                    continue;
+
+                if (request.RotationKey != null)
+                    _candidateRotation[request.RotationKey] = index + 1;
+
+                request.Sku = sku;
+                request.Placement = ResolvePlacement(config, placement);
+                return true;
+            }
+
+            config = null;
+            return false;
         }
 
         private SubscriptionBannerPlacement ResolvePlacement(SubscriptionBannerProduct config, string requested)
@@ -249,9 +369,9 @@ namespace AMZNGoDSDK.Runtime
             }
 
             // По кругу: счётчик двигается только при реальном показе.
-            _rotation.TryGetValue(config.ProductId.Trim(), out int index);
+            _placementRotation.TryGetValue(config.ProductId.Trim(), out int index);
             index %= config.Placements.Count;
-            _rotation[config.ProductId.Trim()] = index + 1;
+            _placementRotation[config.ProductId.Trim()] = index + 1;
             return config.Placements[index];
         }
 
@@ -339,10 +459,7 @@ namespace AMZNGoDSDK.Runtime
 
             // Баннер остаётся открытым, пока IsSubscribed не станет true (см. Update): окно
             // Amazon рисуется поверх, а при отказе игрок вернётся к тому же предложению.
-            if (PurchaseOverride != null)
-                PurchaseOverride(sku);
-            else
-                _module.BuyProduct(sku);
+            _module.BuyProduct(sku);
         }
 
         private void HandleClose() => Close(false);

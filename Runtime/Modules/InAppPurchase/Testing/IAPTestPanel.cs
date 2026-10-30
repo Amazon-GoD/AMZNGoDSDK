@@ -158,11 +158,6 @@ namespace AMZNGoDSDK.Runtime
             _font = LoadBuiltinFont();
             EnsureEventSystem();
             BuildUI();
-
-            // «Купить» на баннере подписки (ShowSubBanner) там, где нет настоящего стора, идёт
-            // через симулятор — тем же путём, что и кнопки панели.
-            if (!SimulatedAmazonStore.HasRealStore)
-                SubscriptionBannerPresenter.PurchaseOverride = BuySubscriptionFromBanner;
         }
 
         private void Start()
@@ -183,9 +178,6 @@ namespace AMZNGoDSDK.Runtime
 
         private void OnDestroy()
         {
-            if (SubscriptionBannerPresenter.PurchaseOverride == (Action<string>)BuySubscriptionFromBanner)
-                SubscriptionBannerPresenter.PurchaseOverride = null;
-
             if (!_listenersAttached || _module == null)
                 return;
 
@@ -206,12 +198,6 @@ namespace AMZNGoDSDK.Runtime
                 product is { Enabled: true },
                 SimulatedAmazonStore.SubscriptionType,
                 "subscription");
-        }
-
-        private void BuySubscriptionFromBanner(string sku)
-        {
-            var product = _settings?.SubscriptionProducts?.FirstOrDefault(p => p.ProductId?.Trim() == sku);
-            Buy(sku, product is { Enabled: true }, SimulatedAmazonStore.SubscriptionType, "subscription, баннер");
         }
 
         public void BuyConsumable()

@@ -1107,19 +1107,43 @@ namespace AMZNGoDSDK.Runtime
             return false;
         }
 
-        /// <summary>Баннер подписки — правила показа см. <see cref="SubscriptionBannerPresenter"/>.</summary>
-        public bool ShowSubscriptionBanner(string sku, string placement, Action<bool> onClosed)
+        /// <summary>Включённые подписки из настроек — в порядке SDK Settings, без повторов.</summary>
+        internal List<string> GetSubscriptionProductIds()
         {
-            if (!Enabled)
-                return false;
+            var ids = new List<string>();
+            if (settings?.SubscriptionProducts == null)
+                return ids;
 
+            foreach (var product in settings.SubscriptionProducts)
+            {
+                string id = product?.ProductId?.Trim();
+                if (product != null && product.Enabled && !string.IsNullOrEmpty(id) && !ids.Contains(id))
+                    ids.Add(id);
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Баннер подписки; sku = null — включённые подписки по кругу. Правила показа см.
+        /// <see cref="SubscriptionBannerPresenter"/>.
+        /// </summary>
+        public bool ShowSubscriptionBanner(string sku, string placement, Action<bool> onClosed) =>
+            Enabled && EnsureBannerPresenter().Show(sku, placement, onClosed);
+
+        /// <summary>Баннер одной из пар (SKU, плейсмент) — по кругу между вызовами с тем же набором.</summary>
+        public bool ShowSubscriptionBanner(IReadOnlyList<(string sku, string placement)> banners, Action<bool> onClosed) =>
+            Enabled && EnsureBannerPresenter().Show(banners, onClosed);
+
+        private SubscriptionBannerPresenter EnsureBannerPresenter()
+        {
             if (_bannerPresenter == null)
             {
                 _bannerPresenter = gameObject.AddComponent<SubscriptionBannerPresenter>();
                 _bannerPresenter.Bind(this);
             }
 
-            return _bannerPresenter.Show(sku, placement, onClosed);
+            return _bannerPresenter;
         }
 
         public void HideSubscriptionBanner()

@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Subscription banner: `AmznGoDSDKCore.Instance.ShowSubBanner(sku, placement = null,
-  onClosed = null)`, `HideSubBanner()` and `IsSubBannerVisible`. A full-screen offer with
-  a background per placement, a gently pulsing buy button that purchases that SKU and a
-  close button that appears after 4 seconds. Without a placement the subscription's placements are
-  shown in rotation. The prefab (horizontal or vertical) is chosen by the device screen.
+- Subscription banner: `AmznGoDSDKCore.Instance.ShowSubBanner(sku = null, placement = null,
+  onClosed = null)`, `ShowSubBanner(params (string sku, string placement)[] banners)` (with
+  an optional `onClosed` first), `HideSubBanner()` and `IsSubBannerVisible`. A full-screen
+  offer with a background per placement, a gently pulsing buy button that purchases the
+  shown SKU and a close button that appears after 4 seconds. Without a SKU the enabled
+  subscriptions are shown in rotation; with a set of (SKU, placement) pairs those pairs
+  rotate. Without a placement each subscription rotates its own placements. Active
+  subscriptions are skipped. The prefab (horizontal or vertical) is chosen by the device screen.
   The banner checks `IsSubscribed` itself: it is not shown while the subscription is
   active, and an open banner closes as soon as `IsSubscribed` turns true (purchase,
   restore or reconcile). It waits up to 10 seconds for the subscription state (the Amazon
