@@ -821,6 +821,8 @@ namespace AMZNGoDSDK.Editor
                                     "верни 0 — иначе игроки будут получать периоды каждые несколько минут.",
                                     MessageType.Warning);
                             }
+
+                            DrawSubscriptionBanner(product, i);
                         }
 
                         if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))
@@ -910,6 +912,96 @@ namespace AMZNGoDSDK.Editor
                         _currentSettings.InAppPurchase.NonConsumableProducts.Add(new NonConsumableProduct());
                     }
                 });
+        }
+
+        // Раскрытые блоки «Subscription Banner» по индексу подписки — только состояние UI.
+        private readonly HashSet<int> _expandedSubscriptionBanners = new();
+
+        private void DrawSubscriptionBanner(SubscriptionProduct product, int index)
+        {
+            product.BannerPlacements ??= new List<SubscriptionBannerPlacement>();
+            SubscriptionBannerSettingsStore.EnsureDefaultPlacement(product.BannerPlacements);
+            var placements = product.BannerPlacements;
+
+            GUILayout.Space(4);
+            bool expanded = EditorGUILayout.Foldout(_expandedSubscriptionBanners.Contains(index),
+                $"Subscription Banner ({placements.Count} placement{(placements.Count == 1 ? "" : "s")})", true);
+            if (expanded)
+                _expandedSubscriptionBanners.Add(index);
+            else
+            {
+                _expandedSubscriptionBanners.Remove(index);
+                return;
+            }
+
+            SubscriptionBannerSettingsStore.GetProjectOrientations(out bool horizontal, out bool vertical);
+            string orientation = horizontal && vertical ? "горизонтальная и вертикальная"
+                : horizontal ? "горизонтальная" : "вертикальная";
+
+            EditorGUILayout.HelpBox(
+                $"Показ: AmznGoDSDKCore.Instance.ShowSubBanner(\"{product.ProductId}\", placement). " +
+                "Без плейсмента картинки идут по кругу. Ориентация проекта в Player Settings — " +
+                $"{orientation}: картинки задаются для неё, а префаб выбирается по экрану устройства.",
+                MessageType.None);
+
+            for (int p = 0; p < placements.Count; p++)
+            {
+                var placement = placements[p];
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                if (p == 0)
+                {
+                    EditorGUILayout.LabelField("Placement", $"{SubscriptionBannerSettings.DefaultPlacementName} (по умолчанию)");
+                }
+                else
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    placement.Name = EditorGUILayout.TextField("Placement", placement.Name);
+                    if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                    {
+                        placements.RemoveAt(p);
+                        p--;
+                        EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.EndVertical();
+                        continue;
+                    }
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (horizontal)
+                    placement.Horizontal = (Sprite)EditorGUILayout.ObjectField(
+                        "Horizontal Sprite", placement.Horizontal, typeof(Sprite), false);
+
+                if (vertical)
+                    placement.Vertical = (Sprite)EditorGUILayout.ObjectField(
+                        "Vertical Sprite", placement.Vertical, typeof(Sprite), false);
+
+                bool hasAny = placement.Horizontal != null || placement.Vertical != null;
+                bool missingOrientation = (horizontal && placement.Horizontal == null)
+                                          || (vertical && placement.Vertical == null);
+                if (!hasAny)
+                {
+                    EditorGUILayout.HelpBox(p == 0
+                            ? "Картинка не задана: плейсмент по умолчанию — запасной для остальных, без картинки он не покажется."
+                            : "Картинка не задана: вместо неё покажется картинка плейсмента по умолчанию.",
+                        p == 0 ? MessageType.Warning : MessageType.Info);
+                }
+                else if (missingOrientation)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Картинка задана не для всех ориентаций: на таком экране растянется картинка другой ориентации.",
+                        MessageType.Warning);
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+
+            if (GUILayout.Button("Add Placement"))
+                placements.Add(new SubscriptionBannerPlacement());
+
+            string problem = SubscriptionBannerSettingsStore.DescribePlacementProblem(placements);
+            if (problem != null)
+                EditorGUILayout.HelpBox($"Плейсменты: {problem}. Настройки не сохранятся.", MessageType.Error);
         }
 
         private void ImportUnityIapCatalog()

@@ -59,6 +59,12 @@ namespace AMZNGoDSDK.Editor
                     Name = "InAppPurchase",
                     Define = ModuleDefineManager.IAP_DEFINE,
                     RelativeModuleFolder = "Runtime/Modules/InAppPurchase",
+                    ExternalAssetPrefixes = new[]
+                    {
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/SubscriptionBannerHorizontal.prefab",
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/SubscriptionBannerVertical.prefab",
+                        "Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/SubscriptionBanners.asset"
+                    },
                     ManagedAssemblies = new[] { "AMZNGoDSDK.Module.InAppPurchase" },
                 },
                 new ModuleBuildArtifactSpec

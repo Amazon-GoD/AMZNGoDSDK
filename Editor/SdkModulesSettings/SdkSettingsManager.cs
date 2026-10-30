@@ -234,6 +234,9 @@ namespace AMZNGoDSDK.Editor
                 });
             }
 
+            // Плейсменты баннеров подписки живут не в JSON, а в ассете со спрайтами.
+            SubscriptionBannerSettingsStore.ReadInto(editorSettings);
+
             return editorSettings;
         }
 
@@ -345,8 +348,8 @@ namespace AMZNGoDSDK.Editor
                 return false;
             }
 
-            message = string.Empty;
-            return true;
+            // Имена плейсментов баннера: по ним игра зовёт ShowSubBanner(sku, placement).
+            return SubscriptionBannerSettingsStore.Validate(settings, out message);
         }
 
         public static bool SaveSettings(SdkSettingsData settings)
@@ -394,6 +397,15 @@ namespace AMZNGoDSDK.Editor
                 Directory.CreateDirectory(ResourcesPath);
 
             File.WriteAllText(fullPath, json);
+
+            // Новый ассет создаётся сразу там, где его ждут; переносом при переключении модуля
+            // занимается ModuleResourceSynchronizer (из UpdateDefineSymbols ниже).
+            if (settings.InAppPurchase != null)
+            {
+                bool iapCompiled = settings.Enabled && settings.InAppPurchase.Enabled
+                                   && ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.IAP_DEFINE);
+                SubscriptionBannerSettingsStore.Save(settings.InAppPurchase, iapCompiled);
+            }
 
             AssetDatabase.Refresh();
 

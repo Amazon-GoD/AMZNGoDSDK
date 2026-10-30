@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 First 1.0.9 beta. Includes all changes on safety since 1.0.8. Read the
 upgrade notes below before shipping: the backend must be updated first.
 
+### Added
+
+- Subscription banner: `AmznGoDSDKCore.Instance.ShowSubBanner(sku = null, placement = null,
+  onClosed = null)`, `ShowSubBanner(params (string sku, string placement)[] banners)` (with
+  an optional `onClosed` first), `HideSubBanner()` and `IsSubBannerVisible`. A full-screen
+  offer with a background per placement, a gently pulsing buy button that purchases the
+  shown SKU and a close button that appears after 4 seconds. Without a SKU the enabled
+  subscriptions are shown in rotation; with a set of (SKU, placement) pairs those pairs
+  rotate. Without a placement each subscription rotates its own placements. Active
+  subscriptions are skipped. The prefab (horizontal or vertical) is chosen by the device screen.
+  The banner checks `IsSubscribed` itself: it is not shown while the subscription is
+  active, and an open banner closes as soon as `IsSubscribed` turns true (purchase,
+  restore or reconcile). It waits up to 10 seconds for the subscription state (the Amazon
+  reconcile on a device), so a subscriber never sees it flash at startup. `onClosed`
+  reports whether the subscription is active. Placements and their sprites are configured per
+  subscription in SDK Settings → In-App Purchase → Subscription Banner and stored in
+  `Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/SubscriptionBanners.asset` (moved out
+  of Resources while the module is disabled). The prefabs are module templates generated
+  into the same folder while In-App Purchase is enabled.
+
 ### Changed
 
 - Batch backend banner impressions. Counted Cross-Promo banner impressions are
