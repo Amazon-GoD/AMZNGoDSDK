@@ -1,0 +1,26 @@
+{
+    "name": "AMZNGoDSDK.Module.CrossPromo.Tests",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.CrossPromo",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "AMZN_CROSSPROMO_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

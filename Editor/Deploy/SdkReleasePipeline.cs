@@ -27,6 +27,7 @@ namespace AMZNGoDSDK.Editor.Deploy
         {
             "Runtime/Modules/InAppPurchase/Testing", // тестовый IAP-контент (инцидент 2026-08-20)
             "Editor/Deploy",                          // сам деплой-инструмент — внутренний
+            "Tests/Editor/Deploy",                    // tests of Editor/Deploy would not compile without it
         };
 
         public const string SampleVisibleFolder = "AmznGoDSDK";

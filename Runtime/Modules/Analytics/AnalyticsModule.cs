@@ -480,7 +480,8 @@ namespace AMZNGoDSDK.Runtime
             yield return SendEventWithRetry(json, eventId, enqueue: pendingJson == null);
         }
 
-        private static bool IsBannerPlacement(string placement) =>
+        // Internal for EditMode tests.
+        internal static bool IsBannerPlacement(string placement) =>
             placement != null && string.Equals(placement.Trim(), BannerPlacement, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
@@ -1061,7 +1062,8 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private static bool IsTransientHttpError(long code) =>
+        // Internal for EditMode tests.
+        internal static bool IsTransientHttpError(long code) =>
             code == 401 || code == 403 || code == 408 || code == 429;
 
         private IEnumerator FlushQueue()
@@ -1244,7 +1246,8 @@ namespace AMZNGoDSDK.Runtime
             count > 0 ? $"\"n\":{count.ToString(CultureInfo.InvariantCulture)}," : string.Empty;
 
         /// <param name="claimFields">Готовый фрагмент <see cref="FirstOpenClaim.BuildJsonFields"/> (поля с запятой на конце).</param>
-        private static string BuildFirstOpenJson(
+        // Internal for EditMode tests.
+        internal static string BuildFirstOpenJson(
             string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId, string claimFields)
         {
             return "{" +
@@ -1260,7 +1263,8 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <param name="count">Число показов в склеенном баннерном событии (поле <c>n</c>); 0 — одиночное событие без поля.</param>
-        private static string BuildCrossPromoEventJson(
+        // Internal for EditMode tests.
+        internal static string BuildCrossPromoEventJson(
             string eventName, string paidAppId, string donorAppId, string deviceIdHash, long ts, string eventId, string placement,
             int count = 0)
         {
@@ -1289,7 +1293,8 @@ namespace AMZNGoDSDK.Runtime
         /// InvariantCulture обязателен — локаль с запятой сломала бы JSON.
         /// У склеенного показа MAX-баннера (<paramref name="count"/> &gt; 0) <c>revenue</c> — сумма за все n показов.
         /// </summary>
-        private static string BuildMediationEventJson(
+        // Internal for EditMode tests.
+        internal static string BuildMediationEventJson(
             string eventName, string network, string adUnit, string placement, double revenue, string precision,
             string appId, string deviceIdHash, long ts, string eventId, int count = 0)
         {

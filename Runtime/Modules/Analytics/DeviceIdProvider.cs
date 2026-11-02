@@ -202,7 +202,8 @@ namespace AMZNGoDSDK.Runtime
             return hash;
         }
 
-        private static bool IsUsableId(string rawId) =>
+        // Internal for EditMode tests.
+        internal static bool IsUsableId(string rawId) =>
             !string.IsNullOrWhiteSpace(rawId) && rawId.Trim() != ZeroFireAdId;
 
         private static void ClearPersistentCache()

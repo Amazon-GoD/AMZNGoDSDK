@@ -233,7 +233,8 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private static List<string> ApplyCapacity(List<string> events)
+        // Internal for EditMode tests.
+        internal static List<string> ApplyCapacity(List<string> events)
         {
             var bounded = new List<string>();
             if (events == null)
@@ -249,7 +250,8 @@ namespace AMZNGoDSDK.Runtime
         }
 
         /// <param name="evicted">true when a queued event was dropped to make room.</param>
-        private static bool AddWithCapacity(List<string> events, string json, out bool evicted)
+        // Internal for EditMode tests.
+        internal static bool AddWithCapacity(List<string> events, string json, out bool evicted)
         {
             evicted = false;
             bool isBannerImpression = IsBannerImpression(json);

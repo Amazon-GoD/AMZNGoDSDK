@@ -175,7 +175,8 @@ namespace AMZNGoDSDK.Runtime
 #endif
         }
 
-        private static void ValidateABIdentifier(string value, string name)
+        // Internal for EditMode tests.
+        internal static void ValidateABIdentifier(string value, string name)
         {
             if (string.IsNullOrWhiteSpace(value) || value.Length > MaxFirebaseValueLength)
                 throw new ArgumentException($"A/B identifiers must contain 1–{MaxFirebaseValueLength} characters.", name);

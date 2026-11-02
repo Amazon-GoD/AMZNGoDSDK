@@ -48,6 +48,9 @@ namespace AMZNGoDSDK.Editor
         private static readonly string[] ExcludedFolders =
         {
             "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase/Testing",
+            // EditMode tests and their pre-build gate are dev-only: imported into a partner's Assets
+            // they would compile and block the partner's builds on an SDK test failure.
+            "Assets/AMZNGoDSDK/Tests",
         };
 
         /// <summary>
