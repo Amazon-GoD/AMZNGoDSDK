@@ -49,6 +49,13 @@ namespace AMZNGoDSDK.Runtime
 
         private const float StateWaitTimeoutSeconds = 10f;
 
+        /// <summary>
+        /// Тестовая среда (Testing/IAPTestPanel) подставляет сюда симуляцию покупки там, где нет
+        /// настоящего Appstore: в редакторе BuyProduct уходит в заглушку плагина и не отвечает.
+        /// В релизном пакете Testing вырезан — поле всегда null, «купить» зовёт BuyProduct.
+        /// </summary>
+        internal static Action<string> PurchaseOverride;
+
         // Ключ круга «все включённые подписки» (к нему добавляется запрошенный плейсмент).
         private const string AllSubscriptionsKey = "*";
 
@@ -88,7 +95,9 @@ namespace AMZNGoDSDK.Runtime
 
         internal void Bind(InAppPurchaseModule module) => _module = module;
 
-        private void OnDestroy() => DestroyView();
+        // Не только Cleanup модуля: хост могут уничтожить и без него — onClosed принятого
+        // запроса всё равно должен прийти.
+        private void OnDestroy() => Hide();
 
         /// <summary>
         /// Запрос показа. SKU не указан — включённые подписки из SDK Settings по кругу; плейсмент
@@ -183,12 +192,16 @@ namespace AMZNGoDSDK.Runtime
             {
                 // Ждёт один запрос — последний: показывать подряд баннеры, накопленные за
                 // время ожидания, игроку незачем.
-                if (_pending != null)
-                    Finish(_pending, false);
-
+                Request replaced = _pending;
                 _pending = request;
                 _pendingDeadline = Time.unscaledTime + StateWaitTimeoutSeconds;
                 Debug.Log($"{Tag} {Describe(request)}: ждём, пока станет известно состояние подписки.");
+
+                // Вытесненному — onClosed(false) уже после замены: его обработчик может снова
+                // позвать ShowSubBanner, и тот должен увидеть новый запрос, а не этот же.
+                if (replaced != null)
+                    Finish(replaced, false);
+
                 return true;
             }
 
@@ -459,7 +472,10 @@ namespace AMZNGoDSDK.Runtime
 
             // Баннер остаётся открытым, пока IsSubscribed не станет true (см. Update): окно
             // Amazon рисуется поверх, а при отказе игрок вернётся к тому же предложению.
-            _module.BuyProduct(sku);
+            if (PurchaseOverride != null)
+                PurchaseOverride(sku);
+            else
+                _module.BuyProduct(sku);
         }
 
         private void HandleClose() => Close(false);
