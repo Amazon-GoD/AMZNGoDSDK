@@ -296,6 +296,15 @@ namespace AMZNGoDSDK.Editor
                 return;
             }
 
+            // Fail fast on an SDK regression before the dependency step; the pre-build gate repeats it in BuildPlayer.
+            var tests = SdkTestCheck.Run(SdkTestCheck.Purpose.PlayerBuild);
+            if (!tests.Passed)
+            {
+                _state.Errors = new List<string>(tests.Failures);
+                Fail("Регрессия в тестах SDK. " + tests.Summary);
+                return;
+            }
+
             CompleteStep("Сцен в сборке: " + sceneCount + ".");
         }
 

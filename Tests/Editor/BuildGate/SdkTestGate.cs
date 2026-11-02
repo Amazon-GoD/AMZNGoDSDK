@@ -29,10 +29,14 @@ namespace AMZNGoDSDK.Editor.Tests
     ///   -executeMethod AMZNGoDSDK.Editor.Tests.SdkTestGate.RunFromCommandLine -logFile tests.log
     /// </code>
     /// Exit code 0 means every test passed and the build gate is registered, 1 otherwise.
+    ///
+    /// On load it also registers <see cref="SdkTestCheck.Runner"/>, so the one-click APK build runs the tests
+    /// before its dependency step and Export / Deploy / Release of the SDK refuse to ship a regression.
     /// </summary>
+    [InitializeOnLoad]
     public static class SdkTestGate
     {
-        internal const string SkipEnvVariable = "AMZN_SKIP_SDK_TESTS";
+        internal const string SkipEnvVariable = SdkTestCheck.SkipEnvVariable;
         internal const string ResultsRelativePath = "Logs/amzn-sdk-tests.xml";
 
         private const string LogTag = "[AMZN GoD SDK] [Tests]";
@@ -56,6 +60,36 @@ namespace AMZNGoDSDK.Editor.Tests
 
             // A run that never reported its end is treated as failed: the gate is fail-closed.
             public bool Succeeded => Finished && Failed == 0 && Assemblies.Length > 0;
+        }
+
+        static SdkTestGate()
+        {
+            SdkTestCheck.Runner = RunForCheck;
+        }
+
+        private static SdkTestCheck.Result RunForCheck(SdkTestCheck.Purpose purpose)
+        {
+            // The menu toggle lives in EditorPrefs and is easy to leave on, so it only covers player builds;
+            // releasing the SDK past a red test needs the explicit environment variable.
+            string reason;
+            bool skipped = purpose == SdkTestCheck.Purpose.SdkRelease
+                ? IsSkippedByEnvironment(out reason)
+                : IsSkipped(out reason);
+            if (skipped)
+            {
+                Debug.LogWarning($"{LogTag} Тесты SDK пропущены: {reason}.");
+                return new SdkTestCheck.Result { Passed = true, Summary = $"Тесты SDK пропущены: {reason}." };
+            }
+
+            var run = Run();
+            var result = new SdkTestCheck.Result { Passed = run.Succeeded, Summary = SummaryLine(run) };
+            result.Failures.AddRange(run.Failures);
+
+            if (run.Succeeded)
+                Debug.Log(result.Summary);
+            else
+                Debug.LogError(Describe(run));
+            return result;
         }
 
         /// <summary>
@@ -109,12 +143,8 @@ namespace AMZNGoDSDK.Editor.Tests
 
         internal static bool IsSkipped(out string reason)
         {
-            string env = Environment.GetEnvironmentVariable(SkipEnvVariable);
-            if (!string.IsNullOrEmpty(env) && env != "0")
-            {
-                reason = $"переменная окружения {SkipEnvVariable}={env}";
+            if (IsSkippedByEnvironment(out reason))
                 return true;
-            }
 
             if (EditorPrefs.GetBool(SkipPrefKey, false))
             {
@@ -126,27 +156,36 @@ namespace AMZNGoDSDK.Editor.Tests
             return false;
         }
 
-        internal static string Describe(RunResult result)
+        private static bool IsSkippedByEnvironment(out string reason)
         {
-            var text = new StringBuilder();
-
-            if (result.Assemblies.Length == 0)
+            string env = Environment.GetEnvironmentVariable(SkipEnvVariable);
+            if (!string.IsNullOrEmpty(env) && env != "0")
             {
-                text.Append($"{LogTag} Не найдено ни одной тестовой сборки {AssemblyPrefix}*{AssemblySuffix}.");
-                return text.ToString();
+                reason = $"переменная окружения {SkipEnvVariable}={env}";
+                return true;
             }
+
+            reason = null;
+            return false;
+        }
+
+        private static string SummaryLine(RunResult result)
+        {
+            if (result.Assemblies.Length == 0)
+                return $"{LogTag} Не найдено ни одной тестовой сборки {AssemblyPrefix}*{AssemblySuffix}.";
 
             if (!result.Finished)
-            {
-                text.AppendLine($"{LogTag} Прогон тестов не завершился (Test Runner не сообщил о конце прогона).");
-                text.Append("Сборки: ").Append(string.Join(", ", result.Assemblies));
-                return text.ToString();
-            }
+                return $"{LogTag} Прогон тестов не завершился (Test Runner не сообщил о конце прогона). " +
+                       $"Сборки: {string.Join(", ", result.Assemblies)}.";
 
-            text.Append($"{LogTag} Тесты SDK: {result.Passed} passed, {result.Failed} failed, {result.Skipped} skipped " +
-                        $"за {result.Seconds:0.0} с. Сборки: {string.Join(", ", result.Assemblies)}.");
+            return $"{LogTag} Тесты SDK: {result.Passed} passed, {result.Failed} failed, {result.Skipped} skipped " +
+                   $"за {result.Seconds:0.0} с. Сборки: {string.Join(", ", result.Assemblies)}.";
+        }
 
-            if (result.Failed == 0)
+        internal static string Describe(RunResult result)
+        {
+            var text = new StringBuilder(SummaryLine(result));
+            if (!result.Finished || result.Failed == 0)
                 return text.ToString();
 
             text.AppendLine();
@@ -202,6 +241,10 @@ namespace AMZNGoDSDK.Editor.Tests
             if (!gateRegistered)
                 Debug.LogError($"{LogTag} {nameof(SdkTestsBuildGate)} не найден среди IPreprocessBuildWithReport — билды пойдут без тестов.");
 
+            bool checkRegistered = SdkTestCheck.Runner != null;
+            if (!checkRegistered)
+                Debug.LogError($"{LogTag} {nameof(SdkTestCheck)}.{nameof(SdkTestCheck.Runner)} не зарегистрирован — one-click и выпуск SDK пойдут без тестов.");
+
             var result = Run();
             string summary = Describe(result);
             if (result.Succeeded)
@@ -209,7 +252,7 @@ namespace AMZNGoDSDK.Editor.Tests
             else
                 Debug.LogError(summary);
 
-            EditorApplication.Exit(result.Succeeded && gateRegistered ? 0 : 1);
+            EditorApplication.Exit(result.Succeeded && gateRegistered && checkRegistered ? 0 : 1);
         }
 
         private static void WriteResults(RunResult result)

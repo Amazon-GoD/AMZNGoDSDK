@@ -94,6 +94,14 @@ namespace AMZNGoDSDK.Editor.Deploy
                 return result;
             }
 
+            // Tests run against the working tree, while the release is built from HEAD: commit before releasing.
+            var tests = SdkTestCheck.Run(SdkTestCheck.Purpose.SdkRelease);
+            if (!tests.Passed)
+            {
+                result.Error = "SDK tests failed, release stopped.\n" + SdkTestCheck.Describe(tests);
+                return result;
+            }
+
             string repoRoot = RepoRoot;
             if (!Directory.Exists(Path.Combine(repoRoot, ".git")))
             {

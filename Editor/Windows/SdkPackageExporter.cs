@@ -110,6 +110,14 @@ namespace AMZNGoDSDK.Editor
                 return false;
             }
 
+            // Covers the Export menu and Deploy SDK: a regression must not reach partners.
+            var tests = SdkTestCheck.Run(SdkTestCheck.Purpose.SdkRelease);
+            if (!tests.Passed)
+            {
+                error = "Регрессия в тестах SDK, экспорт остановлен.\n" + SdkTestCheck.Describe(tests);
+                return false;
+            }
+
             var hiddenFolders = new List<string>();
             var hiddenExcluded = new List<string>();
             string backupConfigPath = null;
