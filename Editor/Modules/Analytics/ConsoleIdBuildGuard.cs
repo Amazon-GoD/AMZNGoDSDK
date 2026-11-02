@@ -29,8 +29,9 @@ namespace AMZNGoDSDK.Editor
             var errors = new List<string>();
             var warnings = new List<string>();
             bool development = (report.summary.options & BuildOptions.Development) != 0;
-            // Бандл именно собираемой платформы — он и окажется в Application.identifier.
-            string applicationIdentifier = PlayerSettings.GetApplicationIdentifier(report.summary.platformGroup);
+            // Штамп всегда снят с Android-бандла (см. ProjectBundle): сверяем с ним же, иначе
+            // тестовая сборка под другую платформу с иным identifier упала бы ложной «копией шаблона».
+            string applicationIdentifier = ProjectBundle;
 
             CollectIssues(SdkSettingsManager.LoadRuntimeSettings(), applicationIdentifier, development, errors, warnings);
 
