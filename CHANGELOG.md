@@ -5,9 +5,12 @@ All notable changes to the AMZN GoD SDK package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] (1.0.10)
+## [Unreleased]
 
-Deploy the backend first (see Upgrade notes).
+## [1.0.10] - 2026-11-02
+
+Includes all 1.0.9 changes below: 1.0.9 shipped only as `1.0.9-beta.1`.
+Deploy the backend first (see Upgrade notes of 1.0.10 and 1.0.9).
 
 ### Added
 
@@ -38,9 +41,13 @@ Deploy the backend first (see Upgrade notes).
   - with Adjust enabled, the build stops when the key is not a 12-character
     `[a-z0-9]` app token, and when a non-development build uses the Sandbox
     environment without **Allow Sandbox in release**.
-- EditMode tests (`Tests/Editor`, assembly `AMZNGoDSDK.Editor.Tests`) for the
-  ID format, the first_open fields and the build checks. They compile only in
-  a project that lists `com.amzngod.amzngodsdk` in `testables`.
+- EditMode tests (`Tests/Editor`): the ID format, the first_open fields and the
+  build checks, plus settings conversion, dependency handling and the
+  Analytics, Cross-Promo, Firebase and IAP modules (one test assembly per
+  module). They compile only in a project that lists `com.amzngod.amzngodsdk`
+  in `testables`, and `.unitypackage` exports leave them out, so games are not
+  affected. In the SDK project a failing test stops any Player build and SDK
+  export or release.
 
 ### Upgrade notes
 
@@ -58,7 +65,7 @@ Deploy the backend first (see Upgrade notes).
 - Wire example: `Documentation~/README.md`, section "Console ID and first_open
   fields".
 
-## [Unreleased] (1.0.9)
+## [1.0.9] - not released as stable (beta `1.0.9-beta.1`, included in 1.0.10)
 
 ### Changed
 

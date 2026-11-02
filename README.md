@@ -1,19 +1,21 @@
-# AMZN GoD SDK for Unity — 1.0.8
+# AMZN GoD SDK for Unity — 1.0.10
 
-Стабильная версия от 5 октября 2026 года. В Unity Package Manager можно
+Стабильная версия от 2 ноября 2026 года. В Unity Package Manager можно
 закрепить пакет ссылкой:
 
-`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.8`
+`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.10`
 
 Ветка `#Releases` содержит последний стабильный релиз. Для приватного
 репозитория необходим настроенный доступ к GitHub.
 
-[Изменения 1.0.8](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
+[Изменения 1.0.10](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
 · [Android-зависимости и миграция](Documentation~/ANDROID-DEPENDENCIES.md)
 
+Версия 1.0.10 включает изменения 1.0.9 (выходила только бетой). Перед
+обновлением игр бэкенд должен принимать новые события и поля — см. Upgrade
+notes в [CHANGELOG](CHANGELOG.md).
+
 Unity 2022.3 LTS; при включённом MAX минимальная Android API — 24.
-Подробные результаты ревью и границы проверки:
-[отчёт об исправлениях](Documentation~/Reviews/2026-10-05/FIXES.md).
 
 Cross-promo: [настройка мастер JSON и смена JSON без пересборки](Runtime/Modules/Cross-Promo/README.md).
 

@@ -37,13 +37,12 @@ Add the package to `Packages/manifest.json` (or through
 ```
 
 - `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.8`) — pin an exact release version.
+- `#vX.Y.Z` (currently `#v1.0.10`) — pin an exact release version.
 
-Version 1.0.8 includes both 1.0.8 beta releases and the subsequent review
-fixes. Read [the changelog](../CHANGELOG.md) and
-[Android dependency migration notes](ANDROID-DEPENDENCIES.md) when upgrading
-from 1.0.7. Legacy Unity Video Player was excluded from the final fixes;
-see [the review outcome and validation limits](Reviews/2026-10-05/FIXES.md).
+Version 1.0.10 includes the 1.0.9 changes, which shipped only as
+`1.0.9-beta.1`. Deploy the backend before any game ships it, and read the
+Upgrade notes of 1.0.10 and 1.0.9 in [the changelog](../CHANGELOG.md) when
+upgrading from 1.0.8.
 
 The repository is private: access requires GitHub credentials (SSH key or PAT)
 on every machine and on CI.
