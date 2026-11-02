@@ -41,7 +41,8 @@ namespace AMZNGoDSDK.Editor
         private string _lastAppLovinStatus;
         private string _lastFirebaseStatus;
         private string _lastDependenciesStatus;
-        
+        private int _lastApkBuildRevision = -1;
+
         private static GUIStyle _moduleDescriptionStyle;
 
         private Vector2 _settingsScrollPosition;
@@ -129,6 +130,11 @@ namespace AMZNGoDSDK.Editor
             bool liveStateChanged = ReadLiveState();
             if (wasBusy && !WasInstallerBusy) InvalidateStatus();
             if (liveStateChanged) Repaint();
+            if (_lastApkBuildRevision != OneClickAndroidBuild.Revision)
+            {
+                _lastApkBuildRevision = OneClickAndroidBuild.Revision;
+                Repaint();
+            }
 
             if (IsRefreshBlocked) return;
             double now = EditorApplication.timeSinceStartup;
@@ -358,8 +364,142 @@ namespace AMZNGoDSDK.Editor
                     SdkDependencyManager.Retry();
             }
 
+            DrawApkBuildSection();
+
             GUILayout.Space(10);
             EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawApkBuildSection()
+        {
+            GUILayout.Space(20);
+            GUILayout.Label("Сборка APK (debug-подпись):", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Сохраняет настройки SDK и проходит весь чек-лист: проверка проекта, App Type, переключение на Android, " +
+                "установка зависимостей и инструментов Android, EDM Force Resolve, проверка настроек и сборка APK " +
+                "в Builds/Android. Подпись — debug keystore Unity: такой APK только для тестов, не для загрузки в стор.",
+                MessageType.Info);
+
+            bool active = OneClickAndroidBuild.IsActive;
+            using (new EditorGUI.DisabledScope(active))
+            {
+                OneClickAndroidBuild.DevelopmentPreference =
+                    EditorGUILayout.Toggle("Development Build", OneClickAndroidBuild.DevelopmentPreference);
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(active || BuildPipeline.isBuildingPlayer || IsEditorBusy))
+            {
+                // Dialogs and SaveSettings run after OnGUI: a modal window inside a layout group breaks the layout.
+                if (GUILayout.Button("Сохранить и собрать APK", GUILayout.Height(30)))
+                    EditorApplication.delayCall += StartApkBuild;
+            }
+
+            if (active && GUILayout.Button("Отменить", GUILayout.Height(30), GUILayout.Width(120)))
+                OneClickAndroidBuild.Cancel();
+            EditorGUILayout.EndHorizontal();
+
+            if (!OneClickAndroidBuild.HasReport)
+                return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            for (int step = 0; step < OneClickAndroidBuild.StepCount; step++)
+            {
+                var status = OneClickAndroidBuild.GetStatus(step);
+                string marker = status switch
+                {
+                    OneClickAndroidBuild.StepStatus.Done => "[OK]",
+                    OneClickAndroidBuild.StepStatus.Running => "[..]",
+                    OneClickAndroidBuild.StepStatus.Failed => "[X]",
+                    _ => "[  ]"
+                };
+                EditorGUILayout.LabelField(marker + "  " + OneClickAndroidBuild.StepTitles[step],
+                    status == OneClickAndroidBuild.StepStatus.Running ? EditorStyles.boldLabel : EditorStyles.label);
+
+                string message = OneClickAndroidBuild.GetMessage(step);
+                if (string.IsNullOrEmpty(message))
+                    continue;
+                if (status == OneClickAndroidBuild.StepStatus.Failed)
+                    EditorGUILayout.HelpBox(message, MessageType.Error);
+                else
+                    EditorGUILayout.LabelField(message, EditorStyles.wordWrappedMiniLabel);
+            }
+            EditorGUILayout.EndVertical();
+
+            const int maxShownErrors = 10;
+            var errors = OneClickAndroidBuild.Errors;
+            for (int i = 0; i < errors.Count && i < maxShownErrors; i++)
+                EditorGUILayout.HelpBox(errors[i], MessageType.Error);
+            if (errors.Count > maxShownErrors)
+                EditorGUILayout.HelpBox("…и ещё " + (errors.Count - maxShownErrors) + ". Полный список в Console.", MessageType.Error);
+
+            foreach (string warning in OneClickAndroidBuild.Warnings)
+                EditorGUILayout.HelpBox(warning, MessageType.Warning);
+
+            if (!OneClickAndroidBuild.Finished)
+                return;
+
+            if (OneClickAndroidBuild.Succeeded)
+            {
+                EditorGUILayout.HelpBox(
+                    "APK собран за " + OneClickAndroidBuild.FormatDuration(OneClickAndroidBuild.DurationSeconds) + ":\n" +
+                    OneClickAndroidBuild.ArtifactPath + "\n" +
+                    (OneClickAndroidBuild.ArtifactSize / (1024f * 1024f)).ToString("0.0") + " MB",
+                    MessageType.Info);
+                if (GUILayout.Button("Показать в проводнике"))
+                    EditorUtility.RevealInFinder(OneClickAndroidBuild.ArtifactPath);
+            }
+            else
+            {
+                EditorGUILayout.LabelField(
+                    "Остановлено через " + OneClickAndroidBuild.FormatDuration(OneClickAndroidBuild.DurationSeconds) + ".",
+                    EditorStyles.miniLabel);
+            }
+        }
+
+        private void StartApkBuild()
+        {
+            // delayCall may fire after the window was closed.
+            if (this == null || _currentSettings == null)
+                return;
+
+            if (_currentSettings.Enabled && _currentSettings.Analytics != null && _currentSettings.Analytics.Enabled &&
+                _currentSettings.Analytics.AppType == AnalyticsAppType.None)
+            {
+                int choice = EditorUtility.DisplayDialogComplex(
+                    "App Type",
+                    "Для сборки нужен App Type модуля Analytics. Он сбрасывается при каждом запуске Unity Editor.\n\n" +
+                    "Какой тип у этой сборки?",
+                    "Free", "Отмена", "Paid");
+                if (choice == 1)
+                    return;
+                _currentSettings.Analytics.AppType = choice == 0 ? AnalyticsAppType.Free : AnalyticsAppType.Paid;
+            }
+
+            if (!SdkSettingsManager.ValidateInAppPurchaseProductIds(_currentSettings.InAppPurchase, out var iapMessage))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", iapMessage, "OK");
+                return;
+            }
+
+            if (!SdkSettingsManager.ValidateABTests(_currentSettings.Firebase, out var abMessage))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", abMessage, "OK");
+                return;
+            }
+
+            // The build reads the config from disk, so unsaved window edits must be saved first.
+            if (!SdkSettingsManager.SaveSettings(_currentSettings))
+            {
+                EditorUtility.DisplayDialog("Сборка не запущена", "Настройки SDK не сохранены. Подробности в Console.", "OK");
+                return;
+            }
+
+            InvalidateStatus();
+
+            var options = new OneClickAndroidBuild.Options { Development = OneClickAndroidBuild.DevelopmentPreference };
+            if (!OneClickAndroidBuild.Start(options, out string error))
+                EditorUtility.DisplayDialog("Сборка не запущена", error, "OK");
         }
 
         private void DrawInternetConnectionSettings()
@@ -619,10 +759,35 @@ namespace AMZNGoDSDK.Editor
                 _currentSettings.Adjust.Enabled,
                 () =>
                 {
-                    _currentSettings.Adjust.Key = EditorGUILayout
-                        .TextField("Key", _currentSettings.Adjust.Key);
-                    _currentSettings.Adjust.Environment = (AdjustSettingData.AdjustEnvironment)EditorGUILayout
-                        .EnumPopup("Environment", _currentSettings.Adjust.Environment);
+                    var adjust = _currentSettings.Adjust;
+                    adjust.Key = EditorGUILayout
+                        .TextField(new GUIContent("Key", "App token приложения в Adjust: 12 символов, строчная латиница и цифры."),
+                            adjust.Key);
+                    if (!FirstOpenClaim.IsValidAdjustAppToken(adjust.Key))
+                    {
+                        EditorGUILayout.HelpBox(
+                            "Key — app token Adjust: ровно 12 символов a–z и 0–9, без пробелов " +
+                            "(Adjust → приложение → App token). С другим значением билд не соберётся.",
+                            MessageType.Error);
+                    }
+
+                    adjust.Environment = (AdjustSettingData.AdjustEnvironment)EditorGUILayout
+                        .EnumPopup("Environment", adjust.Environment);
+                    if (adjust.Environment == AdjustSettingData.AdjustEnvironment.Sandbox)
+                    {
+                        adjust.AllowSandboxInRelease = EditorGUILayout.Toggle(
+                            new GUIContent("Allow Sandbox in release",
+                                "Разрешить Sandbox в сборке без Development Build. Только для тестов: такие установки " +
+                                "не попадут в продовую статистику Adjust."),
+                            adjust.AllowSandboxInRelease);
+                        EditorGUILayout.HelpBox(
+                            adjust.AllowSandboxInRelease
+                                ? "Sandbox разрешён и в релизных сборках. Не загружайте такую сборку в стор: её установки " +
+                                  "не попадут в продовую статистику Adjust."
+                                : "Sandbox — только для Development Build: релизная сборка с Sandbox остановится. " +
+                                  "Для стора выберите Production.",
+                            MessageType.Warning);
+                    }
                 });
         }
 
@@ -681,6 +846,8 @@ namespace AMZNGoDSDK.Editor
                                     "верни 0 — иначе игроки будут получать периоды каждые несколько минут.",
                                     MessageType.Warning);
                             }
+
+                            DrawSubscriptionBanner(product, i);
                         }
 
                         if (GUILayout.Button("Remove Subscription", GUILayout.Height(20)))
@@ -772,6 +939,96 @@ namespace AMZNGoDSDK.Editor
                 });
         }
 
+        // Раскрытые блоки «Subscription Banner» по индексу подписки — только состояние UI.
+        private readonly HashSet<int> _expandedSubscriptionBanners = new();
+
+        private void DrawSubscriptionBanner(SubscriptionProduct product, int index)
+        {
+            product.BannerPlacements ??= new List<SubscriptionBannerPlacement>();
+            SubscriptionBannerSettingsStore.EnsureDefaultPlacement(product.BannerPlacements);
+            var placements = product.BannerPlacements;
+
+            GUILayout.Space(4);
+            bool expanded = EditorGUILayout.Foldout(_expandedSubscriptionBanners.Contains(index),
+                $"Subscription Banner ({placements.Count} placement{(placements.Count == 1 ? "" : "s")})", true);
+            if (expanded)
+                _expandedSubscriptionBanners.Add(index);
+            else
+            {
+                _expandedSubscriptionBanners.Remove(index);
+                return;
+            }
+
+            SubscriptionBannerSettingsStore.GetProjectOrientations(out bool horizontal, out bool vertical);
+            string orientation = horizontal && vertical ? "горизонтальная и вертикальная"
+                : horizontal ? "горизонтальная" : "вертикальная";
+
+            EditorGUILayout.HelpBox(
+                $"Показ: AmznGoDSDKCore.Instance.ShowSubBanner(\"{product.ProductId}\", placement). " +
+                "Без плейсмента картинки идут по кругу. Ориентация проекта в Player Settings — " +
+                $"{orientation}: картинки задаются для неё, а префаб выбирается по экрану устройства.",
+                MessageType.None);
+
+            for (int p = 0; p < placements.Count; p++)
+            {
+                var placement = placements[p];
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                if (p == 0)
+                {
+                    EditorGUILayout.LabelField("Placement", $"{SubscriptionBannerSettings.DefaultPlacementName} (по умолчанию)");
+                }
+                else
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    placement.Name = EditorGUILayout.TextField("Placement", placement.Name);
+                    if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                    {
+                        placements.RemoveAt(p);
+                        p--;
+                        EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.EndVertical();
+                        continue;
+                    }
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (horizontal)
+                    placement.Horizontal = (Sprite)EditorGUILayout.ObjectField(
+                        "Horizontal Sprite", placement.Horizontal, typeof(Sprite), false);
+
+                if (vertical)
+                    placement.Vertical = (Sprite)EditorGUILayout.ObjectField(
+                        "Vertical Sprite", placement.Vertical, typeof(Sprite), false);
+
+                bool hasAny = placement.Horizontal != null || placement.Vertical != null;
+                bool missingOrientation = (horizontal && placement.Horizontal == null)
+                                          || (vertical && placement.Vertical == null);
+                if (!hasAny)
+                {
+                    EditorGUILayout.HelpBox(p == 0
+                            ? "Картинка не задана: плейсмент по умолчанию — запасной для остальных, без картинки он не покажется."
+                            : "Картинка не задана: вместо неё покажется картинка плейсмента по умолчанию.",
+                        p == 0 ? MessageType.Warning : MessageType.Info);
+                }
+                else if (missingOrientation)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Картинка задана не для всех ориентаций: на таком экране растянется картинка другой ориентации.",
+                        MessageType.Warning);
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+
+            if (GUILayout.Button("Add Placement"))
+                placements.Add(new SubscriptionBannerPlacement());
+
+            string problem = SubscriptionBannerSettingsStore.DescribePlacementProblem(placements);
+            if (problem != null)
+                EditorGUILayout.HelpBox($"Плейсменты: {problem}. Настройки не сохранятся.", MessageType.Error);
+        }
+
         private void ImportUnityIapCatalog()
         {
             string path = InAppPurchaseCatalogHelper.FindCatalogPath();
@@ -829,7 +1086,90 @@ namespace AMZNGoDSDK.Editor
                             "выбери Free или Paid и нажми Save Settings, иначе билд не соберётся.",
                             MessageType.Error);
                     }
+
+                    DrawConsoleIdField();
                 });
+        }
+
+        /// <summary>
+        /// Console ID из админки BI. Проверки — те же, что у <see cref="ConsoleIdBuildGuard"/>,
+        /// но сразу при вводе, короткими подсказками.
+        /// </summary>
+        private void DrawConsoleIdField()
+        {
+            var analytics = _currentSettings.Analytics;
+            string previous = analytics.ConsoleId ?? string.Empty;
+            // Бандл Android, даже если активна другая платформа: с ним сверяет и сборка APK.
+            string bundle = ConsoleIdBuildGuard.ProjectBundle;
+
+            // Пробелы срезаем сразу: ID вставляют из админки копированием, и лишний пробел
+            // не должен выглядеть как ошибка формата.
+            string consoleId = EditorGUILayout.TextField(
+                new GUIContent("Console ID",
+                    "ID игры из админки BI → «Игры» (выдаётся вместе с игрой или в её карточке), например " +
+                    ConsoleId.Example + ". Тот же ID стоит в начале App title в консоли Amazon. Пусто, пока игре " +
+                    "не выдали ID."),
+                previous).Trim();
+
+            if (consoleId != previous)
+            {
+                // Штамп бандла: ID принадлежит одной игре, и копия шаблона с другим бандлом
+                // не соберётся, пока ей не выдадут свой ID.
+                analytics.ConsoleIdBundle = ConsoleIdBuildGuard.StampAfterEdit(
+                    previous, consoleId, analytics.ConsoleIdBundle, bundle);
+                analytics.ConsoleId = consoleId;
+            }
+
+            if (consoleId.Length == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "Console ID не задан. Его выдаёт админка BI на странице «Игры»: новой игре — вместе с ней " +
+                    "(«+ Добавить игру»), существующей — в её карточке («Выдать Console ID»). Впишите его до первой " +
+                    "сборки: по нему BI сам свяжет бандл, токен Adjust и ASIN. Без ID игра работает как раньше.",
+                    MessageType.Info);
+                return;
+            }
+
+            if (!ConsoleId.IsValid(consoleId))
+            {
+                EditorGUILayout.HelpBox(
+                    "Формат: F (free) или P (paid), 6 цифр, дефис и номер копии — например " + ConsoleId.Example + ". " +
+                    "С таким ID билд не соберётся.",
+                    MessageType.Error);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(analytics.ConsoleIdBundle))
+            {
+                EditorGUILayout.HelpBox(
+                    "ID не привязан к бандлу (конфиг правили вручную?). Сотрите ID и введите его заново, " +
+                    "иначе билд не соберётся.",
+                    MessageType.Error);
+            }
+            else if (analytics.ConsoleIdBundle != bundle)
+            {
+                EditorGUILayout.HelpBox(
+                    "Console ID вводили для " + analytics.ConsoleIdBundle + ", а текущий бандл Android — " + bundle + ". " +
+                    "Это копия шаблона? Новой игре (в том числе из шаблона) выдайте ID в админке BI: «Игры» → " +
+                    "«+ Добавить игру»; «Копия игры» — только для перезалива, платной версии или той же игры в " +
+                    "другом аккаунте. Если бандл этой же игры сменили намеренно — сотрите ID и введите его " +
+                    "заново. Иначе билд не соберётся.",
+                    MessageType.Error);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("ID введён для " + analytics.ConsoleIdBundle, MessageType.None);
+            }
+
+            // Зеркальный enum редактора совпадает с рантаймовым по числам (см. AnalyticsSettingData).
+            char expected = ConsoleId.LetterFor((Runtime.AnalyticsAppType)(int)analytics.AppType);
+            if (expected != '\0' && consoleId[0] != expected)
+            {
+                EditorGUILayout.HelpBox(
+                    "Буква " + consoleId[0] + " — " + (consoleId[0] == 'F' ? "free" : "paid") + "-листинг, а App Type = " +
+                    analytics.AppType + ". Выставьте верный App Type или впишите ID этой версии, иначе билд не соберётся.",
+                    MessageType.Error);
+            }
         }
 
         private bool DrawModuleSection(string title, string description, bool enabled, Action content)

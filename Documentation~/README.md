@@ -37,13 +37,12 @@ Add the package to `Packages/manifest.json` (or through
 ```
 
 - `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.8`) — pin an exact release version.
+- `#vX.Y.Z` (currently `#v1.0.10`) — pin an exact release version.
 
-Version 1.0.8 includes both 1.0.8 beta releases and the subsequent review
-fixes. Read [the changelog](../CHANGELOG.md) and
-[Android dependency migration notes](ANDROID-DEPENDENCIES.md) when upgrading
-from 1.0.7. Legacy Unity Video Player was excluded from the final fixes;
-see [the review outcome and validation limits](Reviews/2026-10-05/FIXES.md).
+Version 1.0.10 includes the 1.0.9 changes, which shipped only as
+`1.0.9-beta.1`. Deploy the backend before any game ships it, and read the
+Upgrade notes of 1.0.10 and 1.0.9 in [the changelog](../CHANGELOG.md) when
+upgrading from 1.0.8.
 
 The repository is private: access requires GitHub credentials (SSH key or PAT)
 on every machine and on CI.
@@ -207,8 +206,10 @@ placement `banner`, set in MAX immediately after banner creation.
 
 MAX banner clicks emit `mediation_banner_clicked` and backend
 `mediation_click`. Each banner revenue callback, including auto-refreshes,
-emits `mediation_banner_displayed`, `mediation_ad_revenue`, backend
-`mediation_impression`, and native revenue reports. Loading, showing or hiding
+emits `mediation_banner_displayed`, `mediation_ad_revenue`, native revenue
+reports, and counts one impression toward the next batched backend
+`mediation_impression` (see [Backend banner batching and version
+fields](#backend-banner-batching-and-version-fields)). Loading, showing or hiding
 the banner does not synthesize an impression. Late revenue after hiding is
 retained. Load errors emit `mediation_banner_load_failed` in AppMetrica with
 `placement`, `ad_unit`, `reason`, and `error_code` when available.
@@ -238,13 +239,178 @@ URLs are unchanged.
 MAX API references: [banner callbacks](https://support.applovin.com/en/max/unity/ad-formats/banner-and-mrec-ads)
 and [placement configuration](https://support.applovin.com/en/max/unity/overview/advanced-settings).
 
+### Backend banner batching and version fields
+
+Since 1.0.9 banner impressions are not sent to `POST /v1/events` one by one.
+The visibility rules that decide whether a Cross-Promo banner rotation counts
+as an impression are unchanged; only counted impressions are aggregated.
+
+- **Cross-Promo banner:** counted impressions are aggregated per
+  `paid_app_id` and sent as one `cp_impression` with `placement: "banner"` and
+  `"n": <count>`.
+- **MAX banner:** revenue callbacks are aggregated per `network`, `ad_unit` and
+  `revenue_precision`, and sent as one `mediation_impression` with
+  `placement: "banner"`, `"n": <count>`, and `revenue` = the **sum** in USD for
+  those `n` impressions. Impressions whose revenue is unknown (MAX reports `-1`;
+  also NaN, infinity, a negative value or more than 10 USD for one impression)
+  are counted in a separate batch sent with `"revenue": -1`, so a batch's
+  `revenue` always covers all of its `n` impressions.
+- Interstitial and rewarded impressions, every click (`cp_click`,
+  `mediation_click`) and all other events are still sent one per occurrence,
+  without `n`.
+
+A batch closes 5 minutes after its first impression. It closes earlier only
+when it reaches 1000 impressions, when the UTC day changes (a batch never spans
+two UTC days), when the device clock moves back, and on quit. Focus loss and
+pause do not close open batches: they happen on every full-screen ad, purchase
+dialog and store visit, and closing every key each time would send almost as
+many requests as 1.0.8. A pause only queues batches whose 5 minutes are already
+up, so they are in the pause flush. The banner rotates through every creative
+of the config, so each `paid_app_id` is its own key: with K creatives the
+Cross-Promo banner sends about K/5 requests per minute (8 creatives: about 1.5
+per minute, against 7.5 in 1.0.8). Open batches are checked every 5 seconds, so
+a batch also closes after the banner has been hidden. Its `ts` is the time of
+its first impression; each batch gets a new `event_id`, and a retry of the
+same batch reuses it.
+
+The 5-minute window closes a batch only while the device is online and while no
+earlier banner event waits undelivered in the queue (in flight, or kept after a
+transient failure). Otherwise impressions keep accumulating in the open batch
+instead of producing more queued events.
+
+Pending batches are persisted in PlayerPrefs (`amzn_banner_impression_batches`)
+after every impression, so a pause, process kill or crash does not lose counts:
+batches still open when the process dies are sent after the next launch. A
+batch moves from that store into the event queue in a single PlayerPrefs write,
+and only into a free banner slot of the queue (10 slots, oldest batch first), so
+queuing a batch never evicts a batch already queued; the others wait in the
+store. The store holds at most 64 batches; past that the oldest one is dropped
+with a warning, which only happens after days without delivery. An impression
+counted before the Fire ID resolves joins the batch for the identity resolved
+in the same session. One left from a previous process is sent as
+`unattributed`, matching how queued events are handled. Disabled Analytics does
+not aggregate banner impressions.
+
+What can still lose or double-count banner impressions, now a whole batch (up
+to 1000 impressions) at a time:
+
+- The backend answers `422 not_stored` when it cannot write a banner or MAX
+  counter (a database error, or no database answer within 10 seconds; it never
+  answers 5xx for these, so they cannot stall the queue). The SDK treats any
+  non-transient 4xx as rejected and drops the batch.
+- When 50 regular events fill the queue (a long backend outage with many
+  clicks), queued banner events still yield to them, as in 1.0.8.
+- The backend deduplicates banner and MAX batches by `event_id` in its process
+  memory for 6 hours. A batch re-sent after a lost response more than 6 hours
+  later, or after a backend restart or deploy, is counted twice.
+- A player who never opens the game again never sends the batches that were
+  still open (up to 5 minutes of impressions per key).
+- Not a loss, but late: the backend never rejects a batch for its age and counts
+  it on the UTC day of its `ts` (the first impression). A batch that arrives
+  days later (offline, or left open until the next launch) lands on that past
+  day, and reports that already read that day see it only after a re-sync.
+
+Every event the SDK builds also carries `sdk_version` (the package version,
+`AmznGoDSDKCore.SdkVersion`) and `app_version` (`Application.version`) as
+strings, immediately before `ts`. Field order is fixed:
+
+```json
+{"event_name":"cp_impression","event_id":"5e0c2a4f9b7d4c1e8a3f6b2d9c0e1f47","paid_app_id":"com.example.paid","donor_app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","placement":"banner","n":7,"sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+{"event_name":"mediation_impression","event_id":"0b6f1d2c3e4a4b5c9d8e7f6a5b4c3d2e","app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","network":"AppLovin","ad_unit":"abcd1234abcd1234","placement":"banner","revenue":0.000912,"revenue_precision":"exact","n":2,"sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+{"event_name":"cp_click","event_id":"9a8b7c6d5e4f40312a1b0c9d8e7f6a5b","paid_app_id":"com.example.paid","donor_app_id":"com.example.donor","device_id_hash":"<64 hex | unattributed>","placement":"banner","sdk_version":"1.0.9","app_version":"2.7.9","ts":1791480000000}
+```
+
+The backend must accept `n` (an integer from 1 to 1000; absent means 1) on
+`cp_impression` and `mediation_impression`, treat `revenue` of a
+`mediation_impression` as the sum for `n` impressions, accept
+`placement: "banner"`, and accept `mediation_*` events. Deploy such a backend
+before shipping 1.0.9 in a game: a backend that rejects `banner` drops the
+batches, and one that ignores `n` counts each batch as a single impression.
+Unknown top-level fields such as `sdk_version` and `app_version` are ignored by
+older backends. The backend that accepts `n` stores them on clicks and first
+opens (`events_raw.extra`). It keeps only allowlisted top-level fields
+(`sdk_version`, `app_version`, `unity_version`, `os_version`, `build`,
+`locale`) and only short version-like values, so a new field needs a backend
+change before it is stored.
+
+Cross-Promo banner taps are debounced: a second tap on the same banner within
+2.5 seconds is ignored (the store opens up to 1.5 seconds after the tap while
+the click is being tracked, and nothing is visible until then), so it neither
+sends a second `cp_click` nor opens the store twice.
+
+### Console ID and first_open fields
+
+Since 1.0.10 a new game can map itself in BI (bundle ↔ Adjust token ↔ ASIN)
+through one **Console ID** issued by the BI admin on the **Игры** page (with the
+game on **+ Добавить игру**, or in an existing game's card), for example
+`F000042-0`:
+
+- the letter is the listing type in Amazon: `F` free, `P` paid;
+- six digits are the game number, one sequence across all Amazon accounts;
+- the number after the dash is the copy: `0` is the original, re-uploads, the
+  paid version of a free game and the same game in another account get `1`,
+  `2`, … (no leading zeros, up to 999).
+
+Format: `^[FP][0-9]{6}-(0|[1-9][0-9]{0,2})$`. Type the ID in three places (the
+admin shows each string with a copy button, after the game is created and in its
+card): the Amazon console App title (`F000042-0 Название игры`; customers see the
+Display title, which ASO renames),
+the Amazon console SKU (the bundle id), and `AMZN GoD > SDK Settings >
+Analytics > Console ID`. A game without an ID leaves the field empty and works
+as before; an existing game gets one in its card on **Игры** when it moves to
+this version.
+
+The SDK Settings window validates the format as you type. Changing the ID
+records the Android bundle (Package Name,
+`PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android)`, even when
+another platform is active) in `Analytics.ConsoleIdBundle` and shows
+«ID введён для <bundle>». A project copied from a template keeps the
+template's ID and bundle stamp, so its build stops until it gets its own ID
+(see below).
+
+`free_first_open` / `paid_first_open` carry these top-level fields between
+`device_id_hash` and `sdk_version`; no other event changes:
+
+| Field | Sent when | Value |
+|---|---|---|
+| `console_id` | the Console ID is valid | the ID |
+| `adjust_app_token` | the Adjust module is enabled and its key is 12 `[a-z0-9]` characters | the Adjust app token |
+| `is_debug` | always | `Debug.isDebugBuild` (true in development builds and in the editor) |
+| `installer` | `Application.installerName` matches `^[0-9A-Za-z._+:-]{1,64}$` | e.g. `com.amazon.venezia` |
+
+```json
+{"event_name":"free_first_open","event_id":"3f2a1b0c9d8e4f7a6b5c4d3e2f1a0b9c","app_id":"com.example.game","app_type":"free","device_id_hash":"<64 hex | unattributed>","console_id":"F000042-0","adjust_app_token":"abcd1234efgh","is_debug":false,"installer":"com.amazon.venezia","sdk_version":"1.0.10","app_version":"1.0.0","ts":1791480000000}
+```
+
+`first_open` is still sent once per installation and app type, with the same
+retry rules; the fields are built on every attempt. The backend stores them in
+`events_raw.extra` only after `console_id`, `adjust_app_token`, `is_debug` and
+`installer` are on its allowlist: deploy that backend before a game ships
+1.0.10, otherwise the fields are dropped and never resent for those installs.
+
+Build checks (`ConsoleIdBuildGuard`; **Сохранить и собрать APK** runs the same
+checks):
+
+- Analytics enabled, Console ID set: a malformed ID, an ID entered for another
+  bundle («Console ID вводили для X, а собираете Y. Это копия шаблона? Выдайте
+  новый ID»), or a letter that does not match App Type stops the build. If the
+  bundle of the same game was changed on purpose, clear the ID and type it
+  again. An empty Console ID is only a warning.
+- Adjust enabled: a key that is not a 12-character `[a-z0-9]` app token stops
+  the build; so does Environment = Sandbox in a non-development build, unless
+  **Allow Sandbox in release** (`Adjust.AllowSandboxInRelease`) is on.
+
 ### Analytics persistence and identity
 
-The persisted queue holds up to 50 events. At most 10 are Cross-Promo banner
-impressions (`cp_impression`, `placement: "banner"`); this stream cannot evict
-clicks, revenue or other regular events. When 50 regular events fill the queue,
-the oldest regular event can still be evicted. The existing PlayerPrefs key
-and payload format are retained.
+The persisted queue holds up to 50 events. At most 10 are banner events:
+Cross-Promo banner impressions (`cp_impression`, `placement: "banner"`) and,
+since 1.0.9, MAX banner impressions (`mediation_impression`,
+`placement: "banner"`). These streams cannot evict clicks, full-screen revenue
+or other regular events. Since 1.0.9 a banner batch is queued only into a free
+banner slot, so batches do not evict each other either. When 50 regular events
+fill the queue, the oldest regular event can still be evicted and a new banner
+event is not queued. The existing PlayerPrefs key and payload format are
+retained.
 
 Cross-Promo clicks are persisted before waiting for a Fire ID. ExoPlayer starts
 backend and Adjust click requests independently and retains its four-second
@@ -282,9 +448,49 @@ versions, installation behavior and verification limits.
   `AMZN GoD > SDK Settings` before building — otherwise the build stops with a
   clear error message.
 - Enabled IAP subscriptions must have `Term (days)` set, or the build stops.
+- A set Console ID must be well-formed, entered for the bundle being built and
+  match App Type; with Adjust enabled, the key must be a 12-character app token
+  and a release build must not use Sandbox (see [Console ID and first_open
+  fields](#console-id-and-first_open-fields)).
 - With Cross-Promo disabled, IL2CPP builds may log a harmless warning about
   the `AMZNGoDSDK.Module.CrossPromo` assembly referenced from the package
   `link.xml`.
+
+### One-click debug APK build
+
+`AMZN GoD > SDK Settings` → **Сохранить и собрать APK** (save and build APK) runs the whole build checklist:
+
+1. Project checks: not in Play Mode, no compile errors, Android Build Support
+   installed, SDK config present, at least one enabled scene in Build Settings.
+2. Analytics App Type: asked in a dialog when it is not set.
+3. Active platform switched to Android (assets are reimported once).
+4. Module dependencies, Android build tools and EDM Force Resolve — the same
+   pass as **Проверить / повторить установку зависимостей**.
+5. The checks of the SDK build hooks (App Type, Console ID and Adjust, IAP
+   terms, Android toolchain, target API, AdMob App ID, disabled-module
+   artifacts), reported as one list.
+6. `BuildPipeline.BuildPlayer` into
+   `Builds/Android/<product>_<version>_<time>.apk`.
+
+The APK is always signed with Unity's debug keystore and is meant for testing,
+not for store upload. The project's keystore, App Bundle and Export Project
+settings are restored after the build. Progress and the result are shown in
+the same section and survive domain reloads; **Отменить** (cancel) stops the checklist
+between steps (a running package installation or Gradle build is not
+interrupted).
+
+CI (run **without** `-quit`; the editor exits with code 0 on success, 1 on
+failure):
+
+```
+Unity.exe -batchmode -nographics -projectPath <project> -buildTarget Android ^
+  -executeMethod AMZNGoDSDK.Editor.OneClickAndroidBuildCli.Run ^
+  -amznAppType Free [-amznOutput Builds/Android/game.apk] [-amznDevelopment] ^
+  -logFile build.log
+```
+
+`-amznAppType` (`Free` or `Paid`) is required when the Analytics module is
+enabled, because App Type is reset on every editor start.
 
 ## Verified configurations
 

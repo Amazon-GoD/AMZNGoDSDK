@@ -32,6 +32,13 @@ namespace AMZNGoDSDK.Editor
         public int TestTermMinutes = 0;
 
         public bool Enabled = true;
+
+        /// <summary>
+        /// Плейсменты баннера подписки (ShowSubBanner), первый — по умолчанию. В JSON-конфиг не
+        /// попадают: ссылки на спрайты хранит ассет SubscriptionBannerSettings, его пишет и читает
+        /// SubscriptionBannerSettingsStore. Поэтому и тип общий с рантаймом — зеркалить нечего.
+        /// </summary>
+        public List<Runtime.SubscriptionBannerPlacement> BannerPlacements = new();
     }
 
     [Serializable]

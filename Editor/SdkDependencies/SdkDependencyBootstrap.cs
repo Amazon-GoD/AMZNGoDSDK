@@ -18,6 +18,7 @@ namespace AMZNGoDSDK.Editor
     {
         private const string StatePath = "Library/AmznGoDSDK/DependencyBootstrap.json";
         private const string EdmPackage = "com.google.external-dependency-manager";
+        private const string RetryRequestedKey = "AMZNGoDSDK.DependencyBootstrap.RetryRequested";
         private static bool _queued = true;
         private static bool _running;
         private static bool _retry;
@@ -36,6 +37,10 @@ namespace AMZNGoDSDK.Editor
         internal static bool IsBusy => _running || _queued;
         internal static bool IsRunning => _running;
         internal static string Status => _state?.Status ?? "Ожидание настройки зависимостей SDK…";
+        // Read by OneClickAndroidBuild after IsBusy drops: the saved stage is the only completion signal.
+        internal static bool HasCompleted => State.Stage == "done";
+        internal static bool HasFailed => State.Stage == "failed";
+        private static BootstrapState State => _state ??= ReadState();
 
         static SdkDependencyBootstrap()
         {
@@ -51,6 +56,8 @@ namespace AMZNGoDSDK.Editor
             if (_running) return;
             _retry = true;
             _queued = true;
+            // A domain reload before the next Tick would drop _retry and reuse a stale done/failed stage.
+            SessionState.SetBool(RetryRequestedKey, true);
         }
 
         private static async void Tick()
@@ -74,9 +81,10 @@ namespace AMZNGoDSDK.Editor
                     return;
                 }
                 string fingerprint = Fingerprint(settings);
-                if (_retry || _state.Fingerprint != fingerprint)
+                if (_retry || SessionState.GetBool(RetryRequestedKey, false) || _state.Fingerprint != fingerprint)
                 {
                     _retry = false;
+                    SessionState.EraseBool(RetryRequestedKey);
                     _state = new BootstrapState { Fingerprint = fingerprint };
                     SaveState();
                 }

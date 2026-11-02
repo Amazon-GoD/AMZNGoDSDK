@@ -1088,7 +1088,8 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private static string ResolvePromoUrl(PromoConfiguration config)
+        // Internal for EditMode tests.
+        internal static string ResolvePromoUrl(PromoConfiguration config)
         {
             if (!string.IsNullOrWhiteSpace(config.VideoUrl))
                 return config.VideoUrl;
@@ -1105,7 +1106,8 @@ namespace AMZNGoDSDK.Runtime
             return null;
         }
 
-        private static PromoConfiguration SelectWeightedRandom(List<PromoConfiguration> videos, PromoConfiguration exclude = null)
+        // Internal for EditMode tests.
+        internal static PromoConfiguration SelectWeightedRandom(List<PromoConfiguration> videos, PromoConfiguration exclude = null)
         {
             if (videos == null || videos.Count == 0)
                 return null;

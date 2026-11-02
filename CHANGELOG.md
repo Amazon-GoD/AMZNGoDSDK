@@ -7,6 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-11-02
+
+Includes all 1.0.9 changes below: 1.0.9 shipped only as `1.0.9-beta.1`.
+Deploy the backend first (see Upgrade notes of 1.0.10 and 1.0.9).
+
+### Added
+
+- **Console ID.** `AMZN GoD > SDK Settings > Analytics > Console ID` takes the
+  game's ID from the BI admin (the **Игры** page: issued with the game on
+  **+ Добавить игру**, or in an existing game's card), for example `F000042-0`: `F`
+  (free) or `P` (paid) listing, a 6-digit game number, and the copy number
+  after the dash (`0` is the original). The same ID starts the App title in the
+  Amazon console, so BI can map a new game's bundle, Adjust token and ASIN by
+  itself. The field validates the format as you type. Changing the ID records
+  the Android bundle (Package Name, even when another platform is active) in
+  `Analytics.ConsoleIdBundle` and shows «ID введён для <bundle>». Games without an ID keep working as before.
+- `free_first_open` / `paid_first_open` carry four new top-level fields right
+  before `sdk_version`: `console_id` (only when the ID is valid),
+  `adjust_app_token` (only when the Adjust module is enabled and its key is a
+  12-character `[a-z0-9]` app token), `is_debug` (`Debug.isDebugBuild`, always
+  sent) and `installer` (`Application.installerName`, only when it matches
+  `^[0-9A-Za-z._+:-]{1,64}$`). Other events, the once-per-install flag and the
+  retry logic are unchanged.
+- `AdjustSettingData.AllowSandboxInRelease` (default off) and the matching
+  **Allow Sandbox in release** toggle, shown when Environment is Sandbox.
+- Build checks (`ConsoleIdBuildGuard`, also run by **Сохранить и собрать APK**):
+  - with Analytics enabled and a Console ID set, the build stops when the ID is
+    malformed, when it was entered for another bundle («Console ID вводили для
+    X, а собираете Y. Это копия шаблона? Выдайте новый ID»), or when its letter
+    does not match App Type (`F` = Free, `P` = Paid); an empty Console ID is
+    only a warning;
+  - with Adjust enabled, the build stops when the key is not a 12-character
+    `[a-z0-9]` app token, and when a non-development build uses the Sandbox
+    environment without **Allow Sandbox in release**.
+- EditMode tests (`Tests/Editor`): the ID format, the first_open fields and the
+  build checks, plus settings conversion, dependency handling and the
+  Analytics, Cross-Promo, Firebase and IAP modules (one test assembly per
+  module). They compile only in a project that lists `com.amzngod.amzngodsdk`
+  in `testables`, and `.unitypackage` exports leave them out, so games are not
+  affected. In the SDK project a failing test stops any Player build and SDK
+  export or release.
+
+### Upgrade notes
+
+- **Deploy the backend first.** The backend keeps only allowlisted top-level
+  fields: it must accept `console_id`, `adjust_app_token`, `is_debug` and
+  `installer` before any game ships this version. An older backend drops them
+  silently, and `first_open` is sent once per install, so those installs never
+  report them.
+- Existing games need no changes for the Console ID: an empty ID is a warning.
+  An existing game that moves to this version can get an ID in its card on
+  **Игры** («Выдать Console ID»).
+  The Adjust checks apply to every game with Adjust enabled: any build with
+  an invalid key, and a release build with Sandbox, now stops. Switch to
+  Production, or turn on **Allow Sandbox in release** for a test build.
+- Wire example: `Documentation~/README.md`, section "Console ID and first_open
+  fields".
+
+## [1.0.9] - not released as stable (beta `1.0.9-beta.1`, included in 1.0.10)
+
+### Changed
+
+- Batch backend banner impressions. Counted Cross-Promo banner impressions are
+  sent per `paid_app_id` as one `cp_impression` with `placement: "banner"` and
+  `"n": <count>`. MAX banner revenue callbacks are sent per network, ad unit and
+  revenue precision as one `mediation_impression` with `placement: "banner"`,
+  `n`, and `revenue` = the sum in USD for those `n` impressions. Impressions
+  with unknown revenue (MAX `-1`) form a separate batch sent with
+  `"revenue": -1`. A batch closes 5 minutes after its first impression; earlier
+  only at 1000 impressions, at the UTC day boundary, when the device clock moves
+  back, and on quit. Focus loss and pause do not close open batches (a pause
+  only queues batches whose 5 minutes are already up), because they happen on
+  every full-screen ad and purchase. With the usual 7-10 creatives in rotation
+  the Cross-Promo banner sends about 1.2-1.8 requests per minute instead of 7.5
+  (about K/5 for K creatives), plus about 0.2 per minute per MAX banner ad unit
+  instead of one per refresh. The window
+  closes a batch only while the device is online and no earlier banner event is
+  still undelivered; otherwise impressions keep accumulating in the same batch.
+  An undelivered banner event (transient failure: network, 5xx, 401/403/408/429)
+  is retried once a minute during the session, so a single failure no longer
+  stalls the window until the next pause, focus change or launch.
+  Its `ts` is the first impression's time and each batch has its own
+  `event_id`. The banner visibility rules are unchanged. Interstitial and
+  rewarded impressions and all clicks are still sent one event each.
+- Open batches are persisted in PlayerPrefs (`amzn_banner_impression_batches`)
+  after every impression and survive pause, process kill and crash. A batch is
+  moved into the event queue only when one of the 10 banner slots is free
+  (oldest batch first), so queuing a batch never evicts another one; the rest
+  wait in the store. The store holds at most 64 batches; past that the oldest
+  is dropped with a warning (only reachable after days without delivery).
+- MAX banner `mediation_impression` events share the 10-slot low-priority queue
+  budget with Cross-Promo banner impressions, so they can no longer evict
+  clicks, first opens or IAP links. As before, queued banner events still yield
+  to regular events once 50 regular events fill the queue.
+- `AmznGoDSDKCore.SdkVersion` reports the package version instead of the stale
+  `0.5.0`. Its single source is `SdkPackageVersion.Value`
+  (`Runtime/Utlts/SdkPackageVersion.cs`). The release pipeline stamps it together
+  with `package.json`, and the release-tree verifier rejects a mismatch.
+
+### Added
+
+- Subscription banner: `AmznGoDSDKCore.Instance.ShowSubBanner(sku = null, placement = null,
+  onClosed = null)`, `ShowSubBanner(params (string sku, string placement)[] banners)` (with
+  an optional `onClosed` first), `HideSubBanner()` and `IsSubBannerVisible`. A full-screen
+  offer with a background per placement, a gently pulsing buy button that purchases the
+  shown SKU and a close button that appears after 4 seconds. Without a SKU the enabled
+  subscriptions are shown in rotation; with a set of (SKU, placement) pairs those pairs
+  rotate. Without a placement each subscription rotates its own placements. Active
+  subscriptions are skipped. The prefab (horizontal or vertical) is chosen by the device screen.
+  The banner checks `IsSubscribed` itself: it is not shown while the subscription is
+  active, and an open banner closes as soon as `IsSubscribed` turns true (purchase,
+  restore or reconcile). It waits up to 10 seconds for the subscription state (the Amazon
+  reconcile on a device), so a subscriber never sees it flash at startup. `onClosed`
+  reports whether the subscription is active. Placements and their sprites are configured per
+  subscription in SDK Settings → In-App Purchase → Subscription Banner and stored in
+  `Assets/AMZNGoDSDKGenerated/Resources/AMZNGoDSDK/SubscriptionBanners.asset` (moved out
+  of Resources while the module is disabled). The prefabs are module templates generated
+  into the same folder while In-App Purchase is enabled.
+- Every backend event (`first_open`, `cp_*`, `mediation_*`, `iap_link`,
+  `attribution`) carries `sdk_version` and `app_version` (`Application.version`)
+  as JSON strings immediately before `ts`.
+- One-click debug APK build: **Сохранить и собрать APK** in `AMZN GoD > SDK Settings`
+  saves the settings, asks for the Analytics App Type when it is not set,
+  switches the project to Android, installs and verifies module dependencies
+  and Android build tools (including EDM Force Resolve), runs the same checks as
+  the build hooks, and builds an APK signed with Unity's debug keystore into
+  `Builds/Android`. Progress survives domain reloads. CI entry point:
+  `-executeMethod AMZNGoDSDK.Editor.OneClickAndroidBuildCli.Run` (see README).
+
+### Fixed
+
+- Debounce Cross-Promo banner taps. A second tap on the same banner within 2.5
+  seconds (the up to 1.5 s wait before the store opens, plus one second) no
+  longer sends a second `cp_click` or opens the store twice.
+- A non-finite revenue passed to the manual `TrackMediationImpression` overloads
+  is sent as `-1` instead of a bare `NaN`/`Infinity` literal, which made the body
+  invalid JSON.
+- Firebase Remote Config fetches on Android again. Firebase could throw
+  `ArgumentOutOfRangeException` from `EnsureInitializedAsync` while building
+  `ConfigInfo` after native initialization succeeded, which skipped the fetch on
+  every launch. The SDK now ignores that exception, continues with the fetch and
+  takes fetch success from the task result instead of reading `ConfigInfo`.
+
+### Upgrade notes
+
+- **Deploy the backend first.** Before any game ships 1.0.9, the backend must
+  accept `placement: "banner"`, the `mediation_impression`/`mediation_click`
+  events, and an integer `n` (1..1000, absent = 1) on `cp_impression` and
+  `mediation_impression`, where `revenue` is the sum for `n` impressions. The
+  current production backend rejects `placement: "banner"` and both
+  `mediation_*` events with HTTP 400, so the SDK drops them. A backend that only
+  strips unknown fields would count each batch as a single impression.
+  `sdk_version` and `app_version` are ignored by older backends. The new
+  backend stores them on clicks and first opens; it keeps only allowlisted
+  top-level fields, so a new field needs a backend change before it is stored.
+- **What a batch costs when something goes wrong.** One event now carries up to
+  1000 impressions, so:
+  - a backend answer of `422 not_stored` (a database error or a database that
+    does not answer within 10 s on the counter streams; the SDK treats any
+    non-transient 4xx as rejected) drops the whole batch, not one impression;
+  - the backend deduplicates banner and MAX batches in its process memory for
+    6 hours. A batch re-sent after a lost response more than 6 hours later, or
+    after a backend restart or deploy, is counted twice, whole;
+  - impressions in a batch that is still open when the player leaves are sent
+    on the next launch. A player who never opens the game again never sends
+    them (up to 5 minutes of impressions per creative).
+- Wire examples are in `Documentation~/README.md`, section "Backend banner
+  batching and version fields".
+
 ## [1.0.8] - 2026-10-05
 
 ### Fixed

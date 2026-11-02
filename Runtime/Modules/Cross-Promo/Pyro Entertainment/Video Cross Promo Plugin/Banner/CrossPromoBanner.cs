@@ -14,6 +14,12 @@ namespace AMZNGoDSDK.Runtime
         private const string BannerPlacement = "banner";
         private const float ClickTrackingTimeoutSeconds = 1.5f;
 
+        // Повторный тап по этому же баннеру игнорируется, пока первый ещё ждёт перехода в стор
+        // (до ClickTrackingTimeoutSeconds — на медленной сети всё это время ничего не видно) и ещё
+        // секунду после: иначе второй cp_click с новым event_id и второе открытие стора.
+        private const float ClickDebounceSeconds = ClickTrackingTimeoutSeconds + 1f;
+        private float _lastHandledClickTime = float.NegativeInfinity;
+
         private readonly List<BannerData> bannerDataList = new();
         [SerializeField] private Image adImage;
         [SerializeField] private GameObject bannerGO;
@@ -256,7 +262,9 @@ namespace AMZNGoDSDK.Runtime
             _lastShownIndex = index;
             _currentBannerIndex = (index + 1) % bannerDataList.Count;
 
-            // Каждая итерация видимого баннера — показ на нашем бэкенде.
+            // Каждая итерация видимого баннера — показ на нашем бэкенде. С 1.0.9 Analytics не шлёт
+            // его сразу: показы копятся и уходят одним cp_impression с "n" (не чаще раза в 5 минут
+            // на paid_app_id).
             // В AppMetrica и Adjust показы баннера по-прежнему не отправляются.
             CrossPromoModule.Instance?.TrackImpression(data.paidAppId, BannerPlacement);
         }
@@ -315,6 +323,16 @@ namespace AMZNGoDSDK.Runtime
             {
                 return;
             }
+
+            // Отсчёт — от последнего ОБРАБОТАННОГО тапа: тап по невидимому баннеру выше не считается.
+            // realtimeSinceStartup не зависит от timeScale.
+            float now = Time.realtimeSinceStartup;
+            if (now - _lastHandledClickTime < ClickDebounceSeconds)
+            {
+                Debug.Log($"[CrossPromoBanner] Repeated tap within {ClickDebounceSeconds}s ignored");
+                return;
+            }
+            _lastHandledClickTime = now;
 
             var data = bannerDataList[_lastShownIndex];
             CrossPromoAnalytics.ReportBannerClick(data);

@@ -48,6 +48,9 @@ namespace AMZNGoDSDK.Editor
         private static readonly string[] ExcludedFolders =
         {
             "Assets/AMZNGoDSDK/Runtime/Modules/InAppPurchase/Testing",
+            // EditMode tests and their pre-build gate are dev-only: imported into a partner's Assets
+            // they would compile and block the partner's builds on an SDK test failure.
+            "Assets/AMZNGoDSDK/Tests",
         };
 
         /// <summary>
@@ -104,6 +107,14 @@ namespace AMZNGoDSDK.Editor
             if (string.IsNullOrEmpty(savePath))
             {
                 error = "Save path is empty.";
+                return false;
+            }
+
+            // Covers the Export menu and Deploy SDK: a regression must not reach partners.
+            var tests = SdkTestCheck.Run(SdkTestCheck.Purpose.SdkRelease);
+            if (!tests.Passed)
+            {
+                error = "Регрессия в тестах SDK, экспорт остановлен.\n" + SdkTestCheck.Describe(tests);
                 return false;
             }
 

@@ -8,7 +8,8 @@ namespace AMZNGoDSDK.Runtime
 {
     public sealed class AmznGoDSDKCore : MonoBehaviourSingletonPersistent<AmznGoDSDKCore>
     {
-        public const string SdkVersion = "0.5.0";
+        // Версия пакета: единый источник — SdkPackageVersion (его же проставляет релизный пайплайн).
+        public const string SdkVersion = SdkPackageVersion.Value;
 
 
 #if AMZN_ADJUST_ENABLED
@@ -131,12 +132,15 @@ namespace AMZNGoDSDK.Runtime
 #endif
 
 #if AMZN_ANALYTICS_ENABLED
+            // Токен Adjust уходит в first_open, только если модуль Adjust включён в настройках.
             _analyticsModule.Construct(
                 analyticsSettings.Enabled,
                 analyticsSettings.BaseUrl,
                 analyticsSettings.ApiKey,
                 analyticsSettings.AppType,
-                crossPromoSettings.DefaultPromotedAppId);
+                crossPromoSettings.DefaultPromotedAppId,
+                analyticsSettings.ConsoleId,
+                adjustSettings != null && adjustSettings.Enabled ? adjustSettings.Key : null);
 #endif
 
 #if AMZN_FIREBASE_ENABLED
@@ -658,6 +662,55 @@ namespace AMZNGoDSDK.Runtime
             if (_inAppPurchaseModule != null)
                 _inAppPurchaseModule.SetPurchaseFailedCallback(callback);
         }
+
+        /// <summary>
+        /// Показать баннер подписки <paramref name="sku"/> с картинкой плейсмента
+        /// <paramref name="placement"/> (SDK Settings → In-App Purchase → Subscription Banner).
+        /// SKU не указан — включённые подписки из SDK Settings идут по кругу (уже оформленные
+        /// пропускаются); плейсмент не указан — плейсменты подписки идут по кругу, у каждой
+        /// подписки свой круг. Префаб выбирается по ориентации экрана, «купить» покупает SKU
+        /// показанного баннера, крестик появляется через 4 с.
+        ///
+        /// Можно ли показывать, баннер решает сам по <see cref="IsSubscribed"/>: при активной
+        /// подписке не показывается, а открытый закрывается, как только подписка стала активной.
+        ///
+        /// Возвращает false, если показа не будет: подписки уже активны, не настроены, нет
+        /// картинок или уже открыт другой баннер. При true баннер показан или будет показан, как
+        /// только станет известно состояние подписки, и <paramref name="onClosed"/> придёт ровно
+        /// один раз: true — подписка активна (куплена из баннера или уже была), false — баннер
+        /// закрыли без покупки или показ не состоялся.
+        /// </summary>
+        public bool ShowSubBanner(string sku = null, string placement = null, Action<bool> onClosed = null) =>
+            IapReady && _inAppPurchaseModule.ShowSubscriptionBanner(sku, placement, onClosed);
+
+        /// <summary>
+        /// Показать баннер одной из перечисленных подписок: пары (SKU, плейсмент) идут по кругу
+        /// между вызовами с тем же набором, уже оформленные подписки пропускаются. Плейсмент null —
+        /// плейсменты этой подписки по кругу. Пустой набор — все включённые подписки.
+        /// <code>sdk.ShowSubBanner(("vip_week", "noads"), ("vip_month", null));</code>
+        /// Остальные правила — как у <see cref="ShowSubBanner(string, string, Action{bool})"/>.
+        /// </summary>
+        public bool ShowSubBanner(params (string sku, string placement)[] banners) =>
+            ShowSubBanner((Action<bool>)null, banners);
+
+        /// <summary>
+        /// То же с колбэком закрытия: <paramref name="onClosed"/> стоит первым, потому что
+        /// params-набор обязан быть последним параметром.
+        /// <code>sdk.ShowSubBanner(subscribed => Resume(), ("vip_week", "noads"), ("vip_month", null));</code>
+        /// </summary>
+        public bool ShowSubBanner(Action<bool> onClosed, params (string sku, string placement)[] banners) =>
+            IapReady && _inAppPurchaseModule.ShowSubscriptionBanner(banners, onClosed);
+
+        /// <summary>Закрыть баннер подписки (onClosed придёт с false) и отменить ожидающий показа.</summary>
+        public void HideSubBanner()
+        {
+            if (_inAppPurchaseModule != null)
+                _inAppPurchaseModule.HideSubscriptionBanner();
+        }
+
+        /// <summary>Баннер подписки сейчас на экране.</summary>
+        public bool IsSubBannerVisible =>
+            _inAppPurchaseModule != null && _inAppPurchaseModule.IsSubscriptionBannerVisible;
 #else
         public bool IsIAPInitialized => false;
         public bool IsIAPRestored => false;
@@ -679,6 +732,11 @@ namespace AMZNGoDSDK.Runtime
         public void RemoveIAPPeriodStartedListener(Action<IapPeriodStarted> listener) { }
         public void SetIAPPurchaseCompleteCallback(Action<string> callback) { }
         public void SetIAPPurchaseFailedCallback(Action<string> callback) { }
+        public bool ShowSubBanner(string sku = null, string placement = null, Action<bool> onClosed = null) => false;
+        public bool ShowSubBanner(params (string sku, string placement)[] banners) => false;
+        public bool ShowSubBanner(Action<bool> onClosed, params (string sku, string placement)[] banners) => false;
+        public void HideSubBanner() { }
+        public bool IsSubBannerVisible => false;
 #endif
 
         #endregion

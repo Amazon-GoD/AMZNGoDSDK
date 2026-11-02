@@ -20,7 +20,8 @@ namespace AMZNGoDSDK.Editor
     [InitializeOnLoad]
     internal static class AnalyticsAppTypeSessionReset
     {
-        private const string SessionKey = "AMZNGoDSDK.Analytics.AppTypeResetDone";
+        // Internal: OneClickAndroidBuildCli waits for this reset before writing the requested App Type.
+        internal const string SessionKey = "AMZNGoDSDK.Analytics.AppTypeResetDone";
         private const string Tag = "[AMZNGoDSDK][Analytics]";
 
         static AnalyticsAppTypeSessionReset()

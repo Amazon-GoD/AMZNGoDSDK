@@ -1078,7 +1078,81 @@ namespace AMZNGoDSDK.Runtime
             SdkTrustedTime.OnFirstFreshTime -= OnTrustedTimeAvailable;
             _gateway?.ReleaseListeners();
             CompleteRestoreCallbacks(false);
+            HideSubscriptionBanner();
         }
+
+        #endregion
+
+        #region Subscription Banner
+
+        private SubscriptionBannerPresenter _bannerPresenter;
+
+        /// <summary>
+        /// SKU настроен как включённая подписка. Сверяем с настройками, а не с каталогом:
+        /// каталог заполняется в Initialize, а баннер просят и раньше — на старте игры.
+        /// </summary>
+        internal bool IsSubscriptionProduct(string sku)
+        {
+            if (string.IsNullOrWhiteSpace(sku) || settings?.SubscriptionProducts == null)
+                return false;
+
+            sku = sku.Trim();
+            foreach (var product in settings.SubscriptionProducts)
+            {
+                if (product != null && product.Enabled
+                    && string.Equals(product.ProductId?.Trim(), sku, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Включённые подписки из настроек — в порядке SDK Settings, без повторов.</summary>
+        internal List<string> GetSubscriptionProductIds()
+        {
+            var ids = new List<string>();
+            if (settings?.SubscriptionProducts == null)
+                return ids;
+
+            foreach (var product in settings.SubscriptionProducts)
+            {
+                string id = product?.ProductId?.Trim();
+                if (product != null && product.Enabled && !string.IsNullOrEmpty(id) && !ids.Contains(id))
+                    ids.Add(id);
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Баннер подписки; sku = null — включённые подписки по кругу. Правила показа см.
+        /// <see cref="SubscriptionBannerPresenter"/>.
+        /// </summary>
+        public bool ShowSubscriptionBanner(string sku, string placement, Action<bool> onClosed) =>
+            Enabled && EnsureBannerPresenter().Show(sku, placement, onClosed);
+
+        /// <summary>Баннер одной из пар (SKU, плейсмент) — по кругу между вызовами с тем же набором.</summary>
+        public bool ShowSubscriptionBanner(IReadOnlyList<(string sku, string placement)> banners, Action<bool> onClosed) =>
+            Enabled && EnsureBannerPresenter().Show(banners, onClosed);
+
+        private SubscriptionBannerPresenter EnsureBannerPresenter()
+        {
+            if (_bannerPresenter == null)
+            {
+                _bannerPresenter = gameObject.AddComponent<SubscriptionBannerPresenter>();
+                _bannerPresenter.Bind(this);
+            }
+
+            return _bannerPresenter;
+        }
+
+        public void HideSubscriptionBanner()
+        {
+            if (_bannerPresenter != null)
+                _bannerPresenter.Hide();
+        }
+
+        public bool IsSubscriptionBannerVisible => _bannerPresenter != null && _bannerPresenter.IsVisible;
 
         #endregion
 

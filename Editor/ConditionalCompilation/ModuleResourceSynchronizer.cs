@@ -20,6 +20,10 @@ namespace AMZNGoDSDK.Editor
         public const string GeneratedInternetResourcePath = GeneratedRoot + "/OfflineBanner.prefab";
         public const string GeneratedCrossPromoResourcePath = GeneratedRoot + "/CrossPromoBanner.prefab";
         public const string GeneratedDebugConsoleResourcePath = GeneratedRoot + "/IngameDebugConsole.prefab";
+        public const string GeneratedSubscriptionBannerHorizontalPath = GeneratedRoot + "/SubscriptionBannerHorizontal.prefab";
+        public const string GeneratedSubscriptionBannerVerticalPath = GeneratedRoot + "/SubscriptionBannerVertical.prefab";
+
+        private const string InAppPurchaseModuleName = "InAppPurchase";
 
         private sealed class ResourceSpec
         {
@@ -46,6 +50,22 @@ namespace AMZNGoDSDK.Editor
                 SourceRelativePath =
                     "Runtime/Modules/InGameDebugConsole/ModuleAssets/IngameDebugConsole.prefab.template",
                 GeneratedPath = GeneratedDebugConsoleResourcePath,
+            },
+            new ResourceSpec
+            {
+                Name = InAppPurchaseModuleName,
+                Define = ModuleDefineManager.IAP_DEFINE,
+                SourceRelativePath =
+                    "Runtime/Modules/InAppPurchase/ModuleAssets/AMZNGoDSDK/SubscriptionBannerHorizontal.prefab.template",
+                GeneratedPath = GeneratedSubscriptionBannerHorizontalPath,
+            },
+            new ResourceSpec
+            {
+                Name = InAppPurchaseModuleName,
+                Define = ModuleDefineManager.IAP_DEFINE,
+                SourceRelativePath =
+                    "Runtime/Modules/InAppPurchase/ModuleAssets/AMZNGoDSDK/SubscriptionBannerVertical.prefab.template",
+                GeneratedPath = GeneratedSubscriptionBannerVerticalPath,
             },
         };
 
@@ -80,6 +100,12 @@ namespace AMZNGoDSDK.Editor
 
                 CopyGenerated(resource);
             }
+
+            // Картинки баннеров подписки — данные проекта, а не шаблон: их не удаляем, а только
+            // уносим из Resources, пока модуль выключен.
+            bool iapRequested = enabledMap.TryGetValue(InAppPurchaseModuleName, out bool iapEnabled) && iapEnabled;
+            SubscriptionBannerSettingsStore.SyncLocation(
+                iapRequested && ModuleDefineManager.IsModuleEnabled(ModuleDefineManager.IAP_DEFINE));
 
             DeleteGeneratedFoldersIfEmpty();
         }
@@ -125,7 +151,7 @@ namespace AMZNGoDSDK.Editor
             DeleteFolderIfEmpty("Assets/AMZNGoDSDKGenerated/Resources");
         }
 
-        private static void DeleteFolderIfEmpty(string assetPath)
+        internal static void DeleteFolderIfEmpty(string assetPath)
         {
             string physicalPath = FileUtil.GetPhysicalPath(assetPath);
             if (string.IsNullOrEmpty(physicalPath) || !Directory.Exists(physicalPath))
@@ -186,7 +212,7 @@ namespace AMZNGoDSDK.Editor
             }
         }
 
-        private static void EnsureFolder(string folder)
+        internal static void EnsureFolder(string folder)
         {
             string[] parts = folder.Split('/');
             string current = parts[0];

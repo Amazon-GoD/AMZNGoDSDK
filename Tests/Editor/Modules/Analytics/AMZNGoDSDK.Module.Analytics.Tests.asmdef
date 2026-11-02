@@ -1,0 +1,26 @@
+{
+    "name": "AMZNGoDSDK.Module.Analytics.Tests",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.Analytics",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "AMZN_ANALYTICS_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

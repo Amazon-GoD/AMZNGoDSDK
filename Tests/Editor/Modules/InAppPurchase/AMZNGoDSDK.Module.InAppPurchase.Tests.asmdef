@@ -1,0 +1,26 @@
+{
+    "name": "AMZNGoDSDK.Module.InAppPurchase.Tests",
+    "rootNamespace": "",
+    "references": [
+        "AMZNGoD.Runtime",
+        "AMZNGoDSDK.Module.InAppPurchase",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "AMZN_IAP_ENABLED"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

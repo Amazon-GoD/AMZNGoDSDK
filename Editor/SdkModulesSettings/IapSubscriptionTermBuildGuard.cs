@@ -28,13 +28,22 @@ namespace AMZNGoDSDK.Editor
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            var settings = SdkSettingsManager.LoadRuntimeSettings();
+            string error = GetBuildError(SdkSettingsManager.LoadRuntimeSettings());
+            if (error != null)
+                throw new BuildFailedException(error);
+        }
 
+        /// <summary>
+        /// Текст ошибки сборки или null, если сроки подписок в порядке. Вынесено из хука, чтобы
+        /// кнопка сборки APK (<see cref="OneClickAndroidBuild"/>) проверяла то же самое до старта.
+        /// </summary>
+        internal static string GetBuildError(Runtime.SdkSettingsData settings)
+        {
             // Конфига нет или SDK/модуль выключены — подписок в сборке не будет.
             if (settings == null || !settings.Enabled)
-                return;
+                return null;
             if (settings.InAppPurchase == null || !settings.InAppPurchase.Enabled)
-                return;
+                return null;
 
             // Только ВКЛЮЧЁННЫЕ подписки: выключенный продукт билд ронять не должен.
             var missing = settings.InAppPurchase.SubscriptionProducts
@@ -43,16 +52,14 @@ namespace AMZNGoDSDK.Editor
                 .ToArray();
 
             if (missing.Length == 0)
-                return;
+                return null;
 
-            throw new BuildFailedException(
-                "[AMZNGoDSDK] IAP: у подписок не задан срок периода — сборка остановлена: " +
-                string.Join(", ", missing) + ".\n" +
-                "Срок обязателен: от него считаются оплаченные периоды подписки (события о продлениях).\n" +
-                "Как починить: AMZN GoD → SDK Settings → In-App Purchase → у каждой подписки заполнить " +
-                "Term (days) реальным периодом из консоли Amazon (например, 7 для недельной) → Save Settings, " +
-                "затем собрать заново."
-            );
+            return "[AMZNGoDSDK] IAP: у подписок не задан срок периода — сборка остановлена: " +
+                   string.Join(", ", missing) + ".\n" +
+                   "Срок обязателен: от него считаются оплаченные периоды подписки (события о продлениях).\n" +
+                   "Как починить: AMZN GoD → SDK Settings → In-App Purchase → у каждой подписки заполнить " +
+                   "Term (days) реальным периодом из консоли Amazon (например, 7 для недельной) → Save Settings, " +
+                   "затем собрать заново.";
         }
     }
 }

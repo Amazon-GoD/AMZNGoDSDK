@@ -25,18 +25,8 @@ namespace AMZNGoDSDK.Editor
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            var settings = SdkSettingsManager.LoadSettings();
-            var disabled = ModuleBuildArtifactRegistry.All
-                .Where(spec => !ModuleBuildArtifactRegistry.IsEnabled(spec, settings))
-                .ToList();
-
-            NativePluginBuildFilter.Refresh();
-
             var errors = new List<string>();
-            CheckManagedAssemblies(disabled, errors);
-            CheckAlwaysIncludedResources(disabled, errors);
-            CheckExternalDependencyFiles(disabled, errors);
-            AppMetricaAppHudDependencies.CollectValidationErrors(errors);
+            CollectErrors(errors);
 
             if (errors.Count == 0)
                 return;
@@ -47,6 +37,24 @@ namespace AMZNGoDSDK.Editor
                 message.AppendLine("  • " + error);
             message.AppendLine("Дождись окончания UPM/компиляции после переключения модулей и запусти билд повторно.");
             throw new BuildFailedException(message.ToString());
+        }
+
+        /// <summary>
+        /// Общие проверки хука и кнопки сборки APK (<see cref="OneClickAndroidBuild"/>).
+        /// </summary>
+        internal static void CollectErrors(List<string> errors)
+        {
+            var settings = SdkSettingsManager.LoadSettings();
+            var disabled = ModuleBuildArtifactRegistry.All
+                .Where(spec => !ModuleBuildArtifactRegistry.IsEnabled(spec, settings))
+                .ToList();
+
+            NativePluginBuildFilter.Refresh();
+
+            CheckManagedAssemblies(disabled, errors);
+            CheckAlwaysIncludedResources(disabled, errors);
+            CheckExternalDependencyFiles(disabled, errors);
+            AppMetricaAppHudDependencies.CollectValidationErrors(errors);
         }
 
         private static void CheckManagedAssemblies(
