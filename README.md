@@ -5,8 +5,9 @@
 
 `https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.10`
 
-Ветка `#Releases` содержит последний стабильный релиз. Для приватного
-репозитория необходим настроенный доступ к GitHub.
+Ветка `#Releases` содержит последний стабильный релиз. Репозиторий
+публичный: ключи и конфиги игр (`google-services.json`, `amzn_god_sdk.json`,
+`AppLovinSettings.asset`) в него не кладутся.
 
 [Изменения 1.0.10](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
 · [Android-зависимости и миграция](Documentation~/ANDROID-DEPENDENCIES.md)

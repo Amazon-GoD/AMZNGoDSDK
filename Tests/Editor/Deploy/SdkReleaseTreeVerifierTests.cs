@@ -398,6 +398,20 @@ namespace AMZNGoDSDK.Editor.Tests
             Assert.That(VerifyFails(), Does.Contain("forbidden path fragment 'Infatica'"));
         }
 
+        // 1.0.11: the repository is public, so a game's keys and configs never ship in a release tree.
+        [TestCase("Runtime/Resources/google-services.json", "google-services.json")]
+        [TestCase("Runtime/Plugins/Android/res/values/google-services.xml", "google-services.xml")]
+        [TestCase("Runtime/Resources/amzn_god_sdk.json", "amzn_god_sdk.json")]
+        [TestCase("Runtime/MaxSdk/Resources/AppLovinSettings.asset", "AppLovinSettings.asset")]
+        public void Verify_GameKeyOrConfigFile_Fails(string path, string fragment)
+        {
+            BuildValidTree();
+            Write(path, "{}");
+            AddMetas();
+
+            Assert.That(VerifyFails(), Does.Contain("forbidden path fragment '" + fragment + "'"));
+        }
+
         // Reporting
 
         [Test]

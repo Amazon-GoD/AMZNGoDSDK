@@ -28,6 +28,11 @@ namespace AMZNGoDSDK.Editor.Deploy
             "GoDSDKDeploy",             // старое имя деплой-инструмента
             "Infatica",                 // не входит в safety/UPM-поставку
             "AMZNGoDSDKGenerated",      // генерируется в Assets потребителя, в пакете быть не может
+            // Репозиторий публичный: ключи и конфиги игр (Firebase, SDK Settings, MAX) — никогда.
+            "google-services.json",
+            "google-services.xml",
+            "amzn_god_sdk.json",
+            "AppLovinSettings.asset",
         };
 
         /// <summary>

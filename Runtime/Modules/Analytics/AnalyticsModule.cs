@@ -25,6 +25,9 @@ namespace AMZNGoDSDK.Runtime
     // Каждое событие несёт sdk_version и app_version.
     // С 1.0.10 first_open дополнительно «заявляет» игру для BI: console_id, adjust_app_token,
     // is_debug, installer (см. FirstOpenClaim). Остальные события не меняются.
+    // С 1.0.11 first_open несёт профиль игры (см. GameProfile): ключи Firebase, AppMetrica и
+    // AppLovin, которые лежат в сборке. Читается один раз за процесс и только когда first_open
+    // действительно уходит.
     public class AnalyticsModule : ModuleBase
     {
         private const long MinTimestampMs = 1577836800000L;
@@ -80,6 +83,9 @@ namespace AMZNGoDSDK.Runtime
         private string _defaultPromotedAppId;
         private string _consoleId;
         private string _adjustAppToken;
+        private Func<GameProfile.Values> _gameProfileProvider;
+        private GameProfile.Values _gameProfile;
+        private bool _gameProfileCollected;
         private string _deviceIdHash;
         private bool _deviceIdResolved;
         private bool _flushing;
@@ -127,8 +133,10 @@ namespace AMZNGoDSDK.Runtime
 
         /// <param name="consoleId">Console ID из настроек Analytics; пусто — поле console_id не отправляется.</param>
         /// <param name="adjustAppToken">Ключ Adjust, если модуль Adjust включён, иначе null.</param>
+        /// <param name="gameProfile">Провайдер профиля игры для first_open (с 1.0.11); null — first_open без профиля.
+        /// Вызывается не здесь, а при первой отправке first_open.</param>
         public void Construct(bool enable, string baseUrl, string apiKey, AnalyticsAppType appType, string defaultPromotedAppId,
-            string consoleId = null, string adjustAppToken = null)
+            string consoleId = null, string adjustAppToken = null, Func<GameProfile.Values> gameProfile = null)
         {
             Enabled = enable;
             _baseUrl = baseUrl?.TrimEnd('/');
@@ -137,6 +145,9 @@ namespace AMZNGoDSDK.Runtime
             _defaultPromotedAppId = defaultPromotedAppId;
             _consoleId = consoleId;
             _adjustAppToken = adjustAppToken;
+            _gameProfileProvider = gameProfile;
+            _gameProfile = null;
+            _gameProfileCollected = false;
 
             // В билд None попасть не может — его отсекает AnalyticsAppTypeBuildGuard. Остаётся
             // Play mode после старта редактора, когда тип ещё сброшен: слать события с
@@ -280,11 +291,22 @@ namespace AMZNGoDSDK.Runtime
 
             string deviceIdHash = EventDeviceIdHash;
             string eventId = NewEventId();
+
+            // Профиль игры — статика сборки (ресурсы, манифест, SDK Settings). Читается здесь, а не
+            // в OnAwake: JNI идёт только на установке, а не на каждом запуске, и один раз за процесс.
+            // Сбой чтения не мешает first_open: он уходит без профиля.
+            if (!_gameProfileCollected)
+            {
+                _gameProfile = GameProfile.SafeCollect(_gameProfileProvider);
+                _gameProfileCollected = true;
+            }
+
             // Заявка собирается на каждой попытке, а не хранится: first_open не лежит в очереди,
             // повтор на фокусе и следующем запуске строит событие заново.
-            string claimFields = FirstOpenClaim.BuildJsonFields(_consoleId, _adjustAppToken, Debug.isDebugBuild, GetInstallerName());
+            string claimFields = FirstOpenClaim.BuildJsonFields(_consoleId, _adjustAppToken, Debug.isDebugBuild, GetInstallerName()) +
+                                 GameProfile.BuildJsonFields(_gameProfile);
             string json = BuildFirstOpenJson(eventName, AppId, _appType, deviceIdHash, ts, eventId, claimFields);
-            Debug.Log($"{Tag} Sending {eventName}: app_id={AppId}, app_type={_appType}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}");
+            Debug.Log($"{Tag} Sending {eventName}: app_id={AppId}, app_type={_appType}, device_id_hash={deviceIdHash}, ts={ts}, event_id={eventId}, profile={GameProfile.DescribePresent(_gameProfile)}");
 
             var outcome = SendOutcome.Retry;
             yield return SendEvent(json, o => outcome = o);
@@ -1245,7 +1267,8 @@ namespace AMZNGoDSDK.Runtime
         private static string BuildCountField(int count) =>
             count > 0 ? $"\"n\":{count.ToString(CultureInfo.InvariantCulture)}," : string.Empty;
 
-        /// <param name="claimFields">Готовый фрагмент <see cref="FirstOpenClaim.BuildJsonFields"/> (поля с запятой на конце).</param>
+        /// <param name="claimFields">Готовые фрагменты <see cref="FirstOpenClaim.BuildJsonFields"/> и
+        /// <see cref="GameProfile.BuildJsonFields"/> подряд (поля с запятой на конце).</param>
         // Internal for EditMode tests.
         internal static string BuildFirstOpenJson(
             string eventName, string appId, string appType, string deviceIdHash, long ts, string eventId, string claimFields)
