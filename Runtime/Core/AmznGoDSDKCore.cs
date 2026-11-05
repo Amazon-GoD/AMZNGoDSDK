@@ -133,6 +133,8 @@ namespace AMZNGoDSDK.Runtime
 
 #if AMZN_ANALYTICS_ENABLED
             // Токен Adjust уходит в first_open, только если модуль Adjust включён в настройках.
+            // Профиль игры (с 1.0.11) здесь не читается: Analytics вызовет провайдер, только когда
+            // first_open действительно уходит.
             _analyticsModule.Construct(
                 analyticsSettings.Enabled,
                 analyticsSettings.BaseUrl,
@@ -140,7 +142,8 @@ namespace AMZNGoDSDK.Runtime
                 analyticsSettings.AppType,
                 crossPromoSettings.DefaultPromotedAppId,
                 analyticsSettings.ConsoleId,
-                adjustSettings != null && adjustSettings.Enabled ? adjustSettings.Key : null);
+                adjustSettings != null && adjustSettings.Enabled ? adjustSettings.Key : null,
+                CreateGameProfileProvider(firebaseSettings, appMetricaSettings, appLovinSettings));
 #endif
 
 #if AMZN_FIREBASE_ENABLED
@@ -809,6 +812,47 @@ namespace AMZNGoDSDK.Runtime
             _analyticsModule = GetComponent<AnalyticsModule>();
             if (_analyticsModule == null)
                 _analyticsModule = gameObject.AddComponent<AnalyticsModule>();
+        }
+
+        /// <summary>
+        /// Провайдер профиля игры для first_open (с 1.0.11, см. <see cref="GameProfile"/>). Сам ничего
+        /// не читает: его один раз вызывает AnalyticsModule, когда first_open уходит (раз на установку),
+        /// поэтому JNI к PackageManager не идёт на каждом запуске. Поля шлёт только включённый модуль:
+        /// ресурсы FirebaseApp.androidlib остаются в APK и при выключенном Firebase. FirebaseApp,
+        /// MaxSdk и AppMetrica не вызываются: на Fire нет Google Play services, а first_open не ждёт
+        /// инициализации модулей.
+        /// </summary>
+        private static Func<GameProfile.Values> CreateGameProfileProvider(
+            FirebaseSettingData firebaseSettings, AppMetricaSettingData appMetricaSettings, AppLovinSettingData appLovinSettings)
+        {
+            return () =>
+            {
+                var values = new GameProfile.Values();
+#if AMZN_FIREBASE_ENABLED
+                // Ресурсы, которые Firebase генерирует из google-services.json (google-services.xml).
+                if (firebaseSettings != null && firebaseSettings.Enabled)
+                {
+                    values.FirebaseProjectId = AndroidAppInfo.GetStringResource("project_id");
+                    values.FirebaseAppId = AndroidAppInfo.GetStringResource("google_app_id");
+                }
+#endif
+#if AMZN_APPMETRICA_ENABLED
+                if (appMetricaSettings != null && appMetricaSettings.Enabled)
+                    values.AppMetricaKey = appMetricaSettings.Key;
+#endif
+#if AMZN_APPLOVIN_ENABLED
+                if (appLovinSettings != null && appLovinSettings.Enabled)
+                {
+                    // AdMob App ID берём из манифеста, а не из SDK Settings: это то, что реально ушло в
+                    // MAX (MAX пишет его только при установленном адаптере Google).
+                    values.GoogleAppId = AndroidAppInfo.GetMetaDataString("com.google.android.gms.ads.APPLICATION_ID");
+                    values.InterUnit = appLovinSettings.InterstitialAdUnitId;
+                    values.RewardUnit = appLovinSettings.RewardedAdUnitId;
+                    values.BannerUnit = appLovinSettings.BannerAdUnitId;
+                }
+#endif
+                return values;
+            };
         }
 #endif
 

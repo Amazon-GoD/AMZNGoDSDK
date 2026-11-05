@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-11-05
+
+Deploy the backend first (see Upgrade notes).
+
+### Added
+
+- **Game profile in first_open.** `free_first_open` / `paid_first_open` carry
+  up to seven new top-level fields right after the 1.0.10 claim fields, before
+  `sdk_version`: the keys the build itself holds, so BI can compare them with
+  the game's card on the **Игры** page («Ключи сборки»):
+  - `firebase_project_id`, `firebase_app_id`: the `project_id` and
+    `google_app_id` string resources that Firebase generates from
+    `google-services.json`; only when the Firebase module is enabled;
+  - `appmetrica_key_fp`: the first 12 hex characters of SHA-256 of the
+    AppMetrica key from SDK Settings (trimmed, lowercase); only when AppMetrica
+    is enabled and the key is a UUID. The key itself is never sent;
+  - `applovin_google_app_id`: the AdMob App ID from the APK manifest
+    (`com.google.android.gms.ads.APPLICATION_ID`; MAX writes it only when its
+    Google adapter is installed), and `applovin_inter_unit`,
+    `applovin_reward_unit`, `applovin_banner_unit` from SDK Settings; only when
+    AppLovin is enabled.
+
+  Each value is checked with the backend's rule and left out when it does not
+  match. The profile is read from the build's static data (resources, manifest,
+  SDK Settings) once per process, and only when first_open is actually sent;
+  FirebaseApp, MaxSdk and AppMetrica are not called and there are no new
+  settings. If the read fails, first_open goes without the profile. Other
+  events do not change. The first_open log line lists the names of the profile
+  fields (`profile=...`), never their values.
+
+### Changed
+
+- The repository is public. `.gitignore` and the release-tree check
+  (`SdkReleaseTreeVerifier`) now refuse `google-services.json`,
+  `google-services.xml`, `amzn_god_sdk.json` and `AppLovinSettings.asset`.
+
+### Upgrade notes
+
+- **Deploy the backend first**: an older backend drops the profile fields, and
+  first_open is never resent for those installs.
+- Installs that update from an older version do not send first_open again, so
+  each build reports its profile only from its new installs.
+- Before a game ships 1.0.11, enter its keys in its card on **Игры** («Ключи
+  сборки»); otherwise the comparison shows «в админке пусто».
+- Wire example: `Documentation~/README.md`, section "Console ID and first_open
+  fields".
+
 ## [1.0.10] - 2026-11-02
 
 Includes all 1.0.9 changes below: 1.0.9 shipped only as `1.0.9-beta.1`.

@@ -35,6 +35,30 @@ namespace AMZNGoDSDK.Runtime.Tests
             public long ts;
         }
 
+        [Serializable]
+        private class FirstOpenPayload
+        {
+            public string event_name;
+            public string event_id;
+            public string app_id;
+            public string app_type;
+            public string device_id_hash;
+            public string console_id;
+            public string adjust_app_token;
+            public bool is_debug;
+            public string installer;
+            public string firebase_project_id;
+            public string firebase_app_id;
+            public string appmetrica_key_fp;
+            public string applovin_google_app_id;
+            public string applovin_inter_unit;
+            public string applovin_reward_unit;
+            public string applovin_banner_unit;
+            public string sdk_version;
+            public string app_version;
+            public long ts;
+        }
+
         private static EventPayload Parse(string json)
         {
             Assert.IsNotNull(json);
@@ -272,6 +296,91 @@ namespace AMZNGoDSDK.Runtime.Tests
             Assert.AreEqual("first_open", p.event_name);
             Assert.AreEqual(9L, p.ts);
             Assert.That(p.console_id, Is.Null.Or.Empty);
+        }
+
+        // SDK 1.0.11: the game profile goes right after the 1.0.10 claim fields, before the
+        // version fields, the way TrySendFirstOpen concatenates them. Fake values only (public repo).
+        [Test]
+        public void BuildFirstOpenJson_WithGameProfile_ParsesInWireOrder()
+        {
+            var profile = new GameProfile.Values
+            {
+                FirebaseProjectId = "example-project",
+                FirebaseAppId = "1:000000000000:android:0000000000000000",
+                AppMetricaKey = "00000000-0000-0000-0000-000000000000",
+                GoogleAppId = "ca-app-pub-0000000000000000~0000000000",
+                InterUnit = "0000000000000000",
+                RewardUnit = "1111111111111111",
+                BannerUnit = "2222222222222222",
+            };
+            string fields = FirstOpenClaim.BuildJsonFields("F000042-0", "abcd1234efgh", false, "com.amazon.venezia") +
+                            GameProfile.BuildJsonFields(profile);
+
+            string json = AnalyticsModule.BuildFirstOpenJson(
+                "free_first_open", "com.example.game", "free", "unattributed", 1791480000000L, "evt1", fields);
+
+            Assert.IsTrue(json.StartsWith("{") && json.EndsWith("}"), json);
+            var p = JsonUtility.FromJson<FirstOpenPayload>(json);
+            Assert.AreEqual("free_first_open", p.event_name);
+            Assert.AreEqual("unattributed", p.device_id_hash);
+            Assert.AreEqual("F000042-0", p.console_id);
+            Assert.AreEqual("abcd1234efgh", p.adjust_app_token);
+            Assert.IsFalse(p.is_debug);
+            Assert.AreEqual("com.amazon.venezia", p.installer);
+            Assert.AreEqual("example-project", p.firebase_project_id);
+            Assert.AreEqual("1:000000000000:android:0000000000000000", p.firebase_app_id);
+            Assert.AreEqual("12b9377cbe7e", p.appmetrica_key_fp);
+            Assert.AreEqual("ca-app-pub-0000000000000000~0000000000", p.applovin_google_app_id);
+            Assert.AreEqual("0000000000000000", p.applovin_inter_unit);
+            Assert.AreEqual("1111111111111111", p.applovin_reward_unit);
+            Assert.AreEqual("2222222222222222", p.applovin_banner_unit);
+            Assert.AreEqual(SdkPackageVersion.Value, p.sdk_version);
+            Assert.AreEqual(1791480000000L, p.ts);
+
+            string[] order =
+            {
+                "event_name", "event_id", "app_id", "app_type", "device_id_hash",
+                "console_id", "adjust_app_token", "is_debug", "installer",
+                "firebase_project_id", "firebase_app_id", "appmetrica_key_fp", "applovin_google_app_id",
+                "applovin_inter_unit", "applovin_reward_unit", "applovin_banner_unit",
+                "sdk_version", "app_version", "ts",
+            };
+            int previous = -1;
+            foreach (string key in order)
+            {
+                int index = json.IndexOf("\"" + key + "\":", StringComparison.Ordinal);
+                Assert.Greater(index, previous, key);
+                previous = index;
+            }
+
+            // No other keys: every key is followed by '":', and no value here contains that.
+            int keys = 0;
+            for (int i = json.IndexOf("\":", StringComparison.Ordinal); i >= 0; i = json.IndexOf("\":", i + 2, StringComparison.Ordinal))
+                keys++;
+            Assert.AreEqual(order.Length, keys, json);
+            Assert.That(json, Does.Not.Contain("00000000-0000-0000-0000-000000000000"), "the AppMetrica key itself is never sent");
+        }
+
+        // SDK 1.0.11 without a profile (no provider, a failed read, or every module off) sends
+        // exactly the 1.0.10 first_open; only sdk_version differs.
+        [Test]
+        public void BuildFirstOpenJson_WithoutGameProfile_IsThe1010Payload()
+        {
+            string claim = FirstOpenClaim.BuildJsonFields("F000042-0", "abcd1234efgh", false, "com.amazon.venezia");
+            string expected =
+                "{\"event_name\":\"free_first_open\",\"event_id\":\"evt1\",\"app_id\":\"com.example.game\"," +
+                "\"app_type\":\"free\",\"device_id_hash\":\"unattributed\",\"console_id\":\"F000042-0\"," +
+                "\"adjust_app_token\":\"abcd1234efgh\",\"is_debug\":false,\"installer\":\"com.amazon.venezia\"," +
+                "\"sdk_version\":\"" + SdkPackageVersion.Value + "\",\"app_version\":\"" + Application.version + "\"," +
+                "\"ts\":1791480000000}";
+
+            foreach (var profile in new[] { null, new GameProfile.Values() })
+            {
+                string json = AnalyticsModule.BuildFirstOpenJson(
+                    "free_first_open", "com.example.game", "free", "unattributed", 1791480000000L, "evt1",
+                    claim + GameProfile.BuildJsonFields(profile));
+                Assert.AreEqual(expected, json);
+            }
         }
 
         // ---------- IsTransientHttpError ----------

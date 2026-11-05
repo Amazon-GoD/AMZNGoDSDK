@@ -33,7 +33,7 @@ Gate работает только в dev-проекте SDK: папка `Tests`
 
 | Папка | Сборка | Что покрыто |
 |---|---|---|
-| `Editor/` (корень) | `AMZNGoDSDK.Editor.Tests` | Console ID, first_open claim |
+| `Editor/` (корень) | `AMZNGoDSDK.Editor.Tests` | Console ID, first_open claim, профиль игры в first_open (1.0.11) |
 | `Editor/Settings` | `AMZNGoDSDK.Editor.Tests` | конвертеры настроек editor↔runtime (round-trip всех полей), миграции, build guards (App Type, срок подписок), валидация IAP/баннеров, A/B-тесты Firebase и кодоген констант, `SdkJson` |
 | `Editor/Dependencies` | `AMZNGoDSDK.Editor.Tests` | правка manifest.json (scopedRegistries), пины AppLovin, запрещённые сети |
 | `Editor/BuildArtifacts` | `AMZNGoDSDK.Editor.Tests` | реестры модулей/артефактов/нативных плагинов, поиск APK/AAB для проверки |

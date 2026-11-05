@@ -1,2 +1,10 @@
 # Local build outputs, verification runs and release worktrees.
 /Temp~/
+
+# The repository is public: never commit a game's keys or configs, nor internal task files.
+google-services.json
+google-services.xml
+amzn_god_sdk.json
+AppLovinSettings.asset
+*.docx
+SDK_TASK_*.md
