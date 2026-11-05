@@ -1,20 +1,21 @@
-# AMZN GoD SDK for Unity — 1.0.10
+# AMZN GoD SDK for Unity — 1.0.11
 
-Стабильная версия от 2 ноября 2026 года. В Unity Package Manager можно
+Стабильная версия от 5 ноября 2026 года. В Unity Package Manager можно
 закрепить пакет ссылкой:
 
-`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.10`
+`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.11`
 
 Ветка `#Releases` содержит последний стабильный релиз. Репозиторий
 публичный: ключи и конфиги игр (`google-services.json`, `amzn_god_sdk.json`,
 `AppLovinSettings.asset`) в него не кладутся.
 
-[Изменения 1.0.10](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
+[Изменения 1.0.11](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
 · [Android-зависимости и миграция](Documentation~/ANDROID-DEPENDENCIES.md)
 
-Версия 1.0.10 включает изменения 1.0.9 (выходила только бетой). Перед
-обновлением игр бэкенд должен принимать новые события и поля — см. Upgrade
-notes в [CHANGELOG](CHANGELOG.md).
+Версия 1.0.11 добавляет в first_open профиль игры (ключи сборки). Перед
+обновлением игр бэкенд должен принимать новые поля, а ключи игры — быть
+внесены в её карточку на **Игры** («Ключи сборки») — см. Upgrade notes в
+[CHANGELOG](CHANGELOG.md).
 
 Unity 2022.3 LTS; при включённом MAX минимальная Android API — 24.
 

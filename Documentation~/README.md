@@ -37,12 +37,12 @@ Add the package to `Packages/manifest.json` (or through
 ```
 
 - `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.10`) — pin an exact release version.
+- `#vX.Y.Z` (currently `#v1.0.11`) — pin an exact release version.
 
-Version 1.0.10 includes the 1.0.9 changes, which shipped only as
-`1.0.9-beta.1`. Deploy the backend before any game ships it, and read the
-Upgrade notes of 1.0.10 and 1.0.9 in [the changelog](../CHANGELOG.md) when
-upgrading from 1.0.8.
+Version 1.0.11 adds the game profile to first_open. Deploy the backend before
+any game ships it, and enter the game's keys in its card on **Игры** («Ключи
+сборки»). When upgrading from 1.0.8, also read the Upgrade notes of 1.0.10 and
+1.0.9 in [the changelog](../CHANGELOG.md).
 
 The repository is public: the package installs over HTTPS without GitHub
 credentials. Never commit keys or a game's configs to it, in any branch, test
