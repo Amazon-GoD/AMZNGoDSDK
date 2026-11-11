@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-11-11
+
+No backend changes. Games need no code changes to get the banner fix.
+
 ### Added
 
 - **Banner controls on `AmznGoDSDKCore`.** The cross-promo banner slot can now

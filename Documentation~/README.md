@@ -37,12 +37,15 @@ Add the package to `Packages/manifest.json` (or through
 ```
 
 - `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.11`) — pin an exact release version.
+- `#vX.Y.Z` (currently `#v1.0.12`) — pin an exact release version.
 
-Version 1.0.11 adds the game profile to first_open. Deploy the backend before
-any game ships it, and enter the game's keys in its card on **Игры** («Ключи
-сборки»). When upgrading from 1.0.8, also read the Upgrade notes of 1.0.10 and
-1.0.9 in [the changelog](../CHANGELOG.md).
+Version 1.0.12 fixes hiding of the cross-promo banner when the AppLovin MAX
+banner takes its place and adds [banner controls](#banner-controls) and the
+subscription banner close-button delay setting. It has no backend changes.
+Version 1.0.11 added the game profile to first_open: when upgrading from 1.0.10
+or older, deploy the backend first and enter the game's keys in its card on
+**Игры** («Ключи сборки»). When upgrading from 1.0.8, also read the Upgrade
+notes of 1.0.10 and 1.0.9 in [the changelog](../CHANGELOG.md).
 
 The repository is public: the package installs over HTTPS without GitHub
 credentials. Never commit keys or a game's configs to it, in any branch, test

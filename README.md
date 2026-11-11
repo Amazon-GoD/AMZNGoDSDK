@@ -1,21 +1,23 @@
-# AMZN GoD SDK for Unity — 1.0.11
+# AMZN GoD SDK for Unity — 1.0.12
 
-Стабильная версия от 5 ноября 2026 года. В Unity Package Manager можно
+Стабильная версия от 11 ноября 2026 года. В Unity Package Manager можно
 закрепить пакет ссылкой:
 
-`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.11`
+`https://github.com/Amazon-GoD/AMZNGoDSDK.git#v1.0.12`
 
 Ветка `#Releases` содержит последний стабильный релиз. Репозиторий
 публичный: ключи и конфиги игр (`google-services.json`, `amzn_god_sdk.json`,
 `AppLovinSettings.asset`) в него не кладутся.
 
-[Изменения 1.0.11](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
+[Изменения 1.0.12](CHANGELOG.md) · [Установка и интеграция](Documentation~/README.md)
 · [Android-зависимости и миграция](Documentation~/ANDROID-DEPENDENCIES.md)
 
-Версия 1.0.11 добавляет в first_open профиль игры (ключи сборки). Перед
-обновлением игр бэкенд должен принимать новые поля, а ключи игры — быть
-внесены в её карточку на **Игры** («Ключи сборки») — см. Upgrade notes в
-[CHANGELOG](CHANGELOG.md).
+Версия 1.0.12 чинит скрытие баннера кросс-промо при замене на баннер AppLovin
+MAX и добавляет управление баннером из `AmznGoDSDKCore` (включение, запрет
+замены на MAX, позиция MAX-баннера), а также настройку времени появления
+крестика на баннере подписки. Изменений бэкенда нет. При обновлении с 1.0.10 и
+ниже прочитайте Upgrade notes 1.0.11 в [CHANGELOG](CHANGELOG.md): бэкенд должен
+принимать профиль игры в first_open.
 
 Unity 2022.3 LTS; при включённом MAX минимальная Android API — 24.
 
