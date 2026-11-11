@@ -9,6 +9,24 @@ namespace AMZNGoDSDK.Runtime
         public List<SubscriptionProduct> SubscriptionProducts = new();
         public List<ConsumableProduct> ConsumableProducts = new();
         public List<NonConsumableProduct> NonConsumableProducts = new();
+
+        public const float DefaultSubscriptionBannerCloseButtonDelay = 4f;
+
+        /// <summary>
+        /// Seconds between showing a subscription banner (ShowSubBanner) and its close button
+        /// appearing. 0 shows the button immediately. One value for every subscription and
+        /// placement. The initializer is what a config saved without the field gets.
+        /// </summary>
+        public float SubscriptionBannerCloseButtonDelay = DefaultSubscriptionBannerCloseButtonDelay;
+
+        /// <summary>Negative becomes 0 (show immediately); NaN and infinity fall back to the default.</summary>
+        public static float NormalizeSubscriptionBannerCloseButtonDelay(float seconds)
+        {
+            if (float.IsNaN(seconds) || float.IsInfinity(seconds))
+                return DefaultSubscriptionBannerCloseButtonDelay;
+
+            return seconds < 0f ? 0f : seconds;
+        }
     }
 
     /// <summary>

@@ -153,6 +153,9 @@ namespace AMZNGoDSDK.Runtime
 #if AMZN_CROSSPROMO_ENABLED
             _crossPromoModule.Construct(crossPromoSettings);
             _crossPromoModule.DebugForceCapsExhausted = _debugForceCrossPromoCapsExhausted;
+            // SDK Settings default; the game can override it at runtime.
+            _crossPromoModule.SetAppLovinBannerFallbackEnabled(
+                appLovinSettings == null || !appLovinSettings.BannerFallbackDisabled);
 #endif
             
 #if AMZN_APPMETRICA_ENABLED
@@ -189,7 +192,8 @@ namespace AMZNGoDSDK.Runtime
                 appLovinSettings.VerboseLogging,
                 appLovinSettings.InterstitialAdPlacement,
                 appLovinSettings.RewardedAdPlacement,
-                appLovinSettings.BannerAdUnitId);
+                appLovinSettings.BannerAdUnitId,
+                appLovinSettings.BannerPosition);
 #endif
 
             #endregion
@@ -366,7 +370,27 @@ namespace AMZNGoDSDK.Runtime
         /// <summary>True when AppLovin has a rewarded ad loaded and ready to show.</summary>
         public bool IsMediationRewardedReady =>
             _appLovinModule != null && _appLovinModule.Enabled && _appLovinModule.IsRewardedReady;
+
+        /// <summary>
+        /// Moves the native AppLovin MAX banner to another screen anchor. The default comes
+        /// from SDK Settings → AppLovin → Banner Position. Applies immediately if the MAX
+        /// banner is on screen, otherwise the next time it appears. The cross-promo banner
+        /// is Unity UI and stays where its RectTransform puts it.
+        /// </summary>
+        public void SetAppLovinBannerPosition(AppLovinBannerPosition position)
+        {
+            if (_appLovinModule == null)
+                return;
+
+            _appLovinModule.SetBannerPosition(position);
+        }
+
+        /// <summary>Current screen anchor of the native AppLovin MAX banner.</summary>
+        public AppLovinBannerPosition AppLovinBannerPosition =>
+            _appLovinModule != null ? _appLovinModule.BannerPosition : AppLovinBannerPosition.BottomCenter;
 #else
+        public void SetAppLovinBannerPosition(AppLovinBannerPosition position) { }
+        public AppLovinBannerPosition AppLovinBannerPosition => AppLovinBannerPosition.BottomCenter;
         public bool IsMediationEnabled => false;
         private bool TryShowMediationInterstitial(Action onClose) => false;
         private bool TryShowMediationRewarded(Action onClose, Action onRewarded) => false;
@@ -432,6 +456,60 @@ namespace AMZNGoDSDK.Runtime
 
             _crossPromoModule.SetBannerFuncs(onClose, isNoAds);
         }
+
+        /// <summary>
+        /// Master switch of the banner slot. <c>false</c> hides both the cross-promo banner
+        /// and the native AppLovin MAX banner in every scene; <c>true</c> lets them back.
+        /// Use it for screens where no banner may appear: the MAX banner is a native view
+        /// drawn above all Unity UI, so covering it with a popup does not hide it.
+        /// The state survives scene changes. Default: enabled.
+        /// </summary>
+        public void SetCrossPromoBannerEnabled(bool enabled)
+        {
+            if (_crossPromoModule == null)
+                return;
+
+            _crossPromoModule.SetBannerEnabled(enabled);
+        }
+
+        /// <summary>False after <see cref="SetCrossPromoBannerEnabled"/>(false).</summary>
+        public bool IsCrossPromoBannerEnabled =>
+            _crossPromoModule == null || _crossPromoModule.BannerEnabled;
+
+        /// <summary>
+        /// Allows or forbids replacing the cross-promo banner with the AppLovin MAX banner
+        /// once every cross-promo creative has exhausted its cap. <c>false</c> keeps the
+        /// cross-promo banner. The default comes from SDK Settings → AppLovin → Banner
+        /// Fallback. Does not affect interstitial and rewarded mediation.
+        /// </summary>
+        public void SetAppLovinBannerFallbackEnabled(bool enabled)
+        {
+            if (_crossPromoModule == null)
+                return;
+
+            _crossPromoModule.SetAppLovinBannerFallbackEnabled(enabled);
+        }
+
+        /// <summary>Whether the banner may switch to AppLovin MAX after the caps are exhausted.</summary>
+        public bool IsAppLovinBannerFallbackEnabled =>
+            _crossPromoModule != null && _crossPromoModule.AppLovinBannerFallbackEnabled;
+
+        /// <summary>
+        /// What occupies the banner slot right now: nothing, the cross-promo creative, or the
+        /// native AppLovin MAX banner (reported once MAX actually has an ad on screen).
+        /// </summary>
+        public BannerProvider CurrentBannerProvider =>
+            _crossPromoModule != null ? _crossPromoModule.CurrentBannerProvider : BannerProvider.None;
+
+        /// <summary>
+        /// Raised when <see cref="CurrentBannerProvider"/> changes. Use it to move game UI
+        /// away from the banner that is about to be drawn.
+        /// </summary>
+        public event Action<BannerProvider> OnBannerProviderChanged
+        {
+            add => CrossPromoModule.OnBannerProviderChanged += value;
+            remove => CrossPromoModule.OnBannerProviderChanged -= value;
+        }
 #else
         public bool IsVideoPromoVisible => false;
         public bool IsVideoReady => false;
@@ -440,6 +518,12 @@ namespace AMZNGoDSDK.Runtime
         public float LastPreloadRequestedRealtime => -1f;
         public void RefreshPreloadIfStale() { }
         public void SetCrossPromoBannerFuncs(Action onClose, Func<bool> isNoAds) { }
+        public void SetCrossPromoBannerEnabled(bool enabled) { }
+        public bool IsCrossPromoBannerEnabled => false;
+        public void SetAppLovinBannerFallbackEnabled(bool enabled) { }
+        public bool IsAppLovinBannerFallbackEnabled => false;
+        public BannerProvider CurrentBannerProvider => BannerProvider.None;
+        public event Action<BannerProvider> OnBannerProviderChanged { add { } remove { } }
 #endif
 
         #endregion

@@ -114,14 +114,67 @@ Leading and trailing whitespace is removed.
 MAX banners use a fixed standard size in density-independent pixels (dp):
 320 x 50 on phones and 728 x 90 on tablets, exposed as
 `AppLovinModule.StandardBannerSizeDp`. Banner creation disables adaptive
-height and explicitly sets the standard width so `BottomCenter` does not
-stretch the banner across the screen.
+height and explicitly sets the standard width so the banner is not stretched
+across the screen.
 
 The Cross-Promo/MAX banner controller respects fullscreen ads, disabled Unity
 Canvas/Image components and transparent CanvasGroups in the banner hierarchy.
-It uses a separate CanvasGroup for provider switching and preserves the game's
-own group, including fades. Native MAX banners are shown or hidden; partial
-Unity alpha does not apply a corresponding fade to the native view.
+Unity allows one CanvasGroup per GameObject, so the controller shares the
+banner's CanvasGroup with the game: it zeroes the group only while MAX owns the
+slot and restores the values the game set (including a fade in progress) when
+the cross-promo creative returns. Native MAX banners are shown or hidden;
+partial Unity alpha does not apply a corresponding fade to the native view.
+
+### Banner controls
+
+The banner slot is driven from `AmznGoDSDKCore.Instance`. All switches live on
+the SDK object, so they survive scene changes and apply to every banner
+instance.
+
+| Member | Purpose |
+|---|---|
+| `SetCrossPromoBannerEnabled(bool)` / `IsCrossPromoBannerEnabled` | Master switch. `false` hides both the cross-promo creative and the MAX banner. |
+| `SetAppLovinBannerFallbackEnabled(bool)` / `IsAppLovinBannerFallbackEnabled` | Allow or forbid replacing the cross-promo banner with MAX after the caps are exhausted. |
+| `SetAppLovinBannerPosition(AppLovinBannerPosition)` / `AppLovinBannerPosition` | Screen anchor of the MAX banner: `BottomCenter`, `TopCenter`, `BottomLeft`, `BottomRight`, `TopLeft`, `TopRight`. |
+| `CurrentBannerProvider` / `OnBannerProviderChanged` | What the slot shows now: `None`, `CrossPromo` or `AppLovin`. |
+
+Defaults for the position and the fallback are set in
+`AMZN GoD > SDK Settings > AppLovin` (**Banner Position**, **Banner
+Fallback**); configs saved by older SDK versions keep `BottomCenter` with the
+fallback on.
+
+The MAX banner is a native view drawn above all Unity UI. A popup or a
+fullscreen panel of the game does not cover it, and the controller cannot
+detect that the banner is visually obscured. Hide the slot explicitly on such
+screens:
+
+```csharp
+var sdk = AmznGoDSDKCore.Instance;
+
+sdk.SetCrossPromoBannerEnabled(false);   // shop opened
+// ...
+sdk.SetCrossPromoBannerEnabled(true);    // shop closed
+```
+
+The cross-promo banner is Unity UI and stays where its RectTransform puts it;
+the MAX banner is anchored to the screen. When the cross-promo banner is not
+at the bottom, give MAX the matching anchor and move the game UI when the
+provider changes:
+
+```csharp
+sdk.SetAppLovinBannerPosition(AppLovinBannerPosition.TopCenter);
+
+sdk.OnBannerProviderChanged += provider =>
+{
+    // AppLovin is reported once MAX has an ad on screen, not when it is requested.
+    topBar.SetBannerReserve(provider == BannerProvider.AppLovin);
+};
+```
+
+While MAX is loading its first ad, or has no fill, the cross-promo creative
+stays on screen and `CurrentBannerProvider` is `CrossPromo`; the slot is never
+left empty. `SetAppLovinBannerPosition` applies immediately when the MAX banner
+exists and otherwise on its next appearance.
 
 Game-side UI reservation should use `MaxSdk.GetBannerLayout(adUnitId)` once
 its width and height are positive, and the standard size while the layout is

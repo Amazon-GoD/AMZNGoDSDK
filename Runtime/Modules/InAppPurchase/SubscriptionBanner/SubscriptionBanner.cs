@@ -22,7 +22,8 @@ namespace AMZNGoDSDK.Runtime
         [SerializeField] private Button _cross;
         [SerializeField] private Button _continue;
 
-        [Tooltip("Через сколько секунд после показа появляется крестик.")]
+        [Tooltip("Через сколько секунд после показа появляется крестик. Используется только при показе без " +
+                 "явной задержки: SDK берёт её из SDK Settings → In-App Purchase → Sub Banner Close Delay.")]
         [SerializeField, Min(0f)] private float _closeButtonDelay = 4f;
 
         [Header("Пульсация кнопки «купить»")]
@@ -63,8 +64,14 @@ namespace AMZNGoDSDK.Runtime
                 _cross.onClick.RemoveListener(HandleCloseClick);
         }
 
-        /// <summary>Ставит задник и запускает отсчёт до появления крестика.</summary>
-        public void Show(Sprite background)
+        /// <summary>Ставит задник и запускает отсчёт до появления крестика (задержка — с префаба).</summary>
+        public void Show(Sprite background) => Show(background, _closeButtonDelay);
+
+        /// <summary>
+        /// Ставит задник и запускает отсчёт до появления крестика.
+        /// <paramref name="closeButtonDelay"/> — секунды нескейленного времени; 0 и меньше — сразу.
+        /// </summary>
+        public void Show(Sprite background, float closeButtonDelay)
         {
             if (_background != null)
                 _background.sprite = background;
@@ -75,7 +82,7 @@ namespace AMZNGoDSDK.Runtime
             if (_closeButtonRoutine != null)
                 StopCoroutine(_closeButtonRoutine);
 
-            _closeButtonRoutine = StartCoroutine(ShowCloseButtonDelayed());
+            _closeButtonRoutine = StartCoroutine(ShowCloseButtonDelayed(closeButtonDelay));
 
             StartPulse();
         }
@@ -111,10 +118,10 @@ namespace AMZNGoDSDK.Runtime
             }
         }
 
-        private IEnumerator ShowCloseButtonDelayed()
+        private IEnumerator ShowCloseButtonDelayed(float delay)
         {
-            if (_closeButtonDelay > 0f)
-                yield return new WaitForSecondsRealtime(_closeButtonDelay);
+            if (delay > 0f)
+                yield return new WaitForSecondsRealtime(delay);
 
             SetCloseButtonVisible(true);
             _closeButtonRoutine = null;

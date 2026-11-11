@@ -617,6 +617,18 @@ namespace AMZNGoDSDK.Editor
                             "Баннер MAX после исчерпания всех капов JSON-рекламы. Если пусто, остаётся баннер кросс-промо."),
                             _currentSettings.AppLovin.BannerAdUnitId);
 
+                    _currentSettings.AppLovin.BannerPosition = (Runtime.AppLovinBannerPosition)EditorGUILayout
+                        .EnumPopup(new GUIContent("Banner Position",
+                            "Позиция нативного баннера MAX на экране. Баннер кросс-промо остаётся там, где стоит его RectTransform. " +
+                            "В рантайме меняется через AmznGoDSDKCore.Instance.SetAppLovinBannerPosition."),
+                            _currentSettings.AppLovin.BannerPosition);
+
+                    _currentSettings.AppLovin.BannerFallbackDisabled = !EditorGUILayout
+                        .Toggle(new GUIContent("Banner Fallback",
+                            "Заменять баннер кросс-промо баннером MAX после исчерпания капов. Если выключено, остаётся баннер кросс-промо. " +
+                            "В рантайме меняется через AmznGoDSDKCore.Instance.SetAppLovinBannerFallbackEnabled."),
+                            !_currentSettings.AppLovin.BannerFallbackDisabled);
+
                     GUILayout.Space(6);
                     EditorGUILayout.LabelField("MAX Placements", EditorStyles.miniBoldLabel);
                     _currentSettings.AppLovin.InterstitialAdPlacement = EditorGUILayout
@@ -807,6 +819,13 @@ namespace AMZNGoDSDK.Editor
                         "если он задан, иначе общий Product ID. Существующие товары сохраняются. " +
                         "После проверки нажмите Save Settings.", MessageType.Info);
                     GUILayout.Space(10);
+
+                    _currentSettings.InAppPurchase.SubscriptionBannerCloseButtonDelay = Mathf.Max(0f, EditorGUILayout
+                        .FloatField(new GUIContent("Sub Banner Close Delay (s)",
+                            "Через сколько секунд после показа баннера подписки (ShowSubBanner) появляется крестик. " +
+                            "0 — сразу. Одно значение для всех подписок и плейсментов."),
+                            _currentSettings.InAppPurchase.SubscriptionBannerCloseButtonDelay));
+                    GUILayout.Space(6);
 
                     GUILayout.Label("Subscription Products:", EditorStyles.miniBoldLabel);
 

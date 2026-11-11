@@ -38,7 +38,8 @@ namespace AMZNGoDSDK.Runtime
         private int _nextDownloadIndex;
         private bool _explicitlyHidden;
         private bool _crossPromoVisible;
-        private CanvasGroup _presentationCanvasGroup;
+        private CrossPromoBannerPresentation _presentation;
+        private BannerProvider _reportedProvider = BannerProvider.None;
         private readonly List<CanvasGroup> _visibilityCanvasGroups = new();
         private readonly List<Canvas> _visibilityCanvases = new();
         private bool _shouldUseAppLovinBanner;
@@ -57,14 +58,15 @@ namespace AMZNGoDSDK.Runtime
                 bannerGO = gameObject;
             }
 
-            // Первый CanvasGroup остаётся интерфейсом игры (в том числе GetComponent).
-            // Служебное переключение CP/MAX использует отдельную группу: не перетираем
-            // alpha/interactable игры и не меняем иерархию пользовательского префаба.
-            if (bannerGO.GetComponent<CanvasGroup>() == null)
+            // Unity allows a single CanvasGroup per GameObject: a second AddComponent returns
+            // null, and the banner could then never be hidden. The one group is shared with
+            // the game instead; CrossPromoBannerPresentation preserves the game's values.
+            var canvasGroup = bannerGO.GetComponent<CanvasGroup>();
+            if (canvasGroup == null)
             {
-                bannerGO.AddComponent<CanvasGroup>();
+                canvasGroup = bannerGO.AddComponent<CanvasGroup>();
             }
-            _presentationCanvasGroup = bannerGO.AddComponent<CanvasGroup>();
+            _presentation = new CrossPromoBannerPresentation(canvasGroup);
             SetCrossPromoVisible(false);
 
             if (adImage == null)
@@ -102,6 +104,7 @@ namespace AMZNGoDSDK.Runtime
         {
             HideAppLovinBanner();
             SetCrossPromoVisible(false);
+            ReportProvider(BannerProvider.None);
             StopInitialization();
         }
 
@@ -111,9 +114,8 @@ namespace AMZNGoDSDK.Runtime
             CrossPromoModule.OnBannerFuncsUpdated -= OnModuleBannerFuncsUpdated;
             HideAppLovinBanner();
             SetCrossPromoVisible(false);
+            ReportProvider(BannerProvider.None);
             StopInitialization();
-            if (_presentationCanvasGroup != null)
-                Destroy(_presentationCanvasGroup);
         }
 
         private void BindToModule()
@@ -434,6 +436,7 @@ namespace AMZNGoDSDK.Runtime
             {
                 HideAppLovinBanner();
                 SetCrossPromoVisible(false);
+                ReportProvider(BannerProvider.None);
                 return;
             }
 
@@ -448,20 +451,40 @@ namespace AMZNGoDSDK.Runtime
                 && _appLovinModule.ShowBanner())
             {
                 _appLovinBannerOwner = this;
-                SetCrossPromoVisible(false);
+
+                // ShowBanner only accepts the request. Until MAX has an ad to draw (first
+                // load, or no fill) the creative stays, so the slot is never left empty.
+                bool appLovinHasAd = _appLovinModule.IsBannerLoaded;
+                SetCrossPromoVisible(!appLovinHasAd);
+                ReportProvider(appLovinHasAd ? BannerProvider.AppLovin : BannerProvider.CrossPromo);
                 return;
             }
 #endif
 
             HideAppLovinBanner();
             SetCrossPromoVisible(true);
+            ReportProvider(BannerProvider.CrossPromo);
+        }
+
+        private void ReportProvider(BannerProvider provider)
+        {
+            if (_reportedProvider == provider)
+                return;
+
+            // _module is unbound until the SDK is up, and may already be destroyed on teardown.
+            var module = _module != null ? _module : CrossPromoModule.Instance;
+            if (module == null)
+                return;
+
+            _reportedProvider = provider;
+            module.ReportBannerProvider(GetInstanceID(), provider);
         }
 
         private bool CanDisplayBanner()
         {
             if (!isActiveAndEnabled || _explicitlyHidden || bannerGO == null
                 || !bannerGO.activeInHierarchy || (isNoAds?.Invoke() ?? false)
-                || (_module != null && _module.IsVideoPromoVisible))
+                || (_module != null && (!_module.BannerEnabled || _module.IsVideoPromoVisible)))
                 return false;
 
 #if AMZN_APPLOVIN_ENABLED
@@ -495,13 +518,25 @@ namespace AMZNGoDSDK.Runtime
                 current.GetComponents(_visibilityCanvasGroups);
                 foreach (var group in _visibilityCanvasGroups)
                 {
-                    // Наша alpha=0 означает замену картинки нативным MAX, а не скрытие
-                    // экрана игрой. Не создаём зависимость eligibility от своего output.
-                    if (group == _presentationCanvasGroup || !group.isActiveAndEnabled)
+                    if (!group.isActiveAndEnabled)
                         continue;
 
-                    if (group.alpha <= 0f
-                        || (requireInteraction && (!group.interactable || !group.blocksRaycasts)))
+                    float alpha = group.alpha;
+                    bool interactable = group.interactable;
+                    bool blocksRaycasts = group.blocksRaycasts;
+
+                    // The SDK's own alpha=0 means "replaced by the native MAX banner", not
+                    // "hidden by the game". Eligibility reads what the game asked for, so it
+                    // does not depend on the SDK's own output.
+                    if (_presentation != null && group == _presentation.Group)
+                    {
+                        alpha = _presentation.GameAlpha;
+                        interactable = _presentation.GameInteractable;
+                        blocksRaycasts = _presentation.GameBlocksRaycasts;
+                    }
+
+                    if (alpha <= 0f
+                        || (requireInteraction && (!interactable || !blocksRaycasts)))
                         return false;
 
                     if (group.ignoreParentGroups)
@@ -529,12 +564,7 @@ namespace AMZNGoDSDK.Runtime
         private void SetCrossPromoVisible(bool show)
         {
             _crossPromoVisible = show;
-            if (_presentationCanvasGroup != null)
-            {
-                _presentationCanvasGroup.alpha = show ? 1f : 0f;
-                _presentationCanvasGroup.interactable = show;
-                _presentationCanvasGroup.blocksRaycasts = show;
-            }
+            _presentation?.SetVisible(show);
 
             if (show)
                 StartRotationIfNeeded();
