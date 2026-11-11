@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-11-11
+
+No backend changes. Existing integrations behave as in 1.0.12.
+
 ### Added
 
 - `AmznGoDSDKCore.SetBannerProviderEnabled(BannerProvider, bool)` /
