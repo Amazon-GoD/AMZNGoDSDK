@@ -495,6 +495,31 @@ namespace AMZNGoDSDK.Runtime
             _crossPromoModule != null && _crossPromoModule.AppLovinBannerFallbackEnabled;
 
         /// <summary>
+        /// Switches one banner provider on or off, leaving the other as it is.
+        /// <list type="bullet">
+        /// <item><see cref="BannerProvider.CrossPromo"/> off: the cross-promo creative is never
+        /// shown; the AppLovin MAX banner takes the slot right away, without waiting for the
+        /// cross-promo caps. Without MAX (module off, no banner ad unit, no fill) the slot
+        /// stays empty.</item>
+        /// <item><see cref="BannerProvider.AppLovin"/> off: only the cross-promo creative is
+        /// shown; same as <see cref="SetAppLovinBannerFallbackEnabled"/>(false).</item>
+        /// </list>
+        /// Both off hides the slot, like <see cref="SetCrossPromoBannerEnabled"/>(false).
+        /// <see cref="BannerProvider.None"/> is ignored. The state survives scene changes.
+        /// </summary>
+        public void SetBannerProviderEnabled(BannerProvider provider, bool enabled)
+        {
+            if (_crossPromoModule == null)
+                return;
+
+            _crossPromoModule.SetBannerProviderEnabled(provider, enabled);
+        }
+
+        /// <summary>Whether the given provider may appear in the banner slot.</summary>
+        public bool IsBannerProviderEnabled(BannerProvider provider) =>
+            _crossPromoModule != null && _crossPromoModule.IsBannerProviderEnabled(provider);
+
+        /// <summary>
         /// What occupies the banner slot right now: nothing, the cross-promo creative, or the
         /// native AppLovin MAX banner (reported once MAX actually has an ad on screen).
         /// </summary>
@@ -522,6 +547,8 @@ namespace AMZNGoDSDK.Runtime
         public bool IsCrossPromoBannerEnabled => false;
         public void SetAppLovinBannerFallbackEnabled(bool enabled) { }
         public bool IsAppLovinBannerFallbackEnabled => false;
+        public void SetBannerProviderEnabled(BannerProvider provider, bool enabled) { }
+        public bool IsBannerProviderEnabled(BannerProvider provider) => false;
         public BannerProvider CurrentBannerProvider => BannerProvider.None;
         public event Action<BannerProvider> OnBannerProviderChanged { add { } remove { } }
 #endif

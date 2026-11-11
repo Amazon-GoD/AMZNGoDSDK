@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-11-11
+
+No backend changes. Existing integrations behave as in 1.0.12.
+
+### Added
+
+- `AmznGoDSDKCore.SetBannerProviderEnabled(BannerProvider, bool)` /
+  `IsBannerProviderEnabled(BannerProvider)`: switch one banner provider off and
+  keep the other. `CrossPromo` off leaves the slot to the AppLovin MAX banner
+  alone (shown without waiting for the cross-promo caps; empty when MAX cannot
+  serve). `AppLovin` off is the existing
+  `SetAppLovinBannerFallbackEnabled(false)`. Independent of the slot master
+  switch `SetCrossPromoBannerEnabled`.
+
 ## [1.0.12] - 2026-11-11
 
 No backend changes. Games need no code changes to get the banner fix.

@@ -446,6 +446,10 @@ namespace AMZNGoDSDK.Runtime
                 _nextFillCheckTime = Time.realtimeSinceStartup + FillCheckIntervalSeconds;
             }
 
+            // The game can switch the creative off and leave the slot to MAX alone.
+            bool creativeAllowed = _module == null || _module.CrossPromoBannerCreativeEnabled;
+            BannerProvider provider;
+
 #if AMZN_APPLOVIN_ENABLED
             if (_shouldUseAppLovinBanner && _appLovinModule != null
                 && _appLovinModule.ShowBanner())
@@ -453,17 +457,19 @@ namespace AMZNGoDSDK.Runtime
                 _appLovinBannerOwner = this;
 
                 // ShowBanner only accepts the request. Until MAX has an ad to draw (first
-                // load, or no fill) the creative stays, so the slot is never left empty.
-                bool appLovinHasAd = _appLovinModule.IsBannerLoaded;
-                SetCrossPromoVisible(!appLovinHasAd);
-                ReportProvider(appLovinHasAd ? BannerProvider.AppLovin : BannerProvider.CrossPromo);
+                // load, or no fill) the creative stays, so the slot is not left empty.
+                provider = CrossPromoBannerSlot.Resolve(
+                    creativeAllowed, appLovinRequested: true, appLovinHasAd: _appLovinModule.IsBannerLoaded);
+                SetCrossPromoVisible(provider == BannerProvider.CrossPromo);
+                ReportProvider(provider);
                 return;
             }
 #endif
 
             HideAppLovinBanner();
-            SetCrossPromoVisible(true);
-            ReportProvider(BannerProvider.CrossPromo);
+            provider = CrossPromoBannerSlot.Resolve(creativeAllowed, appLovinRequested: false, appLovinHasAd: false);
+            SetCrossPromoVisible(provider == BannerProvider.CrossPromo);
+            ReportProvider(provider);
         }
 
         private void ReportProvider(BannerProvider provider)

@@ -37,11 +37,12 @@ Add the package to `Packages/manifest.json` (or through
 ```
 
 - `#Releases` — always the latest release.
-- `#vX.Y.Z` (currently `#v1.0.12`) — pin an exact release version.
+- `#vX.Y.Z` (currently `#v1.0.13`) — pin an exact release version.
 
-Version 1.0.12 fixes hiding of the cross-promo banner when the AppLovin MAX
-banner takes its place and adds [banner controls](#banner-controls) and the
-subscription banner close-button delay setting. It has no backend changes.
+Version 1.0.13 adds a per-provider banner switch (`SetBannerProviderEnabled`).
+Version 1.0.12 fixed hiding of the cross-promo banner when the AppLovin MAX
+banner takes its place and added [banner controls](#banner-controls) and the
+subscription banner close-button delay setting. Neither has backend changes.
 Version 1.0.11 added the game profile to first_open: when upgrading from 1.0.10
 or older, deploy the backend first and enter the game's keys in its card on
 **Игры** («Ключи сборки»). When upgrading from 1.0.8, also read the Upgrade
@@ -137,7 +138,8 @@ instance.
 | Member | Purpose |
 |---|---|
 | `SetCrossPromoBannerEnabled(bool)` / `IsCrossPromoBannerEnabled` | Master switch. `false` hides both the cross-promo creative and the MAX banner. |
-| `SetAppLovinBannerFallbackEnabled(bool)` / `IsAppLovinBannerFallbackEnabled` | Allow or forbid replacing the cross-promo banner with MAX after the caps are exhausted. |
+| `SetBannerProviderEnabled(BannerProvider, bool)` / `IsBannerProviderEnabled(BannerProvider)` | Switch one provider off and keep the other: `CrossPromo` off leaves only the MAX banner, `AppLovin` off leaves only the cross-promo banner. |
+| `SetAppLovinBannerFallbackEnabled(bool)` / `IsAppLovinBannerFallbackEnabled` | Allow or forbid replacing the cross-promo banner with MAX after the caps are exhausted. Same switch as `SetBannerProviderEnabled(BannerProvider.AppLovin, ...)`. |
 | `SetAppLovinBannerPosition(AppLovinBannerPosition)` / `AppLovinBannerPosition` | Screen anchor of the MAX banner: `BottomCenter`, `TopCenter`, `BottomLeft`, `BottomRight`, `TopLeft`, `TopRight`. |
 | `CurrentBannerProvider` / `OnBannerProviderChanged` | What the slot shows now: `None`, `CrossPromo` or `AppLovin`. |
 
@@ -158,6 +160,23 @@ sdk.SetCrossPromoBannerEnabled(false);   // shop opened
 // ...
 sdk.SetCrossPromoBannerEnabled(true);    // shop closed
 ```
+
+To turn off one provider only:
+
+```csharp
+// Only the AppLovin MAX banner: the cross-promo creative is never shown.
+sdk.SetBannerProviderEnabled(BannerProvider.CrossPromo, false);
+
+// Only the cross-promo banner: never replaced by MAX.
+sdk.SetBannerProviderEnabled(BannerProvider.AppLovin, false);
+```
+
+With the cross-promo creative off, MAX takes the slot right away, without
+waiting for the cross-promo caps. If MAX cannot serve (module disabled, no
+Banner Ad Unit, still loading, no fill) the slot stays empty and
+`CurrentBannerProvider` is `None`. Both providers off hides the slot. These
+switches are independent of `SetCrossPromoBannerEnabled`, which hides the slot
+regardless of them. Interstitial and rewarded ads are not affected.
 
 The cross-promo banner is Unity UI and stays where its RectTransform puts it;
 the MAX banner is anchored to the screen. When the cross-promo banner is not
