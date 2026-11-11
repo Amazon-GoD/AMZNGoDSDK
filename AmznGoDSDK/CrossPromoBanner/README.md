@@ -24,6 +24,9 @@ Runtime controls on `AmznGoDSDKCore.Instance`:
   including the AppLovin MAX banner that replaces the creative once the
   cross-promo caps are exhausted. The MAX banner is a native view above all
   Unity UI, so use this on screens where no banner may appear.
+- `SetBannerProviderEnabled(BannerProvider, bool)` switches one provider off:
+  `CrossPromo` off shows only the MAX banner, `AppLovin` off shows only this
+  creative.
 - `SetAppLovinBannerFallbackEnabled(bool)` keeps the cross-promo banner instead
   of switching to MAX.
 - `SetAppLovinBannerPosition(AppLovinBannerPosition)` anchors the MAX banner to

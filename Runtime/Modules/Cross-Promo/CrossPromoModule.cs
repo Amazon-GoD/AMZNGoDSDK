@@ -118,7 +118,16 @@ namespace AMZNGoDSDK.Runtime
         // Баннер наследует тот же cap/master-флаг, что и interstitial/rewarded.
         // Отсутствие загруженного конфига не означает, что его cap уже исчерпан.
         internal bool ShouldUseAppLovinBanner =>
-            Enabled && AppLovinBannerFallbackEnabled && _configFetchReturnedVideos && !HasFill;
+            CrossPromoBannerSlot.ShouldRouteToAppLovin(
+                Enabled, AppLovinBannerFallbackEnabled, CrossPromoBannerCreativeEnabled,
+                _configFetchReturnedVideos, HasFill);
+
+        /// <summary>
+        /// Whether the cross-promo creative may be shown in the banner slot. False leaves the
+        /// slot to the AppLovin MAX banner alone (shown without waiting for the caps), or empty
+        /// when MAX is not available. Independent of <see cref="BannerEnabled"/>.
+        /// </summary>
+        public bool CrossPromoBannerCreativeEnabled { get; private set; } = true;
 
         /// <summary>
         /// Master switch of the banner slot. False hides both the cross-promo creative and
@@ -568,6 +577,41 @@ namespace AMZNGoDSDK.Runtime
 
             AppLovinBannerFallbackEnabled = enabled;
             Debug.Log($"[CrossPromoModule] AppLovin banner fallback {(enabled ? "enabled" : "disabled")}.");
+        }
+
+        /// <summary>
+        /// Switches one banner provider on or off. <see cref="BannerProvider.CrossPromo"/>:
+        /// the creative; <see cref="BannerProvider.AppLovin"/>: the MAX banner (same switch as
+        /// <see cref="SetAppLovinBannerFallbackEnabled"/>). <see cref="BannerProvider.None"/>
+        /// is ignored. Banners pick the change up within a quarter of a second.
+        /// </summary>
+        public void SetBannerProviderEnabled(BannerProvider provider, bool enabled)
+        {
+            switch (provider)
+            {
+                case BannerProvider.CrossPromo:
+                    if (CrossPromoBannerCreativeEnabled == enabled)
+                        return;
+
+                    CrossPromoBannerCreativeEnabled = enabled;
+                    Debug.Log($"[CrossPromoModule] Cross-promo banner creative {(enabled ? "enabled" : "disabled")}.");
+                    break;
+
+                case BannerProvider.AppLovin:
+                    SetAppLovinBannerFallbackEnabled(enabled);
+                    break;
+            }
+        }
+
+        /// <summary>Whether the given provider may appear in the banner slot.</summary>
+        public bool IsBannerProviderEnabled(BannerProvider provider)
+        {
+            switch (provider)
+            {
+                case BannerProvider.CrossPromo: return CrossPromoBannerCreativeEnabled;
+                case BannerProvider.AppLovin: return AppLovinBannerFallbackEnabled;
+                default: return false;
+            }
         }
 
         /// <summary>Called by each banner instance when what it shows changes.</summary>

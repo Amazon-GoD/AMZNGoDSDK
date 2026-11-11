@@ -13,6 +13,34 @@ namespace AMZNGoDSDK.Runtime
 
         internal BannerProvider Current { get; private set; } = BannerProvider.None;
 
+        /// <summary>
+        /// Whether the banner should ask AppLovin MAX for an ad. With the cross-promo creative
+        /// allowed, MAX takes over only after a loaded config has run out of fill (caps). With
+        /// the creative switched off by the game, MAX is the only provider left and is used
+        /// right away, without waiting for the config or the caps.
+        /// </summary>
+        internal static bool ShouldRouteToAppLovin(bool moduleEnabled, bool appLovinAllowed,
+            bool creativeAllowed, bool configReturnedVideos, bool hasFill)
+        {
+            if (!moduleEnabled || !appLovinAllowed)
+                return false;
+
+            return !creativeAllowed || (configReturnedVideos && !hasFill);
+        }
+
+        /// <summary>
+        /// What one banner instance shows. <paramref name="appLovinRequested"/>: MAX accepted
+        /// the show request; <paramref name="appLovinHasAd"/>: it has an ad to draw. Until then
+        /// the creative keeps the slot, unless the game switched the creative off.
+        /// </summary>
+        internal static BannerProvider Resolve(bool creativeAllowed, bool appLovinRequested, bool appLovinHasAd)
+        {
+            if (appLovinRequested && appLovinHasAd)
+                return BannerProvider.AppLovin;
+
+            return creativeAllowed ? BannerProvider.CrossPromo : BannerProvider.None;
+        }
+
         /// <summary>Records one banner's state. Returns true when the aggregated provider changed.</summary>
         internal bool Report(int bannerId, BannerProvider provider)
         {

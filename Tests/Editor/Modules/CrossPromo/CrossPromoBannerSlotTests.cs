@@ -65,6 +65,37 @@ namespace AMZNGoDSDK.Runtime.Tests
             Assert.IsFalse(slot.Report(7, BannerProvider.None));
         }
 
+        // ---------- provider routing ----------
+
+        // moduleEnabled, appLovinAllowed, creativeAllowed, configReturnedVideos, hasFill → expected
+        [TestCase(true, true, true, true, false, true, TestName = "Routing_CapsExhausted_GoesToAppLovin")]
+        [TestCase(true, true, true, true, true, false, TestName = "Routing_HasFill_StaysOnCreative")]
+        [TestCase(true, true, true, false, false, false, TestName = "Routing_ConfigNotLoaded_StaysOnCreative")]
+        [TestCase(true, false, true, true, false, false, TestName = "Routing_AppLovinOff_NeverGoesToAppLovin")]
+        [TestCase(true, true, false, true, true, true, TestName = "Routing_CreativeOff_GoesToAppLovinDespiteFill")]
+        [TestCase(true, true, false, false, false, true, TestName = "Routing_CreativeOff_DoesNotWaitForConfig")]
+        [TestCase(true, false, false, true, false, false, TestName = "Routing_BothOff_NoAppLovin")]
+        [TestCase(false, true, false, true, false, false, TestName = "Routing_ModuleDisabled_NoAppLovin")]
+        public void ShouldRouteToAppLovin_Cases(bool moduleEnabled, bool appLovinAllowed, bool creativeAllowed,
+            bool configReturnedVideos, bool hasFill, bool expected)
+        {
+            Assert.AreEqual(expected, CrossPromoBannerSlot.ShouldRouteToAppLovin(
+                moduleEnabled, appLovinAllowed, creativeAllowed, configReturnedVideos, hasFill));
+        }
+
+        // creativeAllowed, appLovinRequested, appLovinHasAd → provider
+        [TestCase(true, false, false, BannerProvider.CrossPromo, TestName = "Resolve_CreativeOnly")]
+        [TestCase(true, true, false, BannerProvider.CrossPromo, TestName = "Resolve_AppLovinLoading_CreativeKeepsSlot")]
+        [TestCase(true, true, true, BannerProvider.AppLovin, TestName = "Resolve_AppLovinLoaded")]
+        [TestCase(false, false, false, BannerProvider.None, TestName = "Resolve_CreativeOff_NoAppLovin_Empty")]
+        [TestCase(false, true, false, BannerProvider.None, TestName = "Resolve_CreativeOff_AppLovinLoading_Empty")]
+        [TestCase(false, true, true, BannerProvider.AppLovin, TestName = "Resolve_CreativeOff_AppLovinLoaded")]
+        [TestCase(true, false, true, BannerProvider.CrossPromo, TestName = "Resolve_StaleAdWithoutRequest_Creative")]
+        public void Resolve_Cases(bool creativeAllowed, bool appLovinRequested, bool appLovinHasAd, BannerProvider expected)
+        {
+            Assert.AreEqual(expected, CrossPromoBannerSlot.Resolve(creativeAllowed, appLovinRequested, appLovinHasAd));
+        }
+
         // ---------- CrossPromoModule switches ----------
 
         private GameObject _go;
@@ -118,6 +149,46 @@ namespace AMZNGoDSDK.Runtime.Tests
 
             Assert.IsFalse(_module.AppLovinBannerFallbackEnabled);
             Assert.IsFalse(_module.ShouldUseAppLovinBanner);
+        }
+
+        [Test]
+        public void Module_ProviderSwitches_AreIndependent()
+        {
+            Assert.IsTrue(_module.IsBannerProviderEnabled(BannerProvider.CrossPromo));
+            Assert.IsTrue(_module.IsBannerProviderEnabled(BannerProvider.AppLovin));
+            Assert.IsFalse(_module.IsBannerProviderEnabled(BannerProvider.None));
+
+            _module.SetBannerProviderEnabled(BannerProvider.CrossPromo, false);
+
+            Assert.IsFalse(_module.CrossPromoBannerCreativeEnabled);
+            Assert.IsTrue(_module.AppLovinBannerFallbackEnabled, "Switching the creative off must not touch MAX.");
+            Assert.IsTrue(_module.BannerEnabled, "Provider switches are separate from the slot master switch.");
+
+            _module.SetBannerProviderEnabled(BannerProvider.CrossPromo, true);
+            Assert.IsTrue(_module.CrossPromoBannerCreativeEnabled);
+        }
+
+        [Test]
+        public void Module_AppLovinProviderSwitch_IsTheFallbackSwitch()
+        {
+            _module.SetBannerProviderEnabled(BannerProvider.AppLovin, false);
+
+            Assert.IsFalse(_module.AppLovinBannerFallbackEnabled);
+            Assert.IsFalse(_module.IsBannerProviderEnabled(BannerProvider.AppLovin));
+            Assert.IsTrue(_module.CrossPromoBannerCreativeEnabled);
+
+            _module.SetAppLovinBannerFallbackEnabled(true);
+            Assert.IsTrue(_module.IsBannerProviderEnabled(BannerProvider.AppLovin));
+        }
+
+        [Test]
+        public void Module_ProviderNone_IsIgnored()
+        {
+            _module.SetBannerProviderEnabled(BannerProvider.None, false);
+
+            Assert.IsTrue(_module.CrossPromoBannerCreativeEnabled);
+            Assert.IsTrue(_module.AppLovinBannerFallbackEnabled);
+            Assert.IsTrue(_module.BannerEnabled);
         }
 
         [Test]
