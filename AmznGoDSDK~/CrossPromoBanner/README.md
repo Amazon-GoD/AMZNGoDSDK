@@ -18,4 +18,17 @@ Use `AmznGoDSDKCore.Instance.SetCrossPromoBannerFuncs(onClose, isNoAds)` to
 provide callbacks and the no-ads predicate. The sample's close button hides the
 banner. Remove the banner from the scene when it is not needed.
 
+Runtime controls on `AmznGoDSDKCore.Instance`:
+
+- `SetCrossPromoBannerEnabled(bool)` hides or restores the whole banner slot,
+  including the AppLovin MAX banner that replaces the creative once the
+  cross-promo caps are exhausted. The MAX banner is a native view above all
+  Unity UI, so use this on screens where no banner may appear.
+- `SetAppLovinBannerFallbackEnabled(bool)` keeps the cross-promo banner instead
+  of switching to MAX.
+- `SetAppLovinBannerPosition(AppLovinBannerPosition)` anchors the MAX banner to
+  the top or bottom of the screen. Match it to where this prefab is placed.
+- `CurrentBannerProvider` / `OnBannerProviderChanged` report what the slot
+  shows: `None`, `CrossPromo` or `AppLovin`.
+
 The banner requires the Cross-Promo module to be enabled.

@@ -442,7 +442,11 @@ namespace AMZNGoDSDK.Runtime
 
             view.ContinueClicked += HandleContinue;
             view.CloseClicked += HandleClose;
-            view.Show(background);
+            // The delay comes from SDK Settings, not from the prefab: games do not edit SDK prefabs.
+            if (_module != null)
+                view.Show(background, _module.SubscriptionBannerCloseButtonDelay);
+            else
+                view.Show(background);
 
             _root = root;
             _shownHorizontal = horizontal;

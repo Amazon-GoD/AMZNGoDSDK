@@ -16,6 +16,10 @@ namespace AMZNGoDSDK.Editor
         public List<SubscriptionProduct> SubscriptionProducts = new();
         public List<ConsumableProduct> ConsumableProducts = new();
         public List<NonConsumableProduct> NonConsumableProducts = new();
+
+        /// <summary>Seconds until the subscription banner's close button appears; 0 = immediately.</summary>
+        public float SubscriptionBannerCloseButtonDelay =
+            Runtime.InAppPurchaseSettingData.DefaultSubscriptionBannerCloseButtonDelay;
     }
 
     [Serializable]

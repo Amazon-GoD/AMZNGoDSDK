@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-11-11
+
+No backend changes. Games need no code changes to get the banner fix.
+
+### Added
+
+- **Banner controls on `AmznGoDSDKCore`.** The cross-promo banner slot can now
+  be driven from the SDK facade; the state lives on the SDK object and survives
+  scene changes:
+  - `SetCrossPromoBannerEnabled(bool)` / `IsCrossPromoBannerEnabled`: master
+    switch for the cross-promo creative and the AppLovin MAX banner together;
+  - `SetAppLovinBannerFallbackEnabled(bool)` /
+    `IsAppLovinBannerFallbackEnabled`: allow or forbid replacing the
+    cross-promo banner with MAX after the caps are exhausted;
+  - `SetAppLovinBannerPosition(AppLovinBannerPosition)` /
+    `AppLovinBannerPosition`: screen anchor of the MAX banner (`BottomCenter`,
+    `TopCenter`, `BottomLeft`, `BottomRight`, `TopLeft`, `TopRight`);
+  - `CurrentBannerProvider` / `OnBannerProviderChanged`: `None`, `CrossPromo`
+    or `AppLovin`.
+- SDK Settings → AppLovin: **Banner Position** and **Banner Fallback** set the
+  defaults. Configs without the new fields keep `BottomCenter` with the
+  fallback on.
+- SDK Settings → In-App Purchase: **Sub Banner Close Delay (s)** sets how long
+  after `ShowSubBanner` the close button appears (`0` = immediately). One value
+  for every subscription and placement. It replaces the `_closeButtonDelay`
+  value on the banner prefab, which the SDK no longer reads; configs without
+  the field keep 4 seconds.
+
+### Fixed
+
+- The cross-promo banner was not hidden when the AppLovin MAX banner took the
+  slot: the frozen creative stayed on screen next to (or under) the MAX banner.
+  The controller added a second `CanvasGroup` for its own switching, Unity
+  allows only one per GameObject, so the reference was null and hiding did
+  nothing. The controller now shares the banner's single `CanvasGroup` with the
+  game and restores the game's values when the creative returns.
+- The banner slot is no longer left empty while MAX loads its first banner or
+  has no fill: the cross-promo creative stays until MAX has an ad to draw.
+
 ## [1.0.11] - 2026-11-05
 
 Deploy the backend first (see Upgrade notes).

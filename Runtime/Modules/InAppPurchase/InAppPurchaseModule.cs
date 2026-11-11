@@ -1087,6 +1087,13 @@ namespace AMZNGoDSDK.Runtime
 
         private SubscriptionBannerPresenter _bannerPresenter;
 
+        /// <summary>Seconds until the banner's close button appears (SDK Settings → In-App Purchase).</summary>
+        internal float SubscriptionBannerCloseButtonDelay =>
+            InAppPurchaseSettingData.NormalizeSubscriptionBannerCloseButtonDelay(
+                settings != null
+                    ? settings.SubscriptionBannerCloseButtonDelay
+                    : InAppPurchaseSettingData.DefaultSubscriptionBannerCloseButtonDelay);
+
         /// <summary>
         /// SKU настроен как включённая подписка. Сверяем с настройками, а не с каталогом:
         /// каталог заполняется в Initialize, а баннер просят и раньше — на старте игры.

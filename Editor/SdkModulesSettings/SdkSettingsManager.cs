@@ -198,7 +198,10 @@ namespace AMZNGoDSDK.Editor
         {
             var editorSettings = new InAppPurchaseSettingData
             {
-                Enabled = runtimeSettings.Enabled
+                Enabled = runtimeSettings.Enabled,
+                SubscriptionBannerCloseButtonDelay =
+                    Runtime.InAppPurchaseSettingData.NormalizeSubscriptionBannerCloseButtonDelay(
+                        runtimeSettings.SubscriptionBannerCloseButtonDelay)
             };
 
             foreach (var runtimeProduct in runtimeSettings.SubscriptionProducts)
@@ -257,6 +260,8 @@ namespace AMZNGoDSDK.Editor
                 InterstitialAdUnitId = runtimeSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = runtimeSettings.RewardedAdUnitId,
                 BannerAdUnitId = runtimeSettings.BannerAdUnitId,
+                BannerPosition = runtimeSettings.BannerPosition,
+                BannerFallbackDisabled = runtimeSettings.BannerFallbackDisabled,
                 InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
                     runtimeSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
                 RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
@@ -501,7 +506,10 @@ namespace AMZNGoDSDK.Editor
         {
             var runtimeSettings = new Runtime.InAppPurchaseSettingData
             {
-                Enabled = editorSettings.Enabled
+                Enabled = editorSettings.Enabled,
+                SubscriptionBannerCloseButtonDelay =
+                    Runtime.InAppPurchaseSettingData.NormalizeSubscriptionBannerCloseButtonDelay(
+                        editorSettings.SubscriptionBannerCloseButtonDelay)
             };
 
             foreach (var editorProduct in editorSettings.SubscriptionProducts)
@@ -551,6 +559,8 @@ namespace AMZNGoDSDK.Editor
                 InterstitialAdUnitId = editorSettings.InterstitialAdUnitId,
                 RewardedAdUnitId = editorSettings.RewardedAdUnitId,
                 BannerAdUnitId = editorSettings.BannerAdUnitId,
+                BannerPosition = editorSettings.BannerPosition,
+                BannerFallbackDisabled = editorSettings.BannerFallbackDisabled,
                 InterstitialAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(
                     editorSettings.InterstitialAdPlacement, Runtime.AppLovinSettingData.DefaultInterstitialAdPlacement),
                 RewardedAdPlacement = Runtime.AppLovinSettingData.NormalizeAdPlacement(

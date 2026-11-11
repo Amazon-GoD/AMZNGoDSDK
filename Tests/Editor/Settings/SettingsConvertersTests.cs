@@ -66,6 +66,51 @@ namespace AMZNGoDSDK.Editor.Tests
             Assert.AreEqual(Runtime.FirebaseSettingData.DefaultABTestConstantsPath, editor.Firebase.ABTestConstantsPath);
         }
 
+        // Banner controls: a config saved before the fields existed keeps the old behaviour —
+        // MAX banner at the bottom, fallback on.
+        [Test]
+        public void AppLovinBannerControls_OldConfigKeepsBottomBannerAndFallback()
+        {
+            var runtime = JsonUtility.FromJson<Runtime.SdkSettingsData>(
+                "{\"Enabled\":true,\"AppLovin\":{\"Enabled\":true,\"BannerAdUnitId\":\"abc\"}}");
+
+            Assert.AreEqual(Runtime.AppLovinBannerPosition.BottomCenter, runtime.AppLovin.BannerPosition);
+            Assert.IsFalse(runtime.AppLovin.BannerFallbackDisabled);
+
+            var editor = SdkSettingsManager.ConvertToEditorSettings(runtime);
+            Assert.AreEqual(Runtime.AppLovinBannerPosition.BottomCenter, editor.AppLovin.BannerPosition);
+            Assert.IsFalse(editor.AppLovin.BannerFallbackDisabled);
+        }
+
+        // Subscription banner close button delay: 4 s for configs saved without the field, 0 is a
+        // valid "show immediately", invalid values never reach the runtime config.
+        [Test]
+        public void SubBannerCloseDelay_OldConfigKeepsFourSeconds()
+        {
+            var runtime = JsonUtility.FromJson<Runtime.SdkSettingsData>(
+                "{\"Enabled\":true,\"InAppPurchase\":{\"Enabled\":true}}");
+
+            Assert.AreEqual(4f, runtime.InAppPurchase.SubscriptionBannerCloseButtonDelay);
+            Assert.AreEqual(4f, SdkSettingsManager.ConvertToEditorSettings(runtime)
+                .InAppPurchase.SubscriptionBannerCloseButtonDelay);
+            Assert.AreEqual(4f, new InAppPurchaseSettingData().SubscriptionBannerCloseButtonDelay);
+        }
+
+        [TestCase(0f, 0f)]
+        [TestCase(2.5f, 2.5f)]
+        [TestCase(-3f, 0f)]
+        [TestCase(float.NaN, 4f)]
+        [TestCase(float.PositiveInfinity, 4f)]
+        public void SubBannerCloseDelay_NormalizedOnSave(float entered, float expected)
+        {
+            var editor = new SdkSettingsData();
+            editor.InAppPurchase.SubscriptionBannerCloseButtonDelay = entered;
+
+            var runtime = SdkSettingsManager.ConvertToRuntimeSettings(editor);
+
+            Assert.AreEqual(expected, runtime.InAppPurchase.SubscriptionBannerCloseButtonDelay);
+        }
+
         // 1.0.7: Remote Config is enabled by default for new settings.
         [Test]
         public void NewSettings_RemoteConfigEnabledByDefault()

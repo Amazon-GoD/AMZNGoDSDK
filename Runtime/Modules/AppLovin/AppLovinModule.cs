@@ -41,6 +41,8 @@ namespace AMZNGoDSDK.Runtime
         private bool _isRewardedShowing;
         private bool _bannerCreated;
         private bool _isBannerShowing;
+        private bool _bannerLoaded;
+        private AppLovinBannerPosition _bannerPosition = AppLovinBannerPosition.BottomCenter;
 
         private int _interstitialRetryAttempt;
         private int _rewardedRetryAttempt;
@@ -59,6 +61,21 @@ namespace AMZNGoDSDK.Runtime
 
         /// <summary>Есть активный показ MAX, поверх которого нельзя открывать JSON-рекламу.</summary>
         public bool IsShowingAd => _isInterstitialShowing || _isRewardedShowing;
+
+        /// <summary>Screen anchor of the native banner. Change it with <see cref="SetBannerPosition"/>.</summary>
+        public AppLovinBannerPosition BannerPosition => _bannerPosition;
+
+        /// <summary>The banner is requested to be on screen; its first ad may still be loading.</summary>
+        public bool IsBannerShowing => _isBannerShowing;
+
+        /// <summary>
+        /// MAX has delivered at least one ad into the current banner view, so showing it draws
+        /// something. False before the first load and after the view is destroyed.
+        /// </summary>
+        public bool IsBannerLoaded => _bannerCreated && _bannerLoaded;
+
+        /// <summary>The native banner is on screen with an ad in it.</summary>
+        public bool IsBannerVisible => _isBannerShowing && IsBannerLoaded;
 
         /// <summary>
         /// Interstitial загружен и готов к мгновенному показу. Роутер обязан проверять
@@ -92,7 +109,16 @@ namespace AMZNGoDSDK.Runtime
         public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId,
             bool verboseLogging, string interstitialAdPlacement, string rewardedAdPlacement, string bannerAdUnitId)
         {
+            Construct(enable, sdkKey, interstitialAdUnitId, rewardedAdUnitId, verboseLogging,
+                interstitialAdPlacement, rewardedAdPlacement, bannerAdUnitId, AppLovinBannerPosition.BottomCenter);
+        }
+
+        public void Construct(bool enable, string sdkKey, string interstitialAdUnitId, string rewardedAdUnitId,
+            bool verboseLogging, string interstitialAdPlacement, string rewardedAdPlacement, string bannerAdUnitId,
+            AppLovinBannerPosition bannerPosition)
+        {
             DestroyBanner();
+            _bannerPosition = bannerPosition;
             Enabled = enable;
             _sdkKey = sdkKey;
             _interstitialAdUnitId = interstitialAdUnitId;
@@ -106,7 +132,7 @@ namespace AMZNGoDSDK.Runtime
 
             Debug.Log($"[AppLovinModule] Construct() called. Enabled={enable}, " +
                       $"interstitial='{interstitialAdUnitId}', rewarded='{rewardedAdUnitId}', " +
-                      $"banner='{bannerAdUnitId}', verbose={verboseLogging}");
+                      $"banner='{bannerAdUnitId}', bannerPosition={bannerPosition}, verbose={verboseLogging}");
         }
 
         public override void Initialize()
@@ -168,8 +194,9 @@ namespace AMZNGoDSDK.Runtime
         #region Show
 
         /// <summary>
-        /// Запрашивает показ баннера внизу экрана. true означает принятие запроса MAX,
-        /// загрузка первого объявления может завершиться позже.
+        /// Запрашивает показ баннера в позиции <see cref="BannerPosition"/>. true означает
+        /// принятие запроса MAX, загрузка первого объявления может завершиться позже
+        /// (см. <see cref="IsBannerLoaded"/>).
         /// </summary>
         public bool ShowBanner()
         {
@@ -183,13 +210,13 @@ namespace AMZNGoDSDK.Runtime
             if (!_bannerCreated)
             {
                 var configuration = new MaxSdkBase.AdViewConfiguration(
-                    MaxSdkBase.AdViewPosition.BottomCenter)
+                    ToMaxPosition(_bannerPosition))
                 {
                     IsAdaptive = false
                 };
 
                 MaxSdk.CreateBanner(_bannerAdUnitId, configuration);
-                // BottomCenter растягивает баннер на весь экран без явной ширины в dp.
+                // Без явной ширины в dp MAX растягивает баннер на весь экран.
                 MaxSdk.SetBannerWidth(_bannerAdUnitId, StandardBannerSizeDp.x);
                 MaxSdk.SetBannerPlacement(_bannerAdUnitId, BannerPlacement);
                 _bannerCreated = true;
@@ -212,6 +239,33 @@ namespace AMZNGoDSDK.Runtime
             _isBannerShowing = false;
         }
 
+        /// <summary>
+        /// Moves the native banner to another screen anchor. Applies immediately when the
+        /// banner already exists, otherwise on its creation. Safe to call at any time.
+        /// </summary>
+        public void SetBannerPosition(AppLovinBannerPosition position)
+        {
+            if (_bannerPosition == position)
+                return;
+
+            _bannerPosition = position;
+            if (_bannerCreated)
+                MaxSdk.UpdateBannerPosition(_bannerAdUnitId, ToMaxPosition(position));
+        }
+
+        private static MaxSdkBase.AdViewPosition ToMaxPosition(AppLovinBannerPosition position)
+        {
+            switch (position)
+            {
+                case AppLovinBannerPosition.TopCenter: return MaxSdkBase.AdViewPosition.TopCenter;
+                case AppLovinBannerPosition.BottomLeft: return MaxSdkBase.AdViewPosition.BottomLeft;
+                case AppLovinBannerPosition.BottomRight: return MaxSdkBase.AdViewPosition.BottomRight;
+                case AppLovinBannerPosition.TopLeft: return MaxSdkBase.AdViewPosition.TopLeft;
+                case AppLovinBannerPosition.TopRight: return MaxSdkBase.AdViewPosition.TopRight;
+                default: return MaxSdkBase.AdViewPosition.BottomCenter;
+            }
+        }
+
         private void DestroyBanner()
         {
             if (!_bannerCreated)
@@ -220,6 +274,7 @@ namespace AMZNGoDSDK.Runtime
             HideBanner();
             MaxSdk.DestroyBanner(_bannerAdUnitId);
             _bannerCreated = false;
+            _bannerLoaded = false;
         }
 
         /// <summary>
@@ -314,6 +369,7 @@ namespace AMZNGoDSDK.Runtime
             MaxSdkCallbacks.Rewarded.OnAdHiddenEvent += OnRewardedHidden;
             MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent += OnRewardedRevenuePaid;
 
+            MaxSdkCallbacks.Banner.OnAdLoadedEvent += OnBannerLoaded;
             MaxSdkCallbacks.Banner.OnAdLoadFailedEvent += OnBannerLoadFailed;
             MaxSdkCallbacks.Banner.OnAdClickedEvent += OnBannerClicked;
             MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent += OnBannerRevenuePaid;
@@ -345,6 +401,7 @@ namespace AMZNGoDSDK.Runtime
             MaxSdkCallbacks.Rewarded.OnAdHiddenEvent -= OnRewardedHidden;
             MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent -= OnRewardedRevenuePaid;
 
+            MaxSdkCallbacks.Banner.OnAdLoadedEvent -= OnBannerLoaded;
             MaxSdkCallbacks.Banner.OnAdLoadFailedEvent -= OnBannerLoadFailed;
             MaxSdkCallbacks.Banner.OnAdClickedEvent -= OnBannerClicked;
             MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent -= OnBannerRevenuePaid;
@@ -477,6 +534,19 @@ namespace AMZNGoDSDK.Runtime
         private bool IsOwnBanner(string adUnitId) =>
             !string.IsNullOrWhiteSpace(_bannerAdUnitId)
             && string.Equals(adUnitId, _bannerAdUnitId, StringComparison.Ordinal);
+
+        private void OnBannerLoaded(string adUnitId, MaxSdkBase.AdInfo adInfo)
+        {
+            if (!IsOwnBanner(adUnitId)) return;
+
+            // A late callback for a view destroyed by Construct/Cleanup must not mark the
+            // next view as loaded.
+            if (!_bannerCreated) return;
+
+            // The view keeps its last ad across hide/show and failed refreshes, so the flag
+            // is cleared only together with the view.
+            _bannerLoaded = true;
+        }
 
         private void OnBannerLoadFailed(string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
         {

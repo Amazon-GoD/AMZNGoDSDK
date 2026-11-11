@@ -117,7 +117,29 @@ namespace AMZNGoDSDK.Runtime
 
         // Баннер наследует тот же cap/master-флаг, что и interstitial/rewarded.
         // Отсутствие загруженного конфига не означает, что его cap уже исчерпан.
-        internal bool ShouldUseAppLovinBanner => Enabled && _configFetchReturnedVideos && !HasFill;
+        internal bool ShouldUseAppLovinBanner =>
+            Enabled && AppLovinBannerFallbackEnabled && _configFetchReturnedVideos && !HasFill;
+
+        /// <summary>
+        /// Master switch of the banner slot. False hides both the cross-promo creative and
+        /// the native MAX banner in every scene until it is switched back on. Kept on the
+        /// module so it survives scene changes and banner instances.
+        /// </summary>
+        public bool BannerEnabled { get; private set; } = true;
+
+        /// <summary>
+        /// Whether the banner may switch to AppLovin MAX once the cross-promo caps are
+        /// exhausted. False keeps the cross-promo creative on screen.
+        /// </summary>
+        public bool AppLovinBannerFallbackEnabled { get; private set; } = true;
+
+        /// <summary>What the banner slot shows right now, across all banner instances.</summary>
+        public BannerProvider CurrentBannerProvider => _bannerSlot.Current;
+
+        /// <summary>Raised when <see cref="CurrentBannerProvider"/> changes.</summary>
+        public static event Action<BannerProvider> OnBannerProviderChanged;
+
+        private readonly CrossPromoBannerSlot _bannerSlot = new CrossPromoBannerSlot();
 
         public Action CurrentBannerOnClose => _currentBannerOnClose;
         public Func<bool> CurrentIsNoAds => _currentIsNoAds;
@@ -178,6 +200,7 @@ namespace AMZNGoDSDK.Runtime
                 Instance = null;
                 OnConfigLoaded = null;
                 OnBannerFuncsUpdated = null;
+                OnBannerProviderChanged = null;
             }
         }
 
@@ -519,6 +542,51 @@ namespace AMZNGoDSDK.Runtime
             _currentBannerOnClose = onClose;
             _currentIsNoAds = isNoAds;
             OnBannerFuncsUpdated?.Invoke(onClose, isNoAds);
+        }
+
+        /// <summary>
+        /// Shows or hides the whole banner slot (cross-promo and MAX). Banners poll this
+        /// every frame, so the change is applied on the next frame.
+        /// </summary>
+        public void SetBannerEnabled(bool enabled)
+        {
+            if (BannerEnabled == enabled)
+                return;
+
+            BannerEnabled = enabled;
+            Debug.Log($"[CrossPromoModule] Banner slot {(enabled ? "enabled" : "disabled")}.");
+        }
+
+        /// <summary>
+        /// Allows or forbids replacing the cross-promo banner with the MAX banner. Banners
+        /// re-read it within a quarter of a second.
+        /// </summary>
+        public void SetAppLovinBannerFallbackEnabled(bool enabled)
+        {
+            if (AppLovinBannerFallbackEnabled == enabled)
+                return;
+
+            AppLovinBannerFallbackEnabled = enabled;
+            Debug.Log($"[CrossPromoModule] AppLovin banner fallback {(enabled ? "enabled" : "disabled")}.");
+        }
+
+        /// <summary>Called by each banner instance when what it shows changes.</summary>
+        internal void ReportBannerProvider(int bannerInstanceId, BannerProvider provider)
+        {
+            if (!_bannerSlot.Report(bannerInstanceId, provider))
+                return;
+
+            Debug.Log($"[CrossPromoModule] Banner provider → {_bannerSlot.Current}");
+
+            try
+            {
+                OnBannerProviderChanged?.Invoke(_bannerSlot.Current);
+            }
+            catch (Exception ex)
+            {
+                // A throwing game listener must not break the banner's own update loop.
+                Debug.LogError($"[CrossPromoModule] Exception in OnBannerProviderChanged listener: {ex}");
+            }
         }
 
         public void TrackImpression(string paidAppId) => TrackImpression(paidAppId, null);
